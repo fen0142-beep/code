@@ -286,6 +286,45 @@ export async function saveEventFields(eventId, fields) {
   return { success: true, error: null }
 }
 
+// ─── 模板管理 ─────────────────────────────────────────────
+
+export async function getTemplates() {
+  const { data, error } = await supabase
+    .from('event_templates')
+    .select('*')
+    .order('sort_order', { ascending: true })
+  if (error) return { templates: [], error: error.message }
+  return { templates: data, error: null }
+}
+
+export async function createTemplate(name, fields) {
+  const { data, error } = await supabase
+    .from('event_templates')
+    .insert({ name, fields })
+    .select()
+    .single()
+  if (error) return { template: null, error: error.message }
+  return { template: data, error: null }
+}
+
+export async function updateTemplate(templateId, { name, fields }) {
+  const { error } = await supabase
+    .from('event_templates')
+    .update({ name, fields })
+    .eq('template_id', templateId)
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
+export async function deleteTemplate(templateId) {
+  const { error } = await supabase
+    .from('event_templates')
+    .delete()
+    .eq('template_id', templateId)
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
 // ─── 報名查詢（後台）────────────────────────────────────────
 
 /**

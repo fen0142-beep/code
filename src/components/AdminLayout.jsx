@@ -3,8 +3,9 @@ import { signOut } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 
 const ALL_NAV_ITEMS = [
-  { to: '/admin/events',   label: '活動管理', adminOnly: false },
-  { to: '/admin/students', label: '學員管理', adminOnly: true  },
+  { to: '/admin/events',    label: '活動管理', adminOnly: false },
+  { to: '/admin/students',  label: '學員管理', adminOnly: true  },
+  { to: '/admin/templates', label: '模板管理', adminOnly: true  },
 ]
 
 export default function AdminLayout({ children }) {

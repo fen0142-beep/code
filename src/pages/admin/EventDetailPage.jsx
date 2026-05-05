@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import AdminLayout from '../../components/AdminLayout'
 import DynamicForm from '../../components/DynamicForm'
+import FieldRow from '../../components/FieldRow'
 import { useAuth } from '../../lib/auth'
 import {
   getAllEvents,
@@ -22,368 +23,10 @@ import {
   getVolunteers,
   getEventVolunteers,
   setEventVolunteers,
+  getTemplates,
 } from '../../lib/supabase'
 
 const STATUS_LABEL = { draft: '草稿', active: '進行中', closed: '已關閉' }
-const FIELD_TYPES = ['radio', 'checkbox', 'boolean', 'text', 'plate', 'datetime', 'date', 'time']
-const FIELD_TYPE_LABEL = {
-  radio: 'radio（單選按鈕）',
-  checkbox: 'checkbox（多選）',
-  boolean: 'boolean（單一勾選，如：報名三皈依）',
-  text: 'text（文字輸入）',
-  plate: 'plate（車牌號碼）',
-  datetime: 'datetime（日期時間）',
-  date: 'date（日期）',
-  time: 'time（時間）',
-}
-
-// ── 回山報名模板 ─────────────────────────────────────────────
-const DEFAULT_TEMPLATE_FIELDS = [
-  {
-    field_key: 'identity',
-    field_label: '身分別',
-    field_type: 'radio',
-    options: ['義工', '信眾'],
-    show_if: null,
-    required: true,
-  },
-  {
-    field_key: 'arrive_time',
-    field_label: '預計到達山上時間',
-    field_type: 'datetime',
-    options: [],
-    show_if: { identity: '義工' },
-    required: true,
-  },
-  {
-    field_key: 'transport_up',
-    field_label: '上山交通方式',
-    field_type: 'radio',
-    options: ['搭精舍車（大車）', '搭學員的車', '自行開車', '其他'],
-    show_if: null,
-    required: true,
-  },
-  {
-    field_key: 'carpool_up',
-    field_label: '上山共乘者（司機學員姓名）',
-    field_type: 'text',
-    options: [],
-    show_if: { transport_up: '搭學員的車' },
-    required: true,
-  },
-  {
-    field_key: 'plate_up',
-    field_label: '上山車牌號碼',
-    field_type: 'plate',
-    options: [],
-    show_if: { transport_up: '自行開車' },
-    required: true,
-  },
-  {
-    field_key: 'leave_time',
-    field_label: '預計離開山上時間',
-    field_type: 'datetime',
-    options: [],
-    show_if: { identity: '義工' },
-    required: true,
-  },
-  {
-    field_key: 'transport_down',
-    field_label: '下山交通方式',
-    field_type: 'radio',
-    options: ['搭精舍車（大車）', '搭學員的車', '自行開車', '其他'],
-    show_if: null,
-    required: true,
-  },
-  {
-    field_key: 'carpool_down',
-    field_label: '下山共乘者（司機學員姓名）',
-    field_type: 'text',
-    options: [],
-    show_if: { transport_down: '搭學員的車' },
-    required: true,
-  },
-  {
-    field_key: 'plate_down',
-    field_label: '下山車牌號碼',
-    field_type: 'plate',
-    options: [],
-    show_if: { transport_down: '自行開車' },
-    required: true,
-  },
-  {
-    field_key: 'volunteer_group',
-    field_label: '發心組別',
-    field_type: 'radio',
-    options: ['交通組', '行堂組', '茶水間', '大寮', '客寮', '機動組', '環保組', '大會安排', '其他'],
-    show_if: { identity: '義工' },
-    required: true,
-  },
-  {
-    field_key: 'stay_overnight',
-    field_label: '是否掛單',
-    field_type: 'boolean',
-    options: [],
-    show_if: null,
-    required: false,
-  },
-  {
-    field_key: 'stay_start',
-    field_label: '掛單開始日期',
-    field_type: 'date',
-    options: [],
-    show_if: { stay_overnight: true },
-    required: true,
-  },
-  {
-    field_key: 'stay_end',
-    field_label: '掛單結束日期',
-    field_type: 'date',
-    options: [],
-    show_if: { stay_overnight: true },
-    required: true,
-  },
-  {
-    field_key: 'note_to_temple',
-    field_label: '備註',
-    field_type: 'text',
-    options: [],
-    show_if: null,
-    required: false,
-    placeholder: '欲同車者或其他需求',
-  },
-]
-
-// ── 精舍活動模板 ─────────────────────────────────────────────
-const TEMPLE_TEMPLATE_FIELDS = [
-  {
-    field_key: 'identity',
-    field_label: '身份別',
-    field_type: 'radio',
-    options: ['信眾', '義工'],
-    show_if: null,
-    required: true,
-  },
-  {
-    field_key: 'need_lunch',
-    field_label: '是否需要午齋',
-    field_type: 'boolean',
-    options: [],
-    show_if: null,
-    required: true,
-  },
-  {
-    field_key: 'need_parking',
-    field_label: '是否需要停車位',
-    field_type: 'boolean',
-    options: [],
-    show_if: null,
-    required: true,
-  },
-  {
-    field_key: 'volunteer_group',
-    field_label: '組別',
-    field_type: 'radio',
-    options: ['心燈', '照客', '行堂', '大寮', '機動', '環保', '交通', '司儀', '梵唄', '音響', '攝影'],
-    show_if: { identity: '義工' },
-    required: true,
-  },
-]
-
-// ── 動態欄位編輯列 ─────────────────────────────────────────
-function FieldRow({ field, onChange, onRemove, allFields, index, onDragStart, onDragOver, onDrop, isDragOver }) {
-  const options = field.options || []
-
-  function handleLabelChange(label) {
-    onChange({ ...field, field_label: label })
-  }
-
-  function handleLabelBlur(label) {
-    if (!field.field_key && label) {
-      onChange({ ...field, field_label: label, field_key: label })
-    }
-  }
-
-  function setOption(i, val) {
-    const next = [...options]
-    next[i] = val
-    onChange({ ...field, options: next })
-  }
-
-  function addOption() {
-    onChange({ ...field, options: [...options, ''] })
-  }
-
-  function removeOption(i) {
-    onChange({ ...field, options: options.filter((_, j) => j !== i) })
-  }
-
-  const showIfKey = field.show_if ? Object.keys(field.show_if)[0] ?? '' : ''
-  const showIfVal = field.show_if ? Object.values(field.show_if)[0] ?? '' : ''
-  const parentField = allFields.find(f => f.field_key === showIfKey)
-  const parentOptions = parentField?.options || []
-
-  function updateShowIf(key, val) {
-    if (!key) {
-      onChange({ ...field, show_if: null })
-    } else {
-      onChange({ ...field, show_if: { [key]: val } })
-    }
-  }
-
-  return (
-    <div
-      draggable
-      onDragStart={() => onDragStart(index)}
-      onDragOver={e => { e.preventDefault(); onDragOver(index) }}
-      onDrop={() => onDrop(index)}
-      onDragEnd={() => onDragOver(null)}
-      className={`border rounded-xl p-4 bg-gray-50 space-y-3 transition-all ${
-        isDragOver ? 'border-amber-400 bg-amber-50 scale-[1.01]' : 'border-gray-200'
-      }`}
-    >
-      <div className="flex items-center gap-2 -mb-1">
-        <span
-          className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-base leading-none px-0.5"
-          title="拖曳調整順序"
-        >
-          ⠿
-        </span>
-        <span className="text-xs text-gray-400">拖曳調整順序</span>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">顯示名稱</label>
-          <input
-            value={field.field_label}
-            onChange={e => handleLabelChange(e.target.value)}
-            onBlur={e => handleLabelBlur(e.target.value)}
-            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
-            placeholder="身分別"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">
-            程式識別碼
-            <span className="text-gray-400 font-normal ml-1">（自動填入，通常不需更改）</span>
-          </label>
-          <input
-            value={field.field_key}
-            onChange={e => onChange({ ...field, field_key: e.target.value })}
-            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
-            placeholder="自動填入"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">欄位類型</label>
-          <select
-            value={field.field_type}
-            onChange={e => onChange({ ...field, field_type: e.target.value })}
-            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
-          >
-            {FIELD_TYPES.map(t => <option key={t} value={t}>{FIELD_TYPE_LABEL[t] ?? t}</option>)}
-          </select>
-        </div>
-        <div className="flex items-end gap-2">
-          <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer mb-1">
-            <input
-              type="checkbox"
-              checked={field.required ?? true}
-              onChange={e => onChange({ ...field, required: e.target.checked })}
-              className="accent-amber-600"
-            />
-            必填
-          </label>
-          <button
-            onClick={onRemove}
-            className="ml-auto text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded transition-colors"
-          >
-            刪除
-          </button>
-        </div>
-      </div>
-
-      {(field.field_type === 'radio' || field.field_type === 'checkbox') && (
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-2">選項</label>
-          <div className="space-y-2">
-            {options.map((opt, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 w-4 text-right">{i + 1}.</span>
-                <input
-                  value={opt}
-                  onChange={e => setOption(i, e.target.value)}
-                  className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
-                  placeholder={`選項 ${i + 1}`}
-                />
-                <button
-                  onClick={() => removeOption(i)}
-                  className="text-gray-300 hover:text-red-400 text-lg leading-none px-1 transition-colors"
-                  title="刪除此選項"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            <button
-              onClick={addOption}
-              className="text-sm text-amber-700 hover:text-amber-900 border border-dashed border-amber-300 hover:border-amber-500 px-3 py-1 rounded transition-colors"
-            >
-              ＋ 新增選項
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div>
-        <label className="block text-xs font-medium text-gray-500 mb-1">
-          條件顯示（當某欄位選了特定值才出現；不需要請選「不設條件」）
-        </label>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-400">當</span>
-          <select
-            value={showIfKey}
-            onChange={e => updateShowIf(e.target.value, '')}
-            className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
-          >
-            <option value="">不設條件</option>
-            {allFields.filter(f => f.field_label).map((f, i) => (
-              <option key={f.field_key || i} value={f.field_key}>
-                {f.field_label}
-              </option>
-            ))}
-          </select>
-
-          {showIfKey && (
-            <>
-              <span className="text-xs text-gray-400">選了</span>
-              {parentOptions.length > 0 ? (
-                <select
-                  value={showIfVal}
-                  onChange={e => updateShowIf(showIfKey, e.target.value)}
-                  className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
-                >
-                  <option value="">請選擇</option>
-                  {parentOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  value={showIfVal}
-                  onChange={e => updateShowIf(showIfKey, e.target.value)}
-                  className="w-28 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
-                  placeholder="輸入值"
-                />
-              )}
-              <span className="text-xs text-gray-400">時顯示</span>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ── 欄位值格式化 ────────────────────────────────────────────
 function formatFieldValue(field, val) {
@@ -538,6 +181,9 @@ export default function EventDetailPage() {
   const [dragIndex, setDragIndex] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
 
+  // 模板（從 Supabase 動態讀取）
+  const [templates, setTemplates] = useState([])
+
   function handleFieldDrop(toIndex) {
     if (dragIndex === null || dragIndex === toIndex) { setDragIndex(null); return }
     const next = [...fields]
@@ -618,13 +264,14 @@ export default function EventDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ events }, { fields: f }, { registrations: r }, { changes: c }, { volunteers: v }, { volunteerIds: va }] = await Promise.all([
+    const [{ events }, { fields: f }, { registrations: r }, { changes: c }, { volunteers: v }, { volunteerIds: va }, { templates: tmpl }] = await Promise.all([
       getAllEvents(),
       getEventFields(id),
       getRegistrationsWithStudents(id),
       getEventChanges(id),
       getVolunteers(),
       getEventVolunteers(id),
+      getTemplates(),
     ])
     const ev = events.find(e => e.event_id === id)
     if (!ev) { navigate('/admin/events'); return }
@@ -641,6 +288,7 @@ export default function EventDetailPage() {
     setFields(f)
     setRegistrations(r)
     setChanges(c)
+    setTemplates(tmpl || [])
     setSelectedGuestIds(new Set()) // 重新載入後清除選取
     setLoading(false)
   }, [id, navigate])
@@ -1502,32 +1150,22 @@ export default function EventDetailPage() {
             >
               ＋ 新增欄位
             </button>
-            <button
-              onClick={() => {
-                if (
-                  fields.length === 0 ||
-                  window.confirm('套用「回山模板」後，目前設定的欄位將全部被取代。確定要繼續嗎？')
-                ) {
-                  setFields(DEFAULT_TEMPLATE_FIELDS.map(f => ({ ...f })))
-                }
-              }}
-              className="border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 text-sm px-4 py-2 rounded-lg transition-colors"
-            >
-              📋 套用回山模板
-            </button>
-            <button
-              onClick={() => {
-                if (
-                  fields.length === 0 ||
-                  window.confirm('套用「精舍模板」後，目前設定的欄位將全部被取代。確定要繼續嗎？')
-                ) {
-                  setFields(TEMPLE_TEMPLATE_FIELDS.map(f => ({ ...f })))
-                }
-              }}
-              className="border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 text-sm px-4 py-2 rounded-lg transition-colors"
-            >
-              🏯 套用精舍模板
-            </button>
+            {templates.map(tmpl => (
+              <button
+                key={tmpl.template_id}
+                onClick={() => {
+                  if (
+                    fields.length === 0 ||
+                    window.confirm(`套用「${tmpl.name}」後，目前設定的欄位將全部被取代。確定要繼續嗎？`)
+                  ) {
+                    setFields((tmpl.fields || []).map(f => ({ ...f })))
+                  }
+                }}
+                className="border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 text-sm px-4 py-2 rounded-lg transition-colors"
+              >
+                📋 套用{tmpl.name}
+              </button>
+            ))}
             <button
               onClick={handleSaveFields}
               disabled={saving}
