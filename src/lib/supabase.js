@@ -653,6 +653,90 @@ export async function getMyEvents(userId) {
   return { events: data || [], error: null }
 }
 
+// ─── 關係連結（後台）────────────────────────────────────────
+
+/**
+ * 取得所有群組（含成員的 student_id 和姓名）
+ */
+export async function getRelationshipGroups() {
+  const { data, error } = await supabase
+    .from('relationship_groups')
+    .select(`
+      group_id, name, note, created_at,
+      relationship_members (
+        id, student_id,
+        students ( name )
+      )
+    `)
+    .order('created_at', { ascending: false })
+
+  if (error) return { groups: [], error: error.message }
+  return { groups: data || [], error: null }
+}
+
+/**
+ * 建立群組並加入成員
+ * @param {string} name
+ * @param {string} note
+ * @param {string[]} studentIds
+ */
+export async function createRelationshipGroup(name, note, studentIds) {
+  const { data, error } = await supabase
+    .from('relationship_groups')
+    .insert({ name, note: note || null })
+    .select('group_id')
+    .single()
+
+  if (error) return { success: false, error: error.message }
+
+  if (studentIds.length > 0) {
+    const members = studentIds.map(sid => ({ group_id: data.group_id, student_id: sid }))
+    const { error: mErr } = await supabase.from('relationship_members').insert(members)
+    if (mErr) return { success: false, error: mErr.message }
+  }
+
+  return { success: true, groupId: data.group_id, error: null }
+}
+
+/**
+ * 更新群組名稱/備註，並全量更新成員
+ */
+export async function updateRelationshipGroup(groupId, name, note, studentIds) {
+  const { error } = await supabase
+    .from('relationship_groups')
+    .update({ name, note: note || null })
+    .eq('group_id', groupId)
+
+  if (error) return { success: false, error: error.message }
+
+  // 全量替換成員
+  const { error: delErr } = await supabase
+    .from('relationship_members')
+    .delete()
+    .eq('group_id', groupId)
+  if (delErr) return { success: false, error: delErr.message }
+
+  if (studentIds.length > 0) {
+    const members = studentIds.map(sid => ({ group_id: groupId, student_id: sid }))
+    const { error: mErr } = await supabase.from('relationship_members').insert(members)
+    if (mErr) return { success: false, error: mErr.message }
+  }
+
+  return { success: true, error: null }
+}
+
+/**
+ * 刪除群組（成員自動 CASCADE）
+ */
+export async function deleteRelationshipGroup(groupId) {
+  const { error } = await supabase
+    .from('relationship_groups')
+    .delete()
+    .eq('group_id', groupId)
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
 // ─── 學員管理（後台）────────────────────────────────────────
 
 export async function getAllStudents(search = '') {

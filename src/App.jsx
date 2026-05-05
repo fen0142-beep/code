@@ -9,6 +9,7 @@ import EventDetailPage from './pages/admin/EventDetailPage'
 import CheckinPage from './pages/admin/CheckinPage'
 import StudentsPage from './pages/admin/StudentsPage'
 import TemplatesPage from './pages/admin/TemplatesPage'
+import RelationshipsPage from './pages/admin/RelationshipsPage'
 
 export default function App() {
   return (
@@ -37,6 +38,9 @@ export default function App() {
           } />
           <Route path="/admin/templates" element={
             <ProtectedRoute adminOnly><TemplatesPage /></ProtectedRoute>
+          } />
+          <Route path="/admin/relationships" element={
+            <ProtectedRoute adminOnly><RelationshipsPage /></ProtectedRoute>
           } />
         </Routes>
       </BrowserRouter>
