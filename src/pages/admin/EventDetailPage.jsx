@@ -114,6 +114,45 @@ function exportCSV(registrations, fields, event) {
   URL.revokeObjectURL(url)
 }
 
+// ── 即時看板統計 ──────────────────────────────────────────────
+const BIG_CAR_KEYS = ['大車', '精舍車']
+const SMALL_CAR_KEYS = ['自行開車', '搭學員']
+
+function computeDashboardStats(regs, fields) {
+  // 身份別：動態讀 identity 欄位的所有選項值
+  const identityField = fields.find(f => f.field_key === 'identity')
+  const identityCounts = {}
+  if (identityField) {
+    for (const r of regs) {
+      const val = r.answers?.[identityField.field_key]
+      if (val !== undefined && val !== null && val !== '') {
+        identityCounts[val] = (identityCounts[val] || 0) + 1
+      }
+    }
+  }
+
+  // 上山交通：讀 transport_up（沒有則找 transport）
+  const transportField = fields.find(f => f.field_key === 'transport_up')
+                      ?? fields.find(f => f.field_key === 'transport')
+  let bigCar = 0, smallCar = 0, otherCar = 0
+  if (transportField) {
+    for (const r of regs) {
+      const val = r.answers?.[transportField.field_key]
+      if (!val) continue
+      if (BIG_CAR_KEYS.some(k => val.includes(k))) bigCar++
+      else if (SMALL_CAR_KEYS.some(k => val.includes(k))) smallCar++
+      else otherCar++
+    }
+  }
+
+  return {
+    identityField,
+    identityCounts,
+    hasTransport: !!transportField,
+    bigCar, smallCar, otherCar,
+  }
+}
+
 // ── 主頁面 ─────────────────────────────────────────────────
 export default function EventDetailPage() {
   const { id } = useParams()
@@ -1194,6 +1233,60 @@ export default function EventDetailPage() {
               </div>
             </div>
           )}
+
+          {/* 即時看板 */}
+          {registrations.length > 0 && (() => {
+            const { identityField, identityCounts, hasTransport, bigCar, smallCar, otherCar } =
+              computeDashboardStats(registrations, fields)
+            const hasIdentity = !!identityField && Object.keys(identityCounts).length > 0
+            if (!hasIdentity && !hasTransport) return null
+
+            // 依原始欄位選項順序排序（確保顯示順序穩定）
+            const identityOptions = identityField?.options ?? []
+            const sortedIdentityEntries = [
+              ...identityOptions.filter(opt => identityCounts[opt] !== undefined).map(opt => [opt, identityCounts[opt]]),
+              ...Object.entries(identityCounts).filter(([k]) => !identityOptions.includes(k)),
+            ]
+
+            return (
+              <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                <p className="text-[11px] font-semibold text-blue-400 mb-2 uppercase tracking-widest">即時看板</p>
+                <div className="flex flex-wrap gap-x-5 gap-y-2">
+                  {hasIdentity && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-gray-500 shrink-0">身份</span>
+                      {sortedIdentityEntries.map(([val, count]) => (
+                        <span key={val} className="inline-flex items-center gap-1 bg-white border border-blue-200 rounded-lg px-2.5 py-1 text-sm shadow-sm">
+                          <span className="text-gray-600 text-xs">{val}</span>
+                          <span className="font-bold text-blue-700 text-base leading-none">{count}</span>
+                          <span className="text-xs text-gray-400">人</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {hasIdentity && hasTransport && (
+                    <div className="hidden sm:block w-px bg-blue-200 self-stretch" />
+                  )}
+                  {hasTransport && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-gray-500 shrink-0">上山交通</span>
+                      {[
+                        { label: '大車', count: bigCar,  color: 'text-amber-600' },
+                        { label: '小車', count: smallCar, color: 'text-green-700' },
+                        ...(otherCar > 0 ? [{ label: '其他', count: otherCar, color: 'text-gray-500' }] : []),
+                      ].map(item => (
+                        <span key={item.label} className="inline-flex items-center gap-1 bg-white border border-blue-200 rounded-lg px-2.5 py-1 text-sm shadow-sm">
+                          <span className="text-gray-600 text-xs">{item.label}</span>
+                          <span className={`font-bold text-base leading-none ${item.color}`}>{item.count}</span>
+                          <span className="text-xs text-gray-400">人</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* 工具列 */}
           <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
