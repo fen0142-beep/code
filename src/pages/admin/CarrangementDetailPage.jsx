@@ -24,12 +24,15 @@ const isSmallPassenger= ans => (ans?.transport_up ?? '').includes('搭學員')
 const isSmallCar      = ans => isSmallDriver(ans) || isSmallPassenger(ans)
 
 // ─── 小車配對（純運算，不存 DB）────────────────────────────────
+// 回傳 { matchedGroups, orphans }
+// matchedGroups：有司機的群組（按順序編為小車 1、2…）
+// orphans：找不到司機的乘客（需手動指定搭哪台小車）
 
 function computeSmallGroups(regs) {
   const drivers    = regs.filter(r => isSmallDriver(r.answers))
   const passengers = regs.filter(r => isSmallPassenger(r.answers))
   const usedIds    = new Set()
-  const groups     = []
+  const matchedGroups = []
 
   for (const driver of drivers) {
     const driverName = driver.students?.name ?? ''
@@ -41,22 +44,13 @@ function computeSmallGroups(regs) {
       return driverName.includes(cn) || cn.includes(driverName)
     })
     matched.forEach(p => usedIds.add(p.registration_id))
-    groups.push({ key: driver.registration_id, driverName, plate, members: [driver, ...matched], isUnmatched: false })
+    matchedGroups.push({ key: driver.registration_id, driverName, plate, members: [driver, ...matched] })
   }
 
-  // 剩餘找不到司機的乘客：依 carpool_up 分組
+  // 找不到司機的乘客（整批回傳，讓使用者手動指定）
   const orphans = passengers.filter(p => !usedIds.has(p.registration_id))
-  const orphanMap = {}
-  for (const p of orphans) {
-    const key = (p.answers?.carpool_up ?? '未知司機').trim()
-    if (!orphanMap[key]) orphanMap[key] = []
-    orphanMap[key].push(p)
-  }
-  for (const [key, members] of Object.entries(orphanMap)) {
-    groups.push({ key, driverName: key, plate: '', members, isUnmatched: true })
-  }
 
-  return groups
+  return { matchedGroups, orphans }
 }
 
 // ─── 自動排車演算法 ────────────────────────────────────────────
@@ -188,12 +182,33 @@ export default function CarrangementDetailPage() {
   const [headLeaderRegId, setHeadLeaderRegId] = useState('')
   const [saving,  setSaving]                = useState(false)
   const [msg,     setMsg]                   = useState('')
+  // orphanAssignments: { [registrationId]: groupKey(小車 key) }
+  const [orphanAssignments, setOrphanAssignments] = useState({})
 
   // ── 衍生資料 ──
   const regMap      = useMemo(() => Object.fromEntries(regs.map(r => [r.registration_id, r])), [regs])
   const largePeople = useMemo(() => regs.filter(r => isLargeCar(r.answers)), [regs])
   const smallPeople = useMemo(() => regs.filter(r => isSmallCar(r.answers)), [regs])
-  const smallGroups = useMemo(() => computeSmallGroups(smallPeople), [smallPeople])
+
+  // 小車配對：matchedGroups + orphans
+  const { matchedGroups, orphans } = useMemo(() => computeSmallGroups(smallPeople), [smallPeople])
+
+  // 把已手動指派的孤兒乘客併入對應的小車群組
+  const finalSmallGroups = useMemo(() =>
+    matchedGroups.map(g => ({
+      ...g,
+      allMembers: [
+        ...g.members,
+        ...orphans.filter(o => orphanAssignments[o.registration_id] === g.key),
+      ],
+    })),
+  [matchedGroups, orphans, orphanAssignments])
+
+  // 尚未指定小車的孤兒
+  const unassignedOrphans = useMemo(() =>
+    orphans.filter(o => !orphanAssignments[o.registration_id]),
+  [orphans, orphanAssignments])
+
   const assignedSet = useMemo(() => new Set(cars.flatMap(c => c.members)), [cars])
   const unassigned  = useMemo(() => largePeople.filter(r => !assignedSet.has(r.registration_id)), [largePeople, assignedSet])
 
@@ -272,7 +287,9 @@ export default function CarrangementDetailPage() {
   }
 
   function handleExport() {
-    const rows = [['車次', '姓名', '班級', '組別', '身份別', '是否領隊']]
+    const rows = [['車次', '姓名', '班級', '組別', '身份別', '備註']]
+
+    // 大車
     for (const car of cars) {
       for (const regId of car.members) {
         const r = regMap[regId]
@@ -282,10 +299,36 @@ export default function CarrangementDetailPage() {
         const cls      = classes.map(c => c.class_name).join('/')
         const grp      = classes.map(c => c.group_name).filter(Boolean).join('/')
         const identity = r.answers?.identity ?? ''
-        const isLeader = car.leaders.includes(regId) ? '是' : ''
-        rows.push([car.car_name, name, cls, grp, identity, isLeader])
+        const note     = car.leaders.includes(regId) ? '領隊' : ''
+        rows.push([car.car_name, name, cls, grp, identity, note])
       }
     }
+
+    // 小車（有配對的群組）
+    finalSmallGroups.forEach((g, idx) => {
+      for (const r of g.allMembers) {
+        const name     = r.students?.name ?? '?'
+        const classes  = r.students?.student_classes ?? []
+        const cls      = classes.map(c => c.class_name).join('/')
+        const grp      = classes.map(c => c.group_name).filter(Boolean).join('/')
+        const identity = r.answers?.identity ?? ''
+        const isDriver = r.registration_id === g.key
+        const note     = isDriver ? `司機${g.plate ? `（${g.plate}）` : ''}` : '乘客'
+        rows.push([`小車 ${idx + 1}`, name, cls, grp, identity, note])
+      }
+    })
+
+    // 未指定小車的孤兒
+    for (const r of unassignedOrphans) {
+      const name     = r.students?.name ?? '?'
+      const classes  = r.students?.student_classes ?? []
+      const cls      = classes.map(c => c.class_name).join('/')
+      const grp      = classes.map(c => c.group_name).filter(Boolean).join('/')
+      const identity = r.answers?.identity ?? ''
+      const carpoolNm = r.answers?.carpool_up ?? ''
+      rows.push([`小車（未指定）`, name, cls, grp, identity, carpoolNm ? `→ ${carpoolNm}` : ''])
+    }
+
     const csv  = '﻿' + rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url  = URL.createObjectURL(blob)
@@ -469,37 +512,94 @@ export default function CarrangementDetailPage() {
           <section>
             <h2 className="text-base font-bold text-gray-700 mb-2">🚗 小車配對</h2>
             <p className="text-xs text-gray-400 mb-4">
-              依報名填寫的「共乘者姓名」自動配對司機與乘客。若找不到對應司機，顯示於「找不到司機」群組。
+              依報名填寫的「共乘者姓名」自動配對司機與乘客。找不到司機的乘客可用下拉選單手動指定搭哪台小車。
             </p>
             <div className="space-y-2">
-              {smallGroups.map(g => (
-                <div
-                  key={g.key}
-                  className={`bg-white border rounded-xl shadow-sm overflow-hidden ${g.isUnmatched ? 'border-orange-300' : ''}`}
-                >
-                  <div className={`flex items-center gap-2 px-4 py-3 border-b text-sm font-semibold ${g.isUnmatched ? 'bg-orange-50 text-orange-700' : 'bg-gray-50 text-gray-700'}`}>
-                    <span>{g.isUnmatched ? '⚠️ 找不到司機' : `🚗 司機：${g.driverName}`}</span>
+              {/* 有配對的小車群組 */}
+              {finalSmallGroups.map((g, idx) => (
+                <div key={g.key} className="bg-white border rounded-xl shadow-sm overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-3 border-b bg-gray-50 text-sm font-semibold text-gray-700">
+                    <span className="text-green-700 bg-green-100 rounded-full px-2 py-0.5 text-xs">
+                      小車 {idx + 1}
+                    </span>
+                    <span>司機：{g.driverName}</span>
                     {g.plate && <span className="text-gray-400 text-xs font-normal">{g.plate}</span>}
-                    <span className="text-xs text-gray-400 font-normal ml-auto">{g.members.length} 人</span>
+                    <span className="text-xs text-gray-400 font-normal ml-auto">{g.allMembers.length} 人</span>
                   </div>
                   <div className="divide-y">
-                    {g.members.map(r => {
+                    {g.allMembers.map(r => {
                       const cls       = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
-                      const isDriver  = isSmallDriver(r.answers)
+                      const isDriver  = r.registration_id === g.key
                       const carpoolNm = r.answers?.carpool_up ?? ''
+                      const isOrphan  = orphans.some(o => o.registration_id === r.registration_id)
                       return (
-                        <div key={r.registration_id} className="flex items-center gap-2 px-4 py-2 text-sm">
+                        <div key={r.registration_id} className={`flex items-center gap-2 px-4 py-2 text-sm ${isOrphan ? 'bg-orange-50' : ''}`}>
                           <span className="flex-1 font-medium">{r.students?.name ?? '?'}</span>
                           {cls && <span className="text-xs text-gray-400">{cls}</span>}
                           <span className="text-xs text-gray-300">
                             {isDriver ? '（司機）' : carpoolNm ? `→ ${carpoolNm}` : ''}
                           </span>
+                          {/* 孤兒乘客可改指定到其他小車 */}
+                          {isOrphan && (
+                            <select
+                              value={g.key}
+                              onChange={e => setOrphanAssignments(prev => ({
+                                ...prev,
+                                [r.registration_id]: e.target.value || undefined,
+                              }))}
+                              className="text-xs border rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            >
+                              {finalSmallGroups.map((fg, fi) => (
+                                <option key={fg.key} value={fg.key}>小車 {fi + 1}・{fg.driverName}</option>
+                              ))}
+                            </select>
+                          )}
                         </div>
                       )
                     })}
                   </div>
                 </div>
               ))}
+
+              {/* 找不到司機、尚未指定小車的乘客 */}
+              {unassignedOrphans.length > 0 && (
+                <div className="bg-orange-50 border border-orange-300 rounded-xl overflow-hidden">
+                  <div className="px-4 py-3 bg-orange-100 border-b border-orange-200 text-sm font-semibold text-orange-800">
+                    ⚠️ 找不到司機（{unassignedOrphans.length} 人）— 請手動指定搭哪台小車
+                  </div>
+                  <div className="divide-y">
+                    {unassignedOrphans.map(r => {
+                      const cls       = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
+                      const carpoolNm = r.answers?.carpool_up ?? ''
+                      return (
+                        <div key={r.registration_id} className="flex items-center gap-2 px-4 py-2 text-sm">
+                          <span className="flex-1 font-medium">{r.students?.name ?? '?'}</span>
+                          {cls && <span className="text-xs text-gray-400">{cls}</span>}
+                          {carpoolNm && <span className="text-xs text-gray-400">→ {carpoolNm}</span>}
+                          <select
+                            value={orphanAssignments[r.registration_id] ?? ''}
+                            onChange={e => setOrphanAssignments(prev => ({
+                              ...prev,
+                              [r.registration_id]: e.target.value || undefined,
+                            }))}
+                            className="text-xs border rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          >
+                            <option value="">（未指定）</option>
+                            {finalSmallGroups.map((g, gi) => (
+                              <option key={g.key} value={g.key}>小車 {gi + 1}・{g.driverName}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 沒有任何小車資料 */}
+              {finalSmallGroups.length === 0 && unassignedOrphans.length === 0 && (
+                <div className="text-sm text-gray-400 py-6 text-center border rounded-xl">沒有小車報名資料</div>
+              )}
             </div>
           </section>
         )}
