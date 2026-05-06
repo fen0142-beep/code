@@ -1005,43 +1005,44 @@ export async function getCarByToken(token) {
  * 找出這個活動中，給定 registration_id 們作為領隊的所有車
  * 用於領隊報到頁顯示「切換到另一方向」Tab
  * 公開頁面使用，不需登入
+ *
+ * 兩步驟做：先用 leaderRegIds 找 car_id，再用 car_id 撈完整車輛資料
+ * （避免用 PostgREST nested filter 在 anon RLS 下踩坑）
  */
 export async function getLinkedCarsForLeader(eventId, leaderRegIds) {
   if (!leaderRegIds || leaderRegIds.length === 0) return { cars: [], error: null }
 
-  const { data, error } = await supabase
+  // Step 1: 找出這些領隊作為 car_leader 的所有 car_id
+  const { data: leaderRows, error: lErr } = await supabase
     .from('car_leaders')
-    .select(`
-      registration_id,
-      car_assignments!inner (
-        car_id, car_name, seats, event_id, sort_order, direction, access_token,
-        events ( name, date_start ),
-        car_members (
-          registration_id,
-          registrations (
-            registration_id, answers, checked_in_at, student_id,
-            students ( name )
-          )
-        ),
-        car_leaders ( registration_id ),
-        car_monks ( id, monk_id, checked_in_at, temple_monks ( name ) )
-      )
-    `)
+    .select('car_id')
     .in('registration_id', leaderRegIds)
-    .eq('car_assignments.event_id', eventId)
+
+  if (lErr) return { cars: [], error: lErr.message }
+  const carIds = [...new Set((leaderRows ?? []).map(r => r.car_id).filter(Boolean))]
+  if (carIds.length === 0) return { cars: [], error: null }
+
+  // Step 2: 取出這些車的完整資料（限定 event_id，避免跨活動誤抓）
+  const { data, error } = await supabase
+    .from('car_assignments')
+    .select(`
+      car_id, car_name, seats, event_id, sort_order, direction, access_token,
+      events ( name, date_start ),
+      car_members (
+        registration_id,
+        registrations (
+          registration_id, answers, checked_in_at, student_id,
+          students ( name )
+        )
+      ),
+      car_leaders ( registration_id ),
+      car_monks ( id, monk_id, checked_in_at, temple_monks ( name ) )
+    `)
+    .in('car_id', carIds)
+    .eq('event_id', eventId)
 
   if (error) return { cars: [], error: error.message }
-
-  // 去重（同一台車可能因多個領隊而出現多次）
-  const seen = new Set()
-  const cars = []
-  for (const row of (data ?? [])) {
-    const car = row.car_assignments
-    if (!car || seen.has(car.car_id)) continue
-    seen.add(car.car_id)
-    cars.push(car)
-  }
-  return { cars, error: null }
+  return { cars: data ?? [], error: null }
 }
 
 /**
