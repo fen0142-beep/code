@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import CameraScanner from '../components/CameraScanner'
 import {
   getCarByToken,
+  getLinkedCarsForLeader,
   getHeadLeaderByToken,
   getAllCarsProgress,
   getAllSmallCarsProgress,
@@ -86,6 +87,9 @@ export default function CarCheckinPage() {
 
   // car mode
   const [car, setCar]             = useState(null)
+  // 同領隊在另一個方向的車（含當前 car，依 up→down 排序）
+  // 長度 > 1 時顯示上山/下山切換 Tab
+  const [linkedCars, setLinkedCars] = useState([])
 
   // head mode
   const [headLeader, setHeadLeader] = useState(null)
@@ -105,27 +109,50 @@ export default function CarCheckinPage() {
   // ── 載入 ──
   useEffect(() => { load() }, [token])
 
+  // 取得當前 car + 同領隊在另一個方向的車
+  // 回傳 { car, linkedCars }，linkedCars 含當前 car，依 up→down 排序
+  async function loadCarWithLinked(t) {
+    const { car } = await getCarByToken(t)
+    if (!car) return { car: null, linkedCars: [] }
+    const leaderIds = (car.car_leaders ?? []).map(l => l.registration_id)
+    if (leaderIds.length === 0) return { car, linkedCars: [car] }
+
+    const { cars: linked } = await getLinkedCarsForLeader(car.event_id, leaderIds)
+    const seen = new Set([car.car_id])
+    const all  = [car]
+    for (const c of (linked ?? [])) {
+      if (!seen.has(c.car_id)) { seen.add(c.car_id); all.push(c) }
+    }
+    // 上山在前、下山在後
+    all.sort((a, b) => (a.direction === 'up' ? -1 : 1) - (b.direction === 'up' ? -1 : 1))
+    return { car, linkedCars: all }
+  }
+
   async function load() {
     setLoading(true)
-    const [carRes, hlRes] = await Promise.all([
-      getCarByToken(token),
+    const [carInfo, hlRes] = await Promise.all([
+      loadCarWithLinked(token),
       getHeadLeaderByToken(token),
     ])
 
-    if (carRes.car) {
+    if (carInfo.car) {
       setMode('car')
-      // 提前上山者自動標記為已報到（靜默執行）
-      const dateStart = carRes.car.events?.date_start
-      const toAutoCheck = (carRes.car.car_members ?? []).filter(m =>
-        !m.registrations?.checked_in_at &&
-        getPreArriveInfo(m.registrations?.answers, dateStart)
+      // 提前上山者自動標記為已報到（靜默執行）— 含所有跨方向的車
+      const dateStart = carInfo.car.events?.date_start
+      const toAutoCheck = carInfo.linkedCars.flatMap(c =>
+        (c.car_members ?? []).filter(m =>
+          !m.registrations?.checked_in_at &&
+          getPreArriveInfo(m.registrations?.answers, dateStart)
+        )
       )
       if (toAutoCheck.length > 0) {
         await Promise.all(toAutoCheck.map(m => checkIn(m.registration_id)))
-        const { car: fresh } = await getCarByToken(token)
-        setCar(fresh ?? carRes.car)
+        const fresh = await loadCarWithLinked(token)
+        setLinkedCars(fresh.linkedCars)
+        setCar(fresh.linkedCars.find(c => c.car_id === carInfo.car.car_id) ?? fresh.car)
       } else {
-        setCar(carRes.car)
+        setLinkedCars(carInfo.linkedCars)
+        setCar(carInfo.car)
       }
     } else if (hlRes.headLeader) {
       const leaderType = hlRes.headLeader.type ?? 'all'
@@ -160,8 +187,14 @@ export default function CarCheckinPage() {
   const refresh = useCallback(async () => {
     setRefreshing(true)
     if (mode === 'car') {
-      const { car: updated } = await getCarByToken(token)
-      if (updated) setCar(updated)
+      const fresh = await loadCarWithLinked(token)
+      if (fresh.car) {
+        setLinkedCars(fresh.linkedCars)
+        // 維持當前正在看的方向
+        const currentId = car?.car_id
+        const same = fresh.linkedCars.find(c => c.car_id === currentId)
+        setCar(same ?? fresh.car)
+      }
     } else if (mode === 'head') {
       const eventId = headLeader?.events?.event_id ?? headLeader?.event_id
       const { cars } = await getAllCarsProgress(eventId)
@@ -172,7 +205,7 @@ export default function CarCheckinPage() {
       setAllCars(cars)
     }
     setRefreshing(false)
-  }, [mode, token, headLeader])
+  }, [mode, token, headLeader, car])
 
   // ── 自動每 30 秒重新整理 ──
   useEffect(() => {
@@ -206,10 +239,19 @@ export default function CarCheckinPage() {
     let foundCar = null
 
     if (mode === 'car' && car) {
-      found = (car.car_members ?? []).find(
-        m => m.registrations?.student_id === code || m.registration_id === code
-      )
-      if (found) foundCar = car
+      // 跨方向尋找：當前車 + 同領隊另一方向的車
+      const carsToSearch = linkedCars.length > 0 ? linkedCars : [car]
+      for (const c of carsToSearch) {
+        found = (c.car_members ?? []).find(
+          m => m.registrations?.student_id === code || m.registration_id === code
+        )
+        if (found) {
+          foundCar = c
+          // 若在另一方向的車找到，自動切換顯示
+          if (c.car_id !== car.car_id) setCar(c)
+          break
+        }
+      }
     } else if (mode === 'head' || mode === 'small_car') {
       for (const c of allCars) {
         found = (c.car_members ?? []).find(
@@ -304,6 +346,30 @@ export default function CarCheckinPage() {
         <div className="bg-amber-700 text-white px-4 py-5 shadow-md">
           <div className="max-w-lg mx-auto">
             <div className="text-xs opacity-75 mb-0.5">{eventName}　{eventDate}</div>
+
+            {/* 上下山切換 Tab（只有當該領隊在另一方向也有車時才顯示） */}
+            {linkedCars.length > 1 && (
+              <div className="flex gap-1 mb-2 bg-amber-800/40 rounded-lg p-1">
+                {linkedCars.map(c => {
+                  const active = c.car_id === car.car_id
+                  const dir = c.direction === 'up' ? '🚌 上山' : '🚍 下山'
+                  return (
+                    <button
+                      key={c.car_id}
+                      onClick={() => setCar(c)}
+                      className={`flex-1 py-2 px-2 rounded-md text-xs font-semibold transition-colors text-center ${
+                        active
+                          ? 'bg-white text-amber-700 shadow-sm'
+                          : 'text-white/90 hover:bg-amber-700/40 active:bg-amber-700/60'
+                      }`}
+                    >
+                      {dir}　{c.car_name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
             <div className="text-xl font-bold flex items-center gap-2 flex-wrap">
               <span>{car.car_name} 報到</span>
               {car.direction && (

@@ -1002,6 +1002,49 @@ export async function getCarByToken(token) {
 }
 
 /**
+ * 找出這個活動中，給定 registration_id 們作為領隊的所有車
+ * 用於領隊報到頁顯示「切換到另一方向」Tab
+ * 公開頁面使用，不需登入
+ */
+export async function getLinkedCarsForLeader(eventId, leaderRegIds) {
+  if (!leaderRegIds || leaderRegIds.length === 0) return { cars: [], error: null }
+
+  const { data, error } = await supabase
+    .from('car_leaders')
+    .select(`
+      registration_id,
+      car_assignments!inner (
+        car_id, car_name, seats, event_id, sort_order, direction, access_token,
+        events ( name, date_start ),
+        car_members (
+          registration_id,
+          registrations (
+            registration_id, answers, checked_in_at, student_id,
+            students ( name )
+          )
+        ),
+        car_leaders ( registration_id ),
+        car_monks ( id, monk_id, checked_in_at, temple_monks ( name ) )
+      )
+    `)
+    .in('registration_id', leaderRegIds)
+    .eq('car_assignments.event_id', eventId)
+
+  if (error) return { cars: [], error: error.message }
+
+  // 去重（同一台車可能因多個領隊而出現多次）
+  const seen = new Set()
+  const cars = []
+  for (const row of (data ?? [])) {
+    const car = row.car_assignments
+    if (!car || seen.has(car.car_id)) continue
+    seen.add(car.car_id)
+    cars.push(car)
+  }
+  return { cars, error: null }
+}
+
+/**
  * 用總領隊 access_token 取得活動資料
  * 公開頁面使用，不需登入
  */
