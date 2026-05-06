@@ -565,31 +565,28 @@ export default function CarCheckinPage() {
     const largeCars = allCars.filter(c => c.car_type === 'large')
     const smallCars = allCars.filter(c => c.car_type === 'small')
 
-    const memberTotalAll  = allCars.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
-    const monkTotalAll    = allCars.reduce((s, c) => s + (c.car_monks?.length ?? 0), 0)
-    const memberChecked   = allCars.reduce((s, c) => s + (c.car_members?.filter(isCheckedIn).length ?? 0), 0)
-    const monkCheckedAll  = allCars.reduce((s, c) => s + (c.car_monks?.filter(m => !!m.checked_in_at).length ?? 0), 0)
-    const totalAll        = memberTotalAll + monkTotalAll
-    const checkedAll      = memberChecked + monkCheckedAll
-    const uncheckedAll    = totalAll - checkedAll
+    const monkTotalAll   = allCars.reduce((s, c) => s + (c.car_monks?.length ?? 0), 0)
+    const monkCheckedAll = allCars.reduce((s, c) => s + (c.car_monks?.filter(m => !!m.checked_in_at).length ?? 0), 0)
+
+    // 應到 = 當天搭車出發的人（排除提前上山），法師一律算
+    const isPreArrived = (m) => !!getPreArriveInfo(m.registrations?.answers, dateStart)
+    const todayMembers  = allCars.flatMap(c => c.car_members ?? []).filter(m => !isPreArrived(m))
+    const totalAll      = todayMembers.length + monkTotalAll
+    const checkedAll    = todayMembers.filter(isCheckedIn).length + monkCheckedAll
+    const uncheckedAll  = totalAll - checkedAll
 
     const smallTotal   = smallCars.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
     const smallChecked = smallCars.reduce((s, c) => s + (c.car_members?.filter(isCheckedIn).length ?? 0), 0)
 
-    // 已報到人數依身份別統計
+    // 實際回山總人數（含提前上山）— 按身份統計全部人
     const identityCounts = {}
     for (const c of allCars) {
       for (const m of (c.car_members ?? [])) {
-        if (isCheckedIn(m)) {
-          const id = m.registrations?.answers?.identity ?? '未填'
-          identityCounts[id] = (identityCounts[id] ?? 0) + 1
-        }
+        const id = m.registrations?.answers?.identity ?? '未填'
+        identityCounts[id] = (identityCounts[id] ?? 0) + 1
       }
-      // 法師計入身份統計
       for (const cm of (c.car_monks ?? [])) {
-        if (cm.checked_in_at) {
-          identityCounts['法師'] = (identityCounts['法師'] ?? 0) + 1
-        }
+        identityCounts['法師'] = (identityCounts['法師'] ?? 0) + 1
       }
     }
     const IDENTITY_ORDER = ['法師', '義工', '信眾']
@@ -617,7 +614,7 @@ export default function CarCheckinPage() {
                 {identityStats.map(([label, count]) => (
                   <span key={label}>{label} <strong>{count}</strong></span>
                 ))}
-                <span className="text-xs opacity-60 self-center">（已報到）</span>
+                <span className="text-xs opacity-60 self-center">（實際回山總數）</span>
               </div>
             )}
           </div>
@@ -638,10 +635,11 @@ export default function CarCheckinPage() {
 
           {/* ── 大車（各台獨立） ── */}
           {largeCars.map(c => {
-            const total     = (c.car_members?.length ?? 0) + (c.car_monks?.length ?? 0)
-            const checked   = (c.car_members ?? []).filter(isCheckedIn).length + (c.car_monks ?? []).filter(m => !!m.checked_in_at).length
+            const carToday  = (c.car_members ?? []).filter(m => !isPreArrived(m))
+            const total     = carToday.length + (c.car_monks?.length ?? 0)
+            const checked   = carToday.filter(isCheckedIn).length + (c.car_monks ?? []).filter(m => !!m.checked_in_at).length
             const unchecked = total - checked
-            const done      = checked === total && total > 0
+            const done      = total > 0 && unchecked === 0
             const expanded  = expandedCarId === c.car_id
 
             const leaderNames = (c.car_leaders ?? []).map(l => {
