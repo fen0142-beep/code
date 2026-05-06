@@ -119,9 +119,9 @@ function autoArrange(largePeople, carCount, seats, relGroups) {
     }
   }
 
-  // 剩餘依班級、組別排序後依序填入
+  // 剩餘依班級、組別排序後依序填入（只排學員，訪客另外處理）
   const remaining = largePeople
-    .filter(r => !assigned.has(r.registration_id))
+    .filter(r => r.student_id && !assigned.has(r.registration_id))
     .sort((a, b) => {
       const ac = getClasses(a)[0]?.class_name ?? ''
       const bc = getClasses(b)[0]?.class_name ?? ''
@@ -137,27 +137,24 @@ function autoArrange(largePeople, carCount, seats, relGroups) {
     while (ci < carCount && cars[ci].members.length >= cars[ci].seats) ci++
     if (ci >= carCount) break
     cars[ci].members.push(p.registration_id)
+    assigned.add(p.registration_id)
     if (cars[ci].members.length >= cars[ci].seats) ci++
   }
 
-  // 處理訪客（student_id 為 null）
-  // 有備註且能配對到學員 → 排同車；否則留在未分配（顯示警示）
-  const guestLarge = largePeople.filter(r => !r.student_id && !assigned.has(r.registration_id))
+  // 處理訪客：有備註且能配對到學員 → 強制排同車（超過座位也排）
+  // 沒備註或找不到學員 → 留在未分配警示區
   const studentLarge = largePeople.filter(r => r.student_id)
-
-  for (const guest of guestLarge) {
+  for (const guest of largePeople.filter(r => !r.student_id && !assigned.has(r.registration_id))) {
     const note    = getGuestNote(guest)
     const matched = findGuestMatch(note, studentLarge)
     if (matched) {
-      // 找到對應學員所在的車，排進去
       const targetCar = cars.find(c => c.members.includes(matched.registration_id))
-      if (targetCar && targetCar.members.length < targetCar.seats) {
+      if (targetCar) {
+        // 強制插入，確保親友同車（不受座位限制）
         targetCar.members.push(guest.registration_id)
         assigned.add(guest.registration_id)
-        continue
       }
     }
-    // 沒備註或找不到學員 → 不自動排，留在未分配警示區
   }
 
   return cars
@@ -167,7 +164,7 @@ function autoArrange(largePeople, carCount, seats, relGroups) {
 
 function PersonRow({ reg, carIdx, cars, onMove, onToggleLeader, guestInfo }) {
   const name     = getName(reg)
-  const cls      = getClasses(reg).map(c => c.class_name).join('/')
+  const cls      = getClasses(reg).map(c => [c.class_name, c.group_name].filter(Boolean).join(' ')).join('／')
   const isLeader = carIdx >= 0 && (cars[carIdx]?.leaders.includes(reg.registration_id) ?? false)
   const isGuest  = !reg.student_id
 
