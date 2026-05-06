@@ -20,6 +20,12 @@ const CHINESE_NUMS = ['一','二','三','四','五','六','七','八','九','十
 const chNum = n => CHINESE_NUMS[n - 1] ?? String(n)
 const genId = () => `tmp-${Math.random().toString(36).slice(2)}`
 
+const DIRECTIONS = [
+  { key: 'down', label: '下山（回家）', emoji: '🚍' },
+  { key: 'up',   label: '上山（回山）', emoji: '🚌' },
+]
+const dirLabel = d => DIRECTIONS.find(x => x.key === d)?.label ?? d
+
 // 取得顯示名稱（相容訪客）
 const getName    = r => r.students?.name ?? r.answers?.guest_name ?? '訪客'
 const getClasses = r => r.students?.student_classes ?? []
@@ -38,18 +44,25 @@ function findGuestMatch(note, studentRegs) {
   return null
 }
 
-// 判斷交通方式（先定義小車判斷函式，isLargeCar 再用）
-const isSmallDriver   = ans => (ans?.transport_up ?? '').includes('自行開車')
-const isSmallPassenger= ans => (ans?.transport_up ?? '').includes('搭學員')
-const isSmallCar      = ans => isSmallDriver(ans) || isSmallPassenger(ans)
+// 取得依方向對應的欄位 key
+const fieldKeysFor = direction => ({
+  transport: direction === 'up' ? 'transport_up' : 'transport_down',
+  carpool:   direction === 'up' ? 'carpool_up'   : 'carpool_down',
+  plate:     direction === 'up' ? 'plate_up'     : 'plate_down',
+})
+
+// 判斷交通方式（依方向動態讀對應欄位）
+const isSmallDriver    = (ans, dir) => (ans?.[fieldKeysFor(dir).transport] ?? '').includes('自行開車')
+const isSmallPassenger = (ans, dir) => (ans?.[fieldKeysFor(dir).transport] ?? '').includes('搭學員')
+const isSmallCar       = (ans, dir) => isSmallDriver(ans, dir) || isSmallPassenger(ans, dir)
 
 // isLargeCar 接受完整 reg 物件；訪客與學員邏輯一致
 // - 有選「自行開車」或「搭學員」→ 小車（不管是否訪客）
 // - 有選「精舍」→ 大車
 // - 未填 → 訪客預設大車；學員算「其他/未填」
-const isLargeCar = r => {
-  if (isSmallDriver(r.answers) || isSmallPassenger(r.answers)) return false
-  const t = r.answers?.transport_up ?? ''
+const isLargeCar = (r, dir) => {
+  if (isSmallDriver(r.answers, dir) || isSmallPassenger(r.answers, dir)) return false
+  const t = r.answers?.[fieldKeysFor(dir).transport] ?? ''
   if (r.student_id) return t.includes('精舍')
   return true  // 訪客未填 → 預設大車
 }
@@ -59,18 +72,19 @@ const isLargeCar = r => {
 // matchedGroups：有司機的群組（按順序編為小車 1、2…）
 // orphans：找不到司機的乘客（需手動指定搭哪台小車）
 
-function computeSmallGroups(regs) {
-  const drivers    = regs.filter(r => isSmallDriver(r.answers))
-  const passengers = regs.filter(r => isSmallPassenger(r.answers))
+function computeSmallGroups(regs, dir) {
+  const keys = fieldKeysFor(dir)
+  const drivers    = regs.filter(r => isSmallDriver(r.answers, dir))
+  const passengers = regs.filter(r => isSmallPassenger(r.answers, dir))
   const usedIds    = new Set()
   const matchedGroups = []
 
   for (const driver of drivers) {
     const driverName = getName(driver)
-    const plate      = driver.answers?.plate_up ?? ''
+    const plate      = driver.answers?.[keys.plate] ?? ''
     const matched    = passengers.filter(p => {
       if (usedIds.has(p.registration_id)) return false
-      const cn = (p.answers?.carpool_up ?? '').trim()
+      const cn = (p.answers?.[keys.carpool] ?? '').trim()
       if (!cn) return false
       return driverName.includes(cn) || cn.includes(driverName)
     })
@@ -314,34 +328,75 @@ export default function CarrangementDetailPage() {
   const { eventId } = useParams()
   const navigate    = useNavigate()
 
-  const [loading, setLoading]               = useState(true)
-  const [event,   setEvent]                 = useState(null)
-  const [regs,    setRegs]                  = useState([])
-  const [relGroups, setRelGroups]           = useState([])
-  const [cars,    setCars]                  = useState([])
-  const [carCount, setCarCount]             = useState(2)
-  const [seatsPerCar, setSeatsPerCar]       = useState(20)
-  const [headLeaderRegId, setHeadLeaderRegId] = useState('')
-  const [headLeaderToken, setHeadLeaderToken] = useState('')
+  const [loading, setLoading]     = useState(true)
+  const [event,   setEvent]       = useState(null)
+  const [regs,    setRegs]        = useState([])
+  const [relGroups, setRelGroups] = useState([])
+
+  // ── 上下山兩份資料分開存 ──
+  // direction: 目前正在編輯的方向（'up' / 'down'）
+  const [direction, setDirection] = useState('down')
+
+  // 大車狀態：依方向各一份
+  const [carsByDir, setCarsByDir]               = useState({ up: [], down: [] })
+  const [carCountByDir, setCarCountByDir]       = useState({ up: 2, down: 2 })
+  const [seatsPerCarByDir, setSeatsPerCarByDir] = useState({ up: 20, down: 20 })
+
+  // 小車訪客手動移入 / 孤兒乘客指派：依方向各一份
+  const [orphanByDir, setOrphanByDir]         = useState({ up: {}, down: {} })
+  const [guestSmallByDir, setGuestSmallByDir] = useState({ up: {}, down: {} })
+
+  // 領隊（上下山共用一位，不分方向）
+  const [headLeaderRegId, setHeadLeaderRegId]         = useState('')
+  const [headLeaderToken, setHeadLeaderToken]         = useState('')
   const [smallCarLeaderRegId, setSmallCarLeaderRegId] = useState('')
   const [smallCarLeaderToken, setSmallCarLeaderToken] = useState('')
-  const [allMonks, setAllMonks]             = useState([])
-  const [saving,  setSaving]                = useState(false)
-  const [msg,     setMsg]                   = useState('')
-  const [copyMsg, setCopyMsg]               = useState('')
-  // orphanAssignments: { [registrationId]: groupKey(小車 key) }
-  const [orphanAssignments, setOrphanAssignments] = useState({})
-  // guestSmallOverrides: { [registrationId]: groupKey } — 訪客被手動移到小車（從大車移出）
-  const [guestSmallOverrides, setGuestSmallOverrides] = useState({})
+
+  const [allMonks, setAllMonks] = useState([])
+  const [saving,  setSaving]    = useState(false)
+  const [msg,     setMsg]       = useState('')
+  const [copyMsg, setCopyMsg]   = useState('')
+
+  // ── 取目前方向的 state（方便讀取）──
+  const cars                = carsByDir[direction]
+  const carCount            = carCountByDir[direction]
+  const seatsPerCar         = seatsPerCarByDir[direction]
+  const orphanAssignments   = orphanByDir[direction]
+  const guestSmallOverrides = guestSmallByDir[direction]
+
+  // setter helpers（包成只改目前方向）
+  const setCars = updater => setCarsByDir(prev => {
+    const next = typeof updater === 'function' ? updater(prev[direction]) : updater
+    return { ...prev, [direction]: next }
+  })
+  const setCarCount    = v => setCarCountByDir(prev => ({ ...prev, [direction]: v }))
+  const setSeatsPerCar = v => setSeatsPerCarByDir(prev => ({ ...prev, [direction]: v }))
+  const setOrphanAssignments = updater => setOrphanByDir(prev => {
+    const next = typeof updater === 'function' ? updater(prev[direction]) : updater
+    return { ...prev, [direction]: next }
+  })
+  const setGuestSmallOverrides = updater => setGuestSmallByDir(prev => {
+    const next = typeof updater === 'function' ? updater(prev[direction]) : updater
+    return { ...prev, [direction]: next }
+  })
 
   // ── 衍生資料（含訪客）──
   const regMap      = useMemo(() => Object.fromEntries(regs.map(r => [r.registration_id, r])), [regs])
   // 已被手動移到小車的訪客，不再出現在大車名單
-  const largePeople = useMemo(() => regs.filter(r => isLargeCar(r) && !guestSmallOverrides.hasOwnProperty(r.registration_id)), [regs, guestSmallOverrides])
-  const smallPeople = useMemo(() => regs.filter(r => isSmallCar(r.answers)), [regs])
+  const largePeople = useMemo(
+    () => regs.filter(r => isLargeCar(r, direction) && !guestSmallOverrides.hasOwnProperty(r.registration_id)),
+    [regs, guestSmallOverrides, direction]
+  )
+  const smallPeople = useMemo(
+    () => regs.filter(r => isSmallCar(r.answers, direction)),
+    [regs, direction]
+  )
 
   // 小車配對：matchedGroups + orphans
-  const { matchedGroups, orphans } = useMemo(() => computeSmallGroups(smallPeople), [smallPeople])
+  const { matchedGroups, orphans } = useMemo(
+    () => computeSmallGroups(smallPeople, direction),
+    [smallPeople, direction]
+  )
 
   // 把已手動指派的孤兒乘客 + 從大車移過來的訪客，併入對應的小車群組
   const finalSmallGroups = useMemo(() =>
@@ -385,66 +440,39 @@ export default function CarrangementDetailPage() {
 
   async function load() {
     setLoading(true)
-    const [{ events }, { registrations }, { groups }, { cars: savedCars }, { headLeader }, { headLeader: smallCarLeader }, { monks: monkList }] = await Promise.all([
+    const [
+      { events },
+      { registrations },
+      { groups },
+      { cars: savedCarsUp },
+      { cars: savedCarsDown },
+      { headLeader },
+      { headLeader: smallCarLeader },
+      { monks: monkList },
+    ] = await Promise.all([
       getAllEvents(),
       getEventRegistrationsDetail(eventId),
       getRelationshipGroups(),
-      getCarArrangement(eventId),
+      getCarArrangement(eventId, 'up'),
+      getCarArrangement(eventId, 'down'),
       getHeadLeader(eventId),
       getSmallCarLeader(eventId),
       getMonks(),
     ])
     setAllMonks(monkList ?? [])
-
     setEvent(events.find(e => e.event_id === eventId) ?? null)
     setRegs(registrations)
     setRelGroups(groups)
 
-    if (savedCars.length > 0) {
-      // 大車
-      const largeSaved = savedCars.filter(c => c.car_type === 'large')
-      if (largeSaved.length > 0) {
-        const mapped = largeSaved.map(c => ({
-          tempId:       c.car_id,
-          car_name:     c.car_name,
-          seats:        c.seats,
-          members:      (c.car_members ?? []).map(m => m.registration_id),
-          leaders:      (c.car_leaders ?? []).map(l => l.registration_id),
-          access_token: c.access_token ?? '',
-          monks:        (c.car_monks ?? []).map(m => m.monk_id),
-        }))
-        setCars(mapped)
-        setCarCount(mapped.length)
-        setSeatsPerCar(mapped[0]?.seats ?? 20)
-      }
+    // 還原兩個方向的排車結果
+    const up   = restoreDirection(savedCarsUp,   registrations, 'up')
+    const down = restoreDirection(savedCarsDown, registrations, 'down')
 
-      // 小車：從已存的成員列表還原孤兒指派 & 訪客小車指派
-      const smallSaved = savedCars.filter(c => c.car_type === 'small')
-      if (smallSaved.length > 0) {
-        const smallRegs = registrations.filter(r => isSmallCar(r.answers))
-        const { matchedGroups: freshMatched } = computeSmallGroups(smallRegs)
-        const restoredOrphans = {}
-        const restoredGuestSmall = {}
-        for (const savedCar of smallSaved) {
-          const groupKey = savedCar.note   // 司機的 registration_id
-          const freshGroup = freshMatched.find(g => g.key === groupKey)
-          const originalIds = new Set((freshGroup?.members ?? []).map(m => m.registration_id))
-          for (const member of (savedCar.car_members ?? [])) {
-            if (!originalIds.has(member.registration_id)) {
-              // 訪客（無 student_id）→ guestSmallOverrides；學員孤兒乘客 → orphanAssignments
-              const reg = registrations.find(r => r.registration_id === member.registration_id)
-              if (reg && !reg.student_id) {
-                restoredGuestSmall[member.registration_id] = groupKey
-              } else {
-                restoredOrphans[member.registration_id] = groupKey
-              }
-            }
-          }
-        }
-        setOrphanAssignments(restoredOrphans)
-        setGuestSmallOverrides(restoredGuestSmall)
-      }
-    }
+    setCarsByDir({ up: up.cars,             down: down.cars             })
+    setCarCountByDir({ up: up.carCount,     down: down.carCount         })
+    setSeatsPerCarByDir({ up: up.seats,     down: down.seats            })
+    setOrphanByDir({ up: up.orphans,        down: down.orphans          })
+    setGuestSmallByDir({ up: up.guests,     down: down.guests           })
 
     if (headLeader) {
       setHeadLeaderRegId(headLeader.registration_id ?? '')
@@ -457,10 +485,50 @@ export default function CarrangementDetailPage() {
     setLoading(false)
   }
 
+  // 還原單一方向的排車結果（從 DB savedCars + registrations）
+  function restoreDirection(savedCars, registrations, dir) {
+    const out = { cars: [], carCount: 2, seats: 20, orphans: {}, guests: {} }
+    if (!savedCars || savedCars.length === 0) return out
+
+    const largeSaved = savedCars.filter(c => c.car_type === 'large')
+    if (largeSaved.length > 0) {
+      out.cars = largeSaved.map(c => ({
+        tempId:       c.car_id,
+        car_name:     c.car_name,
+        seats:        c.seats,
+        members:      (c.car_members ?? []).map(m => m.registration_id),
+        leaders:      (c.car_leaders ?? []).map(l => l.registration_id),
+        access_token: c.access_token ?? '',
+        monks:        (c.car_monks ?? []).map(m => m.monk_id),
+      }))
+      out.carCount = out.cars.length
+      out.seats    = out.cars[0]?.seats ?? 20
+    }
+
+    const smallSaved = savedCars.filter(c => c.car_type === 'small')
+    if (smallSaved.length > 0) {
+      const smallRegs = registrations.filter(r => isSmallCar(r.answers, dir))
+      const { matchedGroups: freshMatched } = computeSmallGroups(smallRegs, dir)
+      for (const savedCar of smallSaved) {
+        const groupKey   = savedCar.note   // 司機的 registration_id
+        const freshGroup = freshMatched.find(g => g.key === groupKey)
+        const originalIds = new Set((freshGroup?.members ?? []).map(m => m.registration_id))
+        for (const member of (savedCar.car_members ?? [])) {
+          if (!originalIds.has(member.registration_id)) {
+            const reg = registrations.find(r => r.registration_id === member.registration_id)
+            if (reg && !reg.student_id) out.guests[member.registration_id]   = groupKey
+            else                        out.orphans[member.registration_id] = groupKey
+          }
+        }
+      }
+    }
+    return out
+  }
+
   // ── 操作 ──
   function handleAutoArrange() {
-    if (largePeople.length === 0) { alert('此活動沒有搭精舍車的學員'); return }
-    if (cars.length > 0 && !window.confirm('自動排車會覆蓋現有排法，確定繼續？')) return
+    if (largePeople.length === 0) { alert('此方向沒有搭精舍車的學員'); return }
+    if (cars.length > 0 && !window.confirm(`自動排車會覆蓋目前「${dirLabel(direction)}」的排法，確定繼續？`)) return
     setCars(autoArrange(largePeople, Number(carCount), Number(seatsPerCar), relGroups))
   }
 
@@ -477,7 +545,6 @@ export default function CarrangementDetailPage() {
       // 標記為移到小車
       setGuestSmallOverrides(prev => ({ ...prev, [regId]: groupKey }))
     } else if (target === 'back-to-large') {
-      // 從小車移回大車未分配
       setGuestSmallOverrides(prev => {
         const next = { ...prev }
         delete next[regId]
@@ -485,7 +552,6 @@ export default function CarrangementDetailPage() {
       })
     } else {
       const targetCarIdx = typeof target === 'string' ? Number(target) : target
-      // 如果這個人之前在小車（guestSmallOverrides），先清除
       setGuestSmallOverrides(prev => {
         if (!prev.hasOwnProperty(regId)) return prev
         const next = { ...prev }; delete next[regId]; return next
@@ -520,8 +586,29 @@ export default function CarrangementDetailPage() {
 
   async function handleSave() {
     setSaving(true); setMsg('')
-    const [carRes, hlRes, sclRes] = await Promise.all([
-      saveCarArrangement(eventId, cars, finalSmallGroups),
+
+    // 計算兩個方向各自的 finalSmallGroups
+    const calcFinalSmall = dir => {
+      const smallRegsDir = regs.filter(r => isSmallCar(r.answers, dir))
+      const { matchedGroups: m } = computeSmallGroups(smallRegsDir, dir)
+      const orphanMap = orphanByDir[dir]
+      const guestMap  = guestSmallByDir[dir]
+      return m.map(g => ({
+        ...g,
+        allMembers: [
+          ...g.members,
+          ...smallRegsDir.filter(o => orphanMap[o.registration_id] === g.key),
+          ...regs.filter(r => !r.student_id && guestMap[r.registration_id] === g.key),
+        ],
+      }))
+    }
+
+    const upSmall   = calcFinalSmall('up')
+    const downSmall = calcFinalSmall('down')
+
+    const [upRes, downRes, hlRes, sclRes] = await Promise.all([
+      saveCarArrangement(eventId, carsByDir.up,   upSmall,   'up'),
+      saveCarArrangement(eventId, carsByDir.down, downSmall, 'down'),
       headLeaderRegId
         ? saveHeadLeader(eventId, headLeaderRegId)
         : Promise.resolve({ success: true }),
@@ -529,13 +616,14 @@ export default function CarrangementDetailPage() {
         ? saveSmallCarLeader(eventId, smallCarLeaderRegId)
         : Promise.resolve({ success: true }),
     ])
+
     setSaving(false)
-    if (carRes.success && hlRes.success && sclRes.success) {
-      setMsg('已儲存 ✓')
+    if (upRes.success && downRes.success && hlRes.success && sclRes.success) {
+      setMsg('已儲存（上山＋下山）✓')
       // 儲存後重新讀取 token（每次儲存 token 會更新，連結需重新複製）
       await load()
     } else {
-      setMsg(`儲存失敗：${carRes.error || hlRes.error || sclRes.error}`)
+      setMsg(`儲存失敗：${upRes.error || downRes.error || hlRes.error || sclRes.error}`)
     }
     setTimeout(() => setMsg(''), 4000)
   }
@@ -549,51 +637,71 @@ export default function CarrangementDetailPage() {
   }
 
   function handleExport() {
-    const rows = [['車次', '姓名', '班級', '組別', '身份別', '備註']]
+    const rows = [['方向', '車次', '姓名', '班級', '組別', '身份別', '備註']]
 
-    // 大車
-    for (const car of cars) {
-      for (const regId of car.members) {
-        const r = regMap[regId]
-        if (!r) continue
+    // 兩個方向各自匯出
+    for (const dir of ['down', 'up']) {
+      const dirCars      = carsByDir[dir]
+      const dirSmallRegs = regs.filter(r => isSmallCar(r.answers, dir))
+      const { matchedGroups: dirMatched, orphans: dirOrphans } =
+        computeSmallGroups(dirSmallRegs, dir)
+      const dirOrphanMap = orphanByDir[dir]
+      const dirGuestMap  = guestSmallByDir[dir]
+      const dirFinalSmall = dirMatched.map(g => ({
+        ...g,
+        allMembers: [
+          ...g.members,
+          ...dirOrphans.filter(o => dirOrphanMap[o.registration_id] === g.key),
+          ...regs.filter(r => !r.student_id && dirGuestMap[r.registration_id] === g.key),
+        ],
+      }))
+
+      const dirText = dir === 'up' ? '上山' : '下山'
+
+      // 大車
+      for (const car of dirCars) {
+        for (const regId of car.members) {
+          const r = regMap[regId]
+          if (!r) continue
+          const name     = getName(r)
+          const classes  = getClasses(r)
+          const cls      = classes.map(c => c.class_name).join('/')
+          const grp      = classes.map(c => c.group_name).filter(Boolean).join('/')
+          const identity = r.answers?.identity ?? ''
+          const note     = car.leaders.includes(regId) ? '領隊' : ''
+          rows.push([dirText, car.car_name, name, cls, grp, identity, note])
+        }
+        for (const monkId of (car.monks ?? [])) {
+          const monk = allMonks.find(m => m.id === monkId)
+          if (monk) rows.push([dirText, car.car_name, monk.name, '', '', '法師', '法師'])
+        }
+      }
+
+      // 小車
+      dirFinalSmall.forEach((g, idx) => {
+        for (const r of g.allMembers) {
+          const name     = getName(r)
+          const classes  = getClasses(r)
+          const cls      = classes.map(c => c.class_name).join('/')
+          const grp      = classes.map(c => c.group_name).filter(Boolean).join('/')
+          const identity = r.answers?.identity ?? ''
+          const isDriver = r.registration_id === g.key
+          const note     = isDriver ? `司機${g.plate ? `（${g.plate}）` : ''}` : '乘客'
+          rows.push([dirText, `小車 ${idx + 1}`, name, cls, grp, identity, note])
+        }
+      })
+
+      // 未指定小車的孤兒
+      const dirUnassignedOrphans = dirOrphans.filter(o => !dirOrphanMap[o.registration_id])
+      for (const r of dirUnassignedOrphans) {
         const name     = getName(r)
         const classes  = getClasses(r)
         const cls      = classes.map(c => c.class_name).join('/')
         const grp      = classes.map(c => c.group_name).filter(Boolean).join('/')
         const identity = r.answers?.identity ?? ''
-        const note     = car.leaders.includes(regId) ? '領隊' : ''
-        rows.push([car.car_name, name, cls, grp, identity, note])
+        const carpoolNm = r.answers?.[fieldKeysFor(dir).carpool] ?? ''
+        rows.push([dirText, `小車（未指定）`, name, cls, grp, identity, carpoolNm ? `→ ${carpoolNm}` : ''])
       }
-      // 法師
-      for (const monkId of (car.monks ?? [])) {
-        const monk = allMonks.find(m => m.id === monkId)
-        if (monk) rows.push([car.car_name, monk.name, '', '', '法師', '法師'])
-      }
-    }
-
-    // 小車（有配對的群組）
-    finalSmallGroups.forEach((g, idx) => {
-      for (const r of g.allMembers) {
-        const name     = getName(r)
-        const classes  = getClasses(r)
-        const cls      = classes.map(c => c.class_name).join('/')
-        const grp      = classes.map(c => c.group_name).filter(Boolean).join('/')
-        const identity = r.answers?.identity ?? ''
-        const isDriver = r.registration_id === g.key
-        const note     = isDriver ? `司機${g.plate ? `（${g.plate}）` : ''}` : '乘客'
-        rows.push([`小車 ${idx + 1}`, name, cls, grp, identity, note])
-      }
-    })
-
-    // 未指定小車的孤兒
-    for (const r of unassignedOrphans) {
-      const name     = getName(r)
-      const classes  = getClasses(r)
-      const cls      = classes.map(c => c.class_name).join('/')
-      const grp      = classes.map(c => c.group_name).filter(Boolean).join('/')
-      const identity = r.answers?.identity ?? ''
-      const carpoolNm = r.answers?.carpool_up ?? ''
-      rows.push([`小車（未指定）`, name, cls, grp, identity, carpoolNm ? `→ ${carpoolNm}` : ''])
     }
 
     const csv  = '﻿' + rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n')
@@ -631,7 +739,7 @@ export default function CarrangementDetailPage() {
             )}
             <button
               onClick={handleExport}
-              disabled={cars.length === 0}
+              disabled={carsByDir.up.length === 0 && carsByDir.down.length === 0}
               className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-40"
             >
               📥 匯出分車名單
@@ -641,15 +749,39 @@ export default function CarrangementDetailPage() {
               disabled={saving}
               className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium"
             >
-              {saving ? '儲存中…' : '儲存'}
+              {saving ? '儲存中…' : '儲存（上山＋下山）'}
             </button>
           </div>
         </div>
 
-        {/* 統計卡片 */}
+        {/* ── 上下山 Tab ── */}
+        <div className="flex gap-2 border-b">
+          {DIRECTIONS.map(d => {
+            const active = direction === d.key
+            const carCnt  = carsByDir[d.key].length
+            return (
+              <button
+                key={d.key}
+                onClick={() => setDirection(d.key)}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                  active
+                    ? 'border-amber-500 text-amber-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {d.emoji} {d.label}
+                {carCnt > 0 && (
+                  <span className="ml-2 text-xs text-gray-400">（{carCnt} 台）</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* 統計卡片（依目前方向） */}
         <div className="grid grid-cols-3 gap-3">
-          <StatCard label="搭精舍車（大車）" value={largePeople.length} color="bg-blue-50 border-blue-200 text-blue-700" />
-          <StatCard label="小車（自行/共乘）" value={smallPeople.length} color="bg-green-50 border-green-200 text-green-700" />
+          <StatCard label={`搭精舍車（大車）— ${dirLabel(direction)}`} value={largePeople.length} color="bg-blue-50 border-blue-200 text-blue-700" />
+          <StatCard label={`小車（自行/共乘）— ${dirLabel(direction)}`} value={smallPeople.length} color="bg-green-50 border-green-200 text-green-700" />
           <StatCard
             label="其他/未填"
             value={regs.length - largePeople.length - smallPeople.length}
@@ -657,9 +789,12 @@ export default function CarrangementDetailPage() {
           />
         </div>
 
-        {/* ── 大車排班 ── */}
+        {/* ── 大車排車 ── */}
         <section>
-          <h2 className="text-base font-bold text-gray-700 mb-4">🚌 大車排車</h2>
+          <h2 className="text-base font-bold text-gray-700 mb-4">
+            🚌 大車排車
+            <span className="text-sm font-normal text-gray-500 ml-2">{dirLabel(direction)}</span>
+          </h2>
 
           {/* 設定列 */}
           <div className="flex items-end gap-3 mb-4 flex-wrap">
@@ -689,7 +824,7 @@ export default function CarrangementDetailPage() {
             </button>
             {cars.length > 0 && (
               <button
-                onClick={() => { if (window.confirm('確定清除所有排車結果？')) setCars([]) }}
+                onClick={() => { if (window.confirm(`確定清除「${dirLabel(direction)}」所有排車結果？`)) setCars([]) }}
                 className="px-3 py-2 text-sm border rounded-lg text-gray-500 hover:bg-gray-100 self-end"
               >
                 清除
@@ -768,7 +903,7 @@ export default function CarrangementDetailPage() {
                     <div className="ml-auto shrink-0">
                       {car.access_token ? (
                         <button
-                          onClick={() => copyLink(car.access_token, car.car_name)}
+                          onClick={() => copyLink(car.access_token, `${dirLabel(direction)}・${car.car_name}`)}
                           className="text-xs text-blue-600 hover:text-blue-800 hover:underline px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                           title={`複製 ${car.car_name} 領隊連結`}
                         >
@@ -855,7 +990,10 @@ export default function CarrangementDetailPage() {
         {/* ── 小車配對 ── */}
         {smallPeople.length > 0 && (
           <section>
-            <h2 className="text-base font-bold text-gray-700 mb-2">🚗 小車配對</h2>
+            <h2 className="text-base font-bold text-gray-700 mb-2">
+              🚗 小車配對
+              <span className="text-sm font-normal text-gray-500 ml-2">{dirLabel(direction)}</span>
+            </h2>
             <p className="text-xs text-gray-400 mb-4">
               依報名填寫的「共乘者姓名」自動配對司機與乘客。找不到司機的乘客可用下拉選單手動指定搭哪台小車。
             </p>
@@ -875,7 +1013,7 @@ export default function CarrangementDetailPage() {
                     {g.allMembers.map(r => {
                       const cls       = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
                       const isDriver  = r.registration_id === g.key
-                      const carpoolNm = r.answers?.carpool_up ?? ''
+                      const carpoolNm = r.answers?.[fieldKeysFor(direction).carpool] ?? ''
                       const isOrphan  = orphans.some(o => o.registration_id === r.registration_id)
                       return (
                         <div key={r.registration_id} className={`flex items-center gap-2 px-4 py-2 text-sm ${isOrphan ? 'bg-orange-50' : ''}`}>
@@ -915,7 +1053,7 @@ export default function CarrangementDetailPage() {
                   <div className="divide-y">
                     {unassignedOrphans.map(r => {
                       const cls       = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
-                      const carpoolNm = r.answers?.carpool_up ?? ''
+                      const carpoolNm = r.answers?.[fieldKeysFor(direction).carpool] ?? ''
                       return (
                         <div key={r.registration_id} className="flex items-center gap-2 px-4 py-2 text-sm">
                           <span className="flex-1 font-medium">{getName(r)}</span>
@@ -949,47 +1087,51 @@ export default function CarrangementDetailPage() {
           </section>
         )}
 
-        {/* ── 小車領隊 ── */}
-        {smallPeople.length > 0 && (
-          <section>
-            <h2 className="text-base font-bold text-gray-700 mb-3">🚗 小車領隊</h2>
-            <div className="flex items-center gap-3 flex-wrap">
-              <select
-                value={smallCarLeaderRegId}
-                onChange={e => setSmallCarLeaderRegId(e.target.value)}
-                className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-full max-w-xs"
-              >
-                <option value="">（未設定）</option>
-                {regs.filter(r => r.student_id).map(r => {
-                  const cls = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
-                  return (
-                    <option key={r.registration_id} value={r.registration_id}>
-                      {getName(r)}{cls ? `　${cls}` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-              {smallCarLeaderToken ? (
-                <button
-                  onClick={() => copyLink(smallCarLeaderToken, '小車領隊')}
-                  className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-                >
-                  🔗 複製小車領隊連結
-                </button>
-              ) : (
-                <span className="text-xs text-gray-400">（儲存後可複製連結）</span>
-              )}
-            </div>
-            <p className="text-xs text-gray-400 mt-2">
-              小車領隊可查看並操作所有小車成員的報到狀況。<br />
-              ⚠️ 每次儲存後連結會更新，請重新複製。
-            </p>
-          </section>
-        )}
-
-        {/* ── 總領隊 ── */}
+        {/* ── 小車領隊（上下山共用） ── */}
         <section>
-          <h2 className="text-base font-bold text-gray-700 mb-3">👑 總領隊</h2>
+          <h2 className="text-base font-bold text-gray-700 mb-3">
+            🚗 小車領隊
+            <span className="text-xs font-normal text-gray-400 ml-2">（上下山共用）</span>
+          </h2>
+          <div className="flex items-center gap-3 flex-wrap">
+            <select
+              value={smallCarLeaderRegId}
+              onChange={e => setSmallCarLeaderRegId(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-full max-w-xs"
+            >
+              <option value="">（未設定）</option>
+              {regs.filter(r => r.student_id).map(r => {
+                const cls = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
+                return (
+                  <option key={r.registration_id} value={r.registration_id}>
+                    {getName(r)}{cls ? `　${cls}` : ''}
+                  </option>
+                )
+              })}
+            </select>
+            {smallCarLeaderToken ? (
+              <button
+                onClick={() => copyLink(smallCarLeaderToken, '小車領隊')}
+                className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+              >
+                🔗 複製小車領隊連結
+              </button>
+            ) : (
+              <span className="text-xs text-gray-400">（儲存後可複製連結）</span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            小車領隊可查看並操作所有小車成員的報到狀況（含上山與下山）。<br />
+            ⚠️ 每次儲存後連結會更新，請重新複製。
+          </p>
+        </section>
+
+        {/* ── 總領隊（上下山共用） ── */}
+        <section>
+          <h2 className="text-base font-bold text-gray-700 mb-3">
+            👑 總領隊
+            <span className="text-xs font-normal text-gray-400 ml-2">（上下山共用）</span>
+          </h2>
           <div className="flex items-center gap-3 flex-wrap">
             <select
               value={headLeaderRegId}
@@ -1018,7 +1160,7 @@ export default function CarrangementDetailPage() {
             )}
           </div>
           <p className="text-xs text-gray-400 mt-2">
-            總領隊看板可即時查看所有大車＋小車的報到進度。<br />
+            總領隊看板可即時查看所有大車＋小車的報到進度（含上山與下山）。<br />
             ⚠️ 每次儲存排車後 token 會更新，請重新複製連結再傳給領隊。
           </p>
         </section>

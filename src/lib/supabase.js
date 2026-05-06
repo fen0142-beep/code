@@ -702,34 +702,43 @@ export async function getEventRegistrationsDetail(eventId) {
 
 /**
  * 取得活動的排班結果（大車 + 小車，含成員、領隊、法師）
+ * @param {string} eventId
+ * @param {'up'|'down'|null} direction 方向，傳 null 取全部（向後相容）
  */
-export async function getCarArrangement(eventId) {
-  const { data, error } = await supabase
+export async function getCarArrangement(eventId, direction = null) {
+  let query = supabase
     .from('car_assignments')
     .select(`
-      car_id, car_name, seats, car_type, note, access_token, sort_order,
+      car_id, car_name, seats, car_type, note, access_token, sort_order, direction,
       car_members ( registration_id ),
       car_leaders ( registration_id ),
       car_monks ( id, monk_id, checked_in_at )
     `)
     .eq('event_id', eventId)
-    .order('sort_order', { ascending: true })
+
+  if (direction) query = query.eq('direction', direction)
+
+  const { data, error } = await query.order('sort_order', { ascending: true })
 
   if (error) return { cars: [], error: error.message }
   return { cars: data || [], error: null }
 }
 
 /**
- * 儲存排班結果（大車 + 小車，全量取代）
+ * 儲存排班結果（大車 + 小車，全量取代「指定方向」的車輛）
+ * @param {string} eventId
  * @param {Array} largeCars   大車陣列
  * @param {Array} smallGroups 小車群組（finalSmallGroups，含 key=司機 reg_id、allMembers）
+ * @param {'up'|'down'} direction 預設 'down'
  */
-export async function saveCarArrangement(eventId, largeCars, smallGroups = []) {
-  // 刪除此活動所有車輛（CASCADE 刪 car_members、car_leaders）
+export async function saveCarArrangement(eventId, largeCars, smallGroups = [], direction = 'down') {
+  // 只刪除此活動「指定方向」的車輛（CASCADE 刪 car_members、car_leaders、car_monks）
+  // 注意：另一個方向的排車不能動
   const { error: delErr } = await supabase
     .from('car_assignments')
     .delete()
     .eq('event_id', eventId)
+    .eq('direction', direction)
 
   if (delErr) return { success: false, error: delErr.message }
   if (largeCars.length === 0 && smallGroups.length === 0) return { success: true, error: null }
@@ -737,19 +746,21 @@ export async function saveCarArrangement(eventId, largeCars, smallGroups = []) {
   // 組合所有車輛列
   const carRows = [
     ...largeCars.map((c, i) => ({
-      event_id: eventId,
-      car_name: c.car_name,
-      seats:    c.seats,
-      car_type: 'large',
-      note:     c.note || null,
+      event_id:  eventId,
+      car_name:  c.car_name,
+      seats:     c.seats,
+      car_type:  'large',
+      direction,
+      note:      c.note || null,
       sort_order: i,
     })),
     ...smallGroups.map((g, i) => ({
-      event_id: eventId,
-      car_name: `小車 ${i + 1}`,
-      seats:    g.allMembers.length,
-      car_type: 'small',
-      note:     g.key,   // 司機的 registration_id，重載時用來重建孤兒指派
+      event_id:  eventId,
+      car_name:  `小車 ${i + 1}`,
+      seats:     g.allMembers.length,
+      car_type:  'small',
+      direction,
+      note:      g.key,   // 司機的 registration_id，重載時用來重建孤兒指派
       sort_order: i,
     })),
   ]
@@ -968,7 +979,7 @@ export async function getCarByToken(token) {
   const { data, error } = await supabase
     .from('car_assignments')
     .select(`
-      car_id, car_name, seats, event_id, sort_order,
+      car_id, car_name, seats, event_id, sort_order, direction,
       events ( name, date_start ),
       car_members (
         registration_id,
@@ -1019,7 +1030,7 @@ export async function getAllCarsProgress(eventId) {
   const { data, error } = await supabase
     .from('car_assignments')
     .select(`
-      car_id, car_name, seats, sort_order, car_type,
+      car_id, car_name, seats, sort_order, car_type, direction,
       car_leaders ( registration_id ),
       car_members (
         registration_id,
@@ -1045,7 +1056,7 @@ export async function getAllSmallCarsProgress(eventId) {
   const { data, error } = await supabase
     .from('car_assignments')
     .select(`
-      car_id, car_name, seats, sort_order, car_type,
+      car_id, car_name, seats, sort_order, car_type, direction,
       car_leaders ( registration_id ),
       car_members (
         registration_id,

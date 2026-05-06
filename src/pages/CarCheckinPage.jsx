@@ -30,6 +30,17 @@ const formatDate = (dateStr) => {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
 }
 
+// 上下山方向 badge（顯示用）
+function DirectionBadge({ direction }) {
+  if (direction === 'up') {
+    return <span className="text-xs bg-blue-100 text-blue-700 border border-blue-200 rounded-full px-1.5 shrink-0">🚌 上山</span>
+  }
+  if (direction === 'down') {
+    return <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-1.5 shrink-0">🚍 下山</span>
+  }
+  return null
+}
+
 // 判斷是否提前上山（任一答案日期早於活動起始日）
 // 回傳 "X月X日已上山" 字串，或 null
 function getPreArriveInfo(answers, eventDateStart) {
@@ -293,7 +304,18 @@ export default function CarCheckinPage() {
         <div className="bg-amber-700 text-white px-4 py-5 shadow-md">
           <div className="max-w-lg mx-auto">
             <div className="text-xs opacity-75 mb-0.5">{eventName}　{eventDate}</div>
-            <div className="text-xl font-bold">{car.car_name} 報到</div>
+            <div className="text-xl font-bold flex items-center gap-2 flex-wrap">
+              <span>{car.car_name} 報到</span>
+              {car.direction && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                  car.direction === 'up'
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'bg-amber-50 text-amber-900'
+                }`}>
+                  {car.direction === 'up' ? '🚌 上山' : '🚍 下山'}
+                </span>
+              )}
+            </div>
             <div className="flex items-end gap-2 mt-3">
               <span className="text-4xl font-bold leading-none">{checkedIn}</span>
               <span className="text-base opacity-75 pb-0.5">/ {total} 人　{pct}%</span>
@@ -490,6 +512,7 @@ export default function CarCheckinPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-800">{c.car_name}</span>
+                      <DirectionBadge direction={c.direction} />
                       {done && <span className="text-xs bg-green-100 text-green-700 border border-green-200 rounded-full px-1.5">全員出發 ✓</span>}
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">
@@ -660,6 +683,7 @@ export default function CarCheckinPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-800">{c.car_name}</span>
+                      <DirectionBadge direction={c.direction} />
                       {done && <span className="text-xs bg-green-100 text-green-700 border border-green-200 rounded-full px-1.5">全員到齊 ✓</span>}
                     </div>
                     {leaderNames.length > 0 && (
@@ -777,6 +801,7 @@ export default function CarCheckinPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium text-sm text-gray-700">{c.car_name}</span>
+                              <DirectionBadge direction={c.direction} />
                               {done && <span className="text-xs bg-green-100 text-green-700 border border-green-200 rounded-full px-1.5">全員出發 ✓</span>}
                             </div>
                             <div className="text-xs text-gray-400 mt-0.5">
