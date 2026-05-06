@@ -401,6 +401,31 @@ export async function checkIn(registrationId) {
 }
 
 /**
+ * 全車到齊：把某台車所有成員一次標記為已報到
+ */
+export async function checkInAllCar(carId) {
+  // 先取得此車所有 registration_id
+  const { data, error: fetchErr } = await supabase
+    .from('car_members')
+    .select('registration_id')
+    .eq('car_id', carId)
+
+  if (fetchErr) return { success: false, error: fetchErr.message }
+
+  const ids = (data ?? []).map(m => m.registration_id)
+  if (ids.length === 0) return { success: true, error: null }
+
+  const { error } = await supabase
+    .from('registrations')
+    .update({ checked_in_at: new Date().toISOString() })
+    .in('registration_id', ids)
+    .is('checked_in_at', null)   // 只更新尚未報到的
+
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
+/**
  * 取消報到
  */
 export async function uncheckIn(registrationId) {

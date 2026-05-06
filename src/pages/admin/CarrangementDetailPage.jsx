@@ -822,7 +822,7 @@ export default function CarrangementDetailPage() {
                 className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-full max-w-xs"
               >
                 <option value="">（未設定）</option>
-                {regs.map(r => {
+                {regs.filter(r => r.student_id).map(r => {
                   const cls = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
                   return (
                     <option key={r.registration_id} value={r.registration_id}>
@@ -859,7 +859,7 @@ export default function CarrangementDetailPage() {
               className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 w-full max-w-xs"
             >
               <option value="">（未設定）</option>
-              {regs.map(r => {
+              {regs.filter(r => r.student_id).map(r => {
                 const cls = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
                 return (
                   <option key={r.registration_id} value={r.registration_id}>
