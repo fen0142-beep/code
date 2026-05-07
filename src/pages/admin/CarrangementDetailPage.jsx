@@ -59,12 +59,15 @@ const isSmallCar       = (ans, dir) => isSmallDriver(ans, dir) || isSmallPasseng
 // isLargeCar 接受完整 reg 物件；訪客與學員邏輯一致
 // - 有選「自行開車」或「搭學員」→ 小車（不管是否訪客）
 // - 有選「精舍」→ 大車
-// - 未填 → 訪客預設大車；學員算「其他/未填」
+// - 訪客有填值但不含「精舍」（如「自行」）→ 不算大車（避免誤排上不該搭精舍車的訪客）
+// - 完全沒填 → 訪客預設大車；學員算「其他/未填」
 const isLargeCar = (r, dir) => {
   if (isSmallDriver(r.answers, dir) || isSmallPassenger(r.answers, dir)) return false
   const t = r.answers?.[fieldKeysFor(dir).transport] ?? ''
   if (r.student_id) return t.includes('精舍')
-  return true  // 訪客未填 → 預設大車
+  // 訪客：有填值 → 須含「精舍」才算大車；完全沒填（舊資料）→ 預設大車
+  if (t) return t.includes('精舍')
+  return true
 }
 
 // ─── 小車配對（純運算，不存 DB）────────────────────────────────

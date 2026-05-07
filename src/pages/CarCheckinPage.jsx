@@ -679,22 +679,24 @@ export default function CarCheckinPage() {
     const smallTotal   = smallCars.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
     const smallChecked = smallCars.reduce((s, c) => s + (c.car_members?.filter(isCheckedIn).length ?? 0), 0)
 
-    // 實際回山總人數（含提前上山）— 按身份統計全部人（依當前方向）
-    const identityCounts = {}
+    // 「回報聯絡組資訊」統計（僅上山 Tab 顯示）
+    // 法師：已點報到才算
+    // 義工：預設已報到，全部納入（不需刷卡）
+    // 信眾：已刷卡報到才算
+    const reportCounts = { 法師: 0, 義工: 0, 信眾: 0 }
     for (const c of carsInDir) {
       for (const m of (c.car_members ?? [])) {
-        const id = m.registrations?.answers?.identity ?? '未填'
-        identityCounts[id] = (identityCounts[id] ?? 0) + 1
+        const id = m.registrations?.answers?.identity
+        if (id === '義工') {
+          reportCounts.義工 += 1
+        } else if (id === '信眾' && isCheckedIn(m)) {
+          reportCounts.信眾 += 1
+        }
       }
       for (const cm of (c.car_monks ?? [])) {
-        identityCounts['法師'] = (identityCounts['法師'] ?? 0) + 1
+        if (cm.checked_in_at) reportCounts.法師 += 1
       }
     }
-    const IDENTITY_ORDER = ['法師', '義工', '信眾']
-    const identityStats = [
-      ...IDENTITY_ORDER.filter(k => identityCounts[k]).map(k => [k, identityCounts[k]]),
-      ...Object.entries(identityCounts).filter(([k]) => !IDENTITY_ORDER.includes(k)),
-    ]
 
     // Tab 標籤上顯示車數（兩方向）
     const carCountUp   = allCars.filter(c => (c.direction ?? 'down') === 'up').length
@@ -739,12 +741,12 @@ export default function CarCheckinPage() {
               <span>已到 <strong className="text-xl">{checkedAll}</strong></span>
               <span>未到 <strong className="text-xl">{uncheckedAll}</strong></span>
             </div>
-            {identityStats.length > 0 && (
-              <div className="flex gap-4 mt-1.5 text-sm flex-wrap opacity-80">
-                {identityStats.map(([label, count]) => (
-                  <span key={label}>{label} <strong>{count}</strong></span>
-                ))}
-                <span className="text-xs opacity-60 self-center">（{headDirection === 'up' ? '上山' : '下山'}回山總數）</span>
+            {headDirection === 'up' && (
+              <div className="flex gap-4 mt-1.5 text-sm flex-wrap opacity-90">
+                <span>法師 <strong>{reportCounts.法師}</strong></span>
+                <span>義工 <strong>{reportCounts.義工}</strong></span>
+                <span>信眾 <strong>{reportCounts.信眾}</strong></span>
+                <span className="text-xs opacity-60 self-center">（回報聯絡組資訊）</span>
               </div>
             )}
           </div>
