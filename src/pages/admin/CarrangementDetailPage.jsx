@@ -1012,7 +1012,7 @@ export default function CarrangementDetailPage() {
                             onClick={() => document.getElementById(`car-${o.tempId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                             className="underline hover:text-red-900 font-medium"
                           >
-                            {o.name}（{o.total}/{o.seats}，+{o.over}）
+                            {o.name}（已排 {o.total} 人／{o.seats}，超額 {o.over} 人）
                           </button>
                         </span>
                       ))}
@@ -1031,7 +1031,7 @@ export default function CarrangementDetailPage() {
                       <button
                         key={car.tempId}
                         onClick={() => document.getElementById(`car-${car.tempId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                        className={`text-left border rounded-lg p-2 text-xs hover:shadow transition-shadow ${
+                        className={`text-left border rounded-lg p-2.5 text-sm hover:shadow transition-shadow ${
                           overflow > 0
                             ? 'bg-red-50 border-red-400'
                             : remaining === 0
@@ -1042,19 +1042,21 @@ export default function CarrangementDetailPage() {
                         <div className="flex items-center justify-between font-semibold">
                           <span className="truncate text-gray-800">{car.car_name}</span>
                           {overflow > 0 ? (
-                            <span className="text-red-600 font-bold whitespace-nowrap">+{overflow}</span>
+                            <span className="text-red-600 font-bold whitespace-nowrap">超額 {overflow} 人</span>
                           ) : remaining === 0 ? (
                             <span className="text-gray-500 whitespace-nowrap">已滿</span>
                           ) : (
-                            <span className="text-blue-700 whitespace-nowrap">剩 {remaining}</span>
+                            <span className="text-blue-700 whitespace-nowrap">尚餘 {remaining} 人</span>
                           )}
                         </div>
-                        <div className="text-gray-700 mt-0.5">
-                          <strong className={overflow > 0 ? 'text-red-600' : ''}>{totalInCar}</strong>
-                          <span className="text-gray-400">/{car.seats}</span>
-                          {monkCount > 0 && <span className="text-purple-600 ml-1">含法 {monkCount}</span>}
+                        <div className="text-gray-700 mt-1 text-xs">
+                          已排 <strong className={overflow > 0 ? 'text-red-600' : ''}>{totalInCar}</strong> 人
+                          <span className="text-gray-400">／{car.seats}</span>
+                          {monkCount > 0 && (
+                            <span className="text-purple-600 ml-2">含法師 {monkCount} 人</span>
+                          )}
                         </div>
-                        <div className="bg-white/80 rounded h-1.5 mt-1 overflow-hidden">
+                        <div className="bg-white/80 rounded h-1.5 mt-1.5 overflow-hidden">
                           <div
                             className={`h-full transition-all ${overflow > 0 ? 'bg-red-500' : 'bg-blue-500'}`}
                             style={{ width: `${Math.min(100, pct)}%` }}
