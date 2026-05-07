@@ -632,11 +632,22 @@ export default function CarrangementDetailPage() {
   }
 
   function toggleMonk(carIdx, monkId) {
-    setCars(prev => prev.map((c, i) => {
-      if (i !== carIdx) return c
-      const has = (c.monks ?? []).includes(monkId)
-      return { ...c, monks: has ? c.monks.filter(id => id !== monkId) : [...(c.monks ?? []), monkId] }
-    }))
+    // 一位法師同方向只能在一台車：點同台 = 取消；點別台 = 從原車移過來
+    setCars(prev => {
+      const sourceIdx = prev.findIndex(c => (c.monks ?? []).includes(monkId))
+      if (sourceIdx === carIdx) {
+        // 點同台車 → 取消指派
+        return prev.map((c, i) => i === carIdx
+          ? { ...c, monks: (c.monks ?? []).filter(id => id !== monkId) }
+          : c)
+      }
+      // 點別台車 → 從原車移除（若有），加到目標車
+      return prev.map((c, i) => {
+        if (i === sourceIdx) return { ...c, monks: (c.monks ?? []).filter(id => id !== monkId) }
+        if (i === carIdx)    return { ...c, monks: [...(c.monks ?? []), monkId] }
+        return c
+      })
+    })
   }
 
   function updateCarName(carIdx, name) {
@@ -645,12 +656,13 @@ export default function CarrangementDetailPage() {
 
   async function handleSave() {
     // ── 儲存前檢查 ──
-    // 1. 人員爆掉：列出所有超額車輛，強制確認
+    // 1. 人員爆掉：列出所有超額車輛（已含法師人數），強制確認
     const overflowList = []
     for (const dir of ['up', 'down']) {
       for (const car of carsByDir[dir]) {
-        if (car.members.length > car.seats) {
-          overflowList.push(`${dirLabel(dir)}・${car.car_name}（${car.members.length}/${car.seats}，超額 +${car.members.length - car.seats}）`)
+        const total = car.members.length + (car.monks ?? []).length
+        if (total > car.seats) {
+          overflowList.push(`${dirLabel(dir)}・${car.car_name}（${total}/${car.seats}，超額 +${total - car.seats}）`)
         }
       }
     }
@@ -978,26 +990,33 @@ export default function CarrangementDetailPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {cars.map((car, ci) => (
+              {cars.map((car, ci) => {
+                const monkCount   = (car.monks ?? []).length
+                const totalInCar  = car.members.length + monkCount
+                const overflow    = totalInCar - car.seats
+                return (
                 <div key={car.tempId} className="bg-white border rounded-xl shadow-sm overflow-hidden">
                   {/* 車次標題 */}
-                  <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-b">
+                  <div className="flex items-center gap-3 px-4 py-3 bg-amber-100 border-b-2 border-amber-300">
                     <input
                       value={car.car_name}
                       onChange={e => updateCarName(ci, e.target.value)}
-                      className="font-semibold text-sm bg-transparent border-b border-transparent hover:border-gray-300 focus:border-amber-400 focus:outline-none px-1 py-0.5 w-28"
+                      className="font-semibold text-sm text-amber-900 bg-transparent border-b border-transparent hover:border-amber-400 focus:border-amber-600 focus:outline-none px-1 py-0.5 w-28"
                     />
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-amber-900/80">
                       座位數：<strong>{car.seats}</strong>
-                      <span className="mx-2 text-gray-300">|</span>
-                      已排入：<strong className={car.members.length > car.seats ? 'text-red-600' : ''}>{car.members.length}</strong>
+                      <span className="mx-2 text-amber-400">|</span>
+                      已排入：<strong className={overflow > 0 ? 'text-red-600' : ''}>{totalInCar}</strong>
+                      {monkCount > 0 && (
+                        <span className="ml-1 text-purple-700">（含法師 {monkCount}）</span>
+                      )}
                     </span>
-                    {car.members.length > car.seats && (
+                    {overflow > 0 && (
                       <span className="text-xs font-bold text-white bg-red-600 rounded-full px-2.5 py-0.5 animate-pulse">
-                        ⚠️ 超額 +{car.members.length - car.seats}
+                        ⚠️ 超額 +{overflow}
                       </span>
                     )}
-                    {car.members.length === car.seats && (
+                    {overflow === 0 && totalInCar === car.seats && (
                       <span className="text-xs text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">已滿</span>
                     )}
                     {car.leaders.length > 0 && (
@@ -1043,24 +1062,31 @@ export default function CarrangementDetailPage() {
                     )}
                   </div>
 
-                  {/* 法師指派（可選，不強制） */}
+                  {/* 法師指派（可選，不強制；一位法師同方向只能在一台車） */}
                   {allMonks.length > 0 && (
                     <div className="px-4 py-3 bg-purple-50 border-t border-purple-100">
-                      <div className="text-xs font-medium text-purple-600 mb-2">🏯 搭乘法師（可選）</div>
+                      <div className="text-xs font-medium text-purple-600 mb-2">🏯 搭乘法師（可選，點別車會自動搬過來）</div>
                       <div className="flex flex-wrap gap-2">
                         {allMonks.map(monk => {
-                          const assigned = (car.monks ?? []).includes(monk.id)
+                          const assignedCarIdx    = cars.findIndex(c => (c.monks ?? []).includes(monk.id))
+                          const assignedHere      = assignedCarIdx === ci
+                          const assignedElsewhere = assignedCarIdx >= 0 && assignedCarIdx !== ci
                           return (
                             <button
                               key={monk.id}
                               onClick={() => toggleMonk(ci, monk.id)}
+                              title={assignedElsewhere ? `目前在 ${cars[assignedCarIdx].car_name}，點選會搬過來` : ''}
                               className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                                assigned
+                                assignedHere
                                   ? 'bg-purple-600 text-white border-purple-600'
+                                  : assignedElsewhere
+                                  ? 'bg-gray-100 text-gray-400 border-gray-200 line-through hover:bg-purple-50 hover:text-purple-500 hover:border-purple-300 hover:no-underline'
                                   : 'bg-white text-gray-600 border-gray-300 hover:border-purple-400 hover:text-purple-600'
                               }`}
                             >
-                              {assigned ? '✓ ' : ''}{monk.name}
+                              {assignedHere && '✓ '}
+                              {assignedElsewhere && `（${cars[assignedCarIdx].car_name}）`}
+                              {monk.name}
                             </button>
                           )
                         })}
@@ -1068,7 +1094,8 @@ export default function CarrangementDetailPage() {
                     </div>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
