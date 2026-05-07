@@ -96,6 +96,8 @@ export default function CarCheckinPage() {
   const [allCars, setAllCars]     = useState([])
   const [expandedCarId, setExpandedCarId] = useState(null)
   const [expandedSmallCarId, setExpandedSmallCarId] = useState(null)
+  // 總領隊看板：上山/下山 Tab（'up' / 'down'）
+  const [headDirection, setHeadDirection] = useState('up')
 
   // 共用
   const [scanMsg, setScanMsg]     = useState('')
@@ -257,7 +259,14 @@ export default function CarCheckinPage() {
         found = (c.car_members ?? []).find(
           m => m.registrations?.student_id === code || m.registration_id === code
         )
-        if (found) { foundCar = c; break }
+        if (found) {
+          foundCar = c
+          // 總領隊看板：若掃到的人在另一方向的車，自動切換 Tab
+          if (mode === 'head' && c.direction && c.direction !== headDirection) {
+            setHeadDirection(c.direction)
+          }
+          break
+        }
       }
     }
 
@@ -410,6 +419,42 @@ export default function CarCheckinPage() {
 
         {/* 成員清單 */}
         <div className="px-4 pt-3 max-w-lg mx-auto space-y-2">
+          {/* 法師列表（排最上面，提醒領隊優先勾選） */}
+          {monks.length > 0 && (
+            <div className="mb-1">
+              <div className="text-xs text-purple-500 font-semibold px-1 mb-1.5">🛕 法師（手動點選報到）</div>
+              {monks.map(cm => {
+                const chk = !!cm.checked_in_at
+                return (
+                  <div
+                    key={cm.id}
+                    className={`flex items-center gap-3 bg-white rounded-xl px-4 py-3 shadow-sm border mb-2 transition-opacity ${
+                      chk ? 'border-green-200 opacity-60' : 'border-purple-300'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                      <span className={`font-medium ${chk ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                        {cm.temple_monks?.name ?? '（未知）'}
+                      </span>
+                      <span className="text-xs bg-purple-100 text-purple-700 rounded-full px-1.5 shrink-0">法師</span>
+                    </div>
+                    <button
+                      onClick={() => handleToggleMonkCheckin(cm.id, cm.checked_in_at)}
+                      className={`shrink-0 px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                        chk
+                          ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500'
+                          : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                      }`}
+                    >
+                      {chk ? '已到' : '報到'}
+                    </button>
+                  </div>
+                )
+              })}
+              <div className="border-t border-dashed border-gray-200 my-3"></div>
+            </div>
+          )}
+
           {sorted.map(member => {
             const name       = getMemberName(member)
             const guest      = isGuest(member)
@@ -463,41 +508,6 @@ export default function CarCheckinPage() {
 
           {members.length === 0 && monks.length === 0 && (
             <div className="text-center text-gray-400 py-12 text-sm">此車目前無成員</div>
-          )}
-
-          {/* 法師列表（無 QR code，手動點選） */}
-          {monks.length > 0 && (
-            <div className="mt-2">
-              <div className="text-xs text-purple-400 px-1 mb-1.5">法師（手動點選報到）</div>
-              {monks.map(cm => {
-                const chk = !!cm.checked_in_at
-                return (
-                  <div
-                    key={cm.id}
-                    className={`flex items-center gap-3 bg-white rounded-xl px-4 py-3 shadow-sm border mb-2 transition-opacity ${
-                      chk ? 'border-green-200 opacity-60' : 'border-purple-200'
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                      <span className={`font-medium ${chk ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                        {cm.temple_monks?.name ?? '（未知）'}
-                      </span>
-                      <span className="text-xs bg-purple-100 text-purple-700 rounded-full px-1.5 shrink-0">法師</span>
-                    </div>
-                    <button
-                      onClick={() => handleToggleMonkCheckin(cm.id, cm.checked_in_at)}
-                      className={`shrink-0 px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-                        chk
-                          ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500'
-                          : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
-                      }`}
-                    >
-                      {chk ? '已到' : '報到'}
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
           )}
         </div>
 
@@ -651,15 +661,17 @@ export default function CarCheckinPage() {
     const dateStart  = headLeader?.events?.date_start
     const eventDate  = formatDate(dateStart)
 
-    const largeCars = allCars.filter(c => c.car_type === 'large')
-    const smallCars = allCars.filter(c => c.car_type === 'small')
+    // 依方向過濾（總領隊看板分上下山 Tab，上下山資訊不再混在一起）
+    const carsInDir = allCars.filter(c => (c.direction ?? 'down') === headDirection)
+    const largeCars = carsInDir.filter(c => c.car_type === 'large')
+    const smallCars = carsInDir.filter(c => c.car_type === 'small')
 
-    const monkTotalAll   = allCars.reduce((s, c) => s + (c.car_monks?.length ?? 0), 0)
-    const monkCheckedAll = allCars.reduce((s, c) => s + (c.car_monks?.filter(m => !!m.checked_in_at).length ?? 0), 0)
+    const monkTotalAll   = carsInDir.reduce((s, c) => s + (c.car_monks?.length ?? 0), 0)
+    const monkCheckedAll = carsInDir.reduce((s, c) => s + (c.car_monks?.filter(m => !!m.checked_in_at).length ?? 0), 0)
 
     // 應到 = 當天搭車出發的人（排除提前上山），法師一律算
     const isPreArrived = (m) => !!getPreArriveInfo(m.registrations?.answers, dateStart)
-    const todayMembers  = allCars.flatMap(c => c.car_members ?? []).filter(m => !isPreArrived(m))
+    const todayMembers  = carsInDir.flatMap(c => c.car_members ?? []).filter(m => !isPreArrived(m))
     const totalAll      = todayMembers.length + monkTotalAll
     const checkedAll    = todayMembers.filter(isCheckedIn).length + monkCheckedAll
     const uncheckedAll  = totalAll - checkedAll
@@ -667,9 +679,9 @@ export default function CarCheckinPage() {
     const smallTotal   = smallCars.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
     const smallChecked = smallCars.reduce((s, c) => s + (c.car_members?.filter(isCheckedIn).length ?? 0), 0)
 
-    // 實際回山總人數（含提前上山）— 按身份統計全部人
+    // 實際回山總人數（含提前上山）— 按身份統計全部人（依當前方向）
     const identityCounts = {}
-    for (const c of allCars) {
+    for (const c of carsInDir) {
       for (const m of (c.car_members ?? [])) {
         const id = m.registrations?.answers?.identity ?? '未填'
         identityCounts[id] = (identityCounts[id] ?? 0) + 1
@@ -684,6 +696,10 @@ export default function CarCheckinPage() {
       ...Object.entries(identityCounts).filter(([k]) => !IDENTITY_ORDER.includes(k)),
     ]
 
+    // Tab 標籤上顯示車數（兩方向）
+    const carCountUp   = allCars.filter(c => (c.direction ?? 'down') === 'up').length
+    const carCountDown = allCars.filter(c => (c.direction ?? 'down') === 'down').length
+
     return (
       <div className="min-h-screen bg-amber-50 pb-24">
         <ScanToast msg={scanMsg} />
@@ -693,6 +709,31 @@ export default function CarCheckinPage() {
           <div className="max-w-lg mx-auto">
             <div className="text-xs opacity-75 mb-0.5">{eventName}　{eventDate}</div>
             <div className="text-xl font-bold">👑 總領隊看板</div>
+
+            {/* 上下山切換 Tab */}
+            <div className="flex gap-1 mt-3 bg-amber-900/40 rounded-lg p-1">
+              <button
+                onClick={() => { setHeadDirection('up'); setExpandedCarId(null) }}
+                className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  headDirection === 'up'
+                    ? 'bg-white text-amber-800 shadow-sm'
+                    : 'text-white/80 hover:text-white'
+                }`}
+              >
+                🚌 上山{carCountUp > 0 && <span className="text-xs opacity-70 ml-1">（{carCountUp}）</span>}
+              </button>
+              <button
+                onClick={() => { setHeadDirection('down'); setExpandedCarId(null) }}
+                className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  headDirection === 'down'
+                    ? 'bg-white text-amber-800 shadow-sm'
+                    : 'text-white/80 hover:text-white'
+                }`}
+              >
+                🚍 下山{carCountDown > 0 && <span className="text-xs opacity-70 ml-1">（{carCountDown}）</span>}
+              </button>
+            </div>
+
             <div className="flex gap-5 mt-3 text-sm">
               <span>應到 <strong className="text-xl">{totalAll}</strong></span>
               <span>已到 <strong className="text-xl">{checkedAll}</strong></span>
@@ -703,7 +744,7 @@ export default function CarCheckinPage() {
                 {identityStats.map(([label, count]) => (
                   <span key={label}>{label} <strong>{count}</strong></span>
                 ))}
-                <span className="text-xs opacity-60 self-center">（實際回山總數）</span>
+                <span className="text-xs opacity-60 self-center">（{headDirection === 'up' ? '上山' : '下山'}回山總數）</span>
               </div>
             )}
           </div>
@@ -764,6 +805,28 @@ export default function CarCheckinPage() {
 
                 {expanded && (
                   <div className="border-t divide-y">
+                    {/* 法師（排最上面，提醒優先勾選） */}
+                    {(c.car_monks ?? []).map(cm => {
+                      const chk = !!cm.checked_in_at
+                      return (
+                        <div key={cm.id} className={`flex items-center gap-3 px-4 py-2.5 bg-purple-50/40 ${chk ? 'opacity-55' : ''}`}>
+                          <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                            <span className={`text-sm truncate ${chk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
+                              {cm.temple_monks?.name ?? '（未知）'}
+                            </span>
+                            <span className="text-xs bg-purple-100 text-purple-700 rounded-full px-1.5 shrink-0">法師</span>
+                          </div>
+                          <button
+                            onClick={() => handleToggleMonkCheckin(cm.id, cm.checked_in_at)}
+                            className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                              chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
+                            }`}
+                          >
+                            {chk ? '已到' : '報到'}
+                          </button>
+                        </div>
+                      )
+                    })}
                     {sorted.map(member => {
                       const name     = getMemberName(member)
                       const guest    = isGuest(member)
@@ -783,28 +846,6 @@ export default function CarCheckinPage() {
                           </div>
                           <button
                             onClick={() => handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
-                            className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                              chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
-                            }`}
-                          >
-                            {chk ? '已到' : '報到'}
-                          </button>
-                        </div>
-                      )
-                    })}
-                    {/* 法師（手動點選） */}
-                    {(c.car_monks ?? []).map(cm => {
-                      const chk = !!cm.checked_in_at
-                      return (
-                        <div key={cm.id} className={`flex items-center gap-3 px-4 py-2.5 ${chk ? 'opacity-55' : ''}`}>
-                          <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
-                            <span className={`text-sm truncate ${chk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
-                              {cm.temple_monks?.name ?? '（未知）'}
-                            </span>
-                            <span className="text-xs bg-purple-100 text-purple-700 rounded-full px-1.5 shrink-0">法師</span>
-                          </div>
-                          <button
-                            onClick={() => handleToggleMonkCheckin(cm.id, cm.checked_in_at)}
                             className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
                               chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
                             }`}
@@ -914,6 +955,11 @@ export default function CarCheckinPage() {
 
           {allCars.length === 0 && (
             <div className="text-center text-gray-400 py-12 text-sm">尚無排車資料，請師父先完成排車並儲存</div>
+          )}
+          {allCars.length > 0 && carsInDir.length === 0 && (
+            <div className="text-center text-gray-400 py-12 text-sm">
+              {headDirection === 'up' ? '上山' : '下山'}尚無排車資料
+            </div>
           )}
         </div>
 

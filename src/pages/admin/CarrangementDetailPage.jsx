@@ -110,41 +110,76 @@ function autoArrange(largePeople, carCount, seats, relGroups) {
     monks: [],
   }))
 
-  const assigned    = new Set()
-  const studentToId = Object.fromEntries(largePeople.map(r => [r.student_id, r.registration_id]))
+  const assigned     = new Set()
+  const studentLarge = largePeople.filter(r => r.student_id)
+  const guestLarge   = largePeople.filter(r => !r.student_id)
+  const studentToId  = Object.fromEntries(studentLarge.map(r => [r.student_id, r.registration_id]))
 
-  // 關係群組中有 2 人以上搭大車的，視為需要安排在同車
-  const regGroups = relGroups
-    .map(rg => ({
-      name: rg.name,
-      ids: (rg.relationship_members ?? [])
-        .map(m => studentToId[m.student_id])
-        .filter(Boolean),
-    }))
-    .filter(rg => rg.ids.length >= 2)
-    .sort((a, b) => b.ids.length - a.ids.length)
+  // ── 建立「必須同車」的群組清單 ──────────────────────────────
+  // (1) 學員間關係連結（relGroups）
+  // (2) 訪客親友群（host 學員 + 所有備註提到 host 的訪客整組打包）
+  const groups = []
 
-  const avail   = car => car.seats - car.members.length
-  const bestCar = size => {
-    const fits = cars.filter(c => avail(c) >= size)
-    if (fits.length > 0) return fits.reduce((a, b) => avail(a) <= avail(b) ? a : b) // 最接近剛好滿的
-    return cars.reduce((a, b) => avail(a) >= avail(b) ? a : b) // 剩餘最多座位的
+  for (const rg of relGroups) {
+    const ids = (rg.relationship_members ?? [])
+      .map(m => studentToId[m.student_id])
+      .filter(Boolean)
+    if (ids.length >= 2) groups.push({ name: rg.name, ids })
   }
 
-  // 優先安排關係群組
-  for (const rg of regGroups) {
-    const todo = rg.ids.filter(id => !assigned.has(id))
-    if (!todo.length) continue
-    const car = bestCar(todo.length)
-    for (const id of todo) {
-      if (car.members.length < car.seats) { car.members.push(id); assigned.add(id) }
+  // 訪客 → host 配對：把同一 host 的所有訪客聚合成一組
+  const hostToGuests = {}
+  for (const guest of guestLarge) {
+    const matched = findGuestMatch(getGuestNote(guest), studentLarge)
+    if (matched) {
+      const hostId = matched.registration_id
+      if (!hostToGuests[hostId]) hostToGuests[hostId] = []
+      hostToGuests[hostId].push(guest.registration_id)
+    }
+  }
+  for (const [hostId, guestIds] of Object.entries(hostToGuests)) {
+    // 若 host 已在某個關係群組中，把訪客併入該群（避免重複建群）
+    const existing = groups.find(g => g.ids.includes(hostId))
+    if (existing) {
+      existing.ids.push(...guestIds)
+    } else {
+      groups.push({ name: '親友群', ids: [hostId, ...guestIds] })
     }
   }
 
-  // 剩餘學員依班別＋組別分成小群，整群為單位排入（不拆散）
-  const remaining = largePeople.filter(r => r.student_id && !assigned.has(r.registration_id))
+  // 大群組優先（座位需求大，越早處理越容易整組塞入）
+  groups.sort((a, b) => b.ids.length - a.ids.length)
 
-  // 按「班別 + 組別」分群
+  const avail = car => car.seats - car.members.length
+
+  // 整群一次塞入：優先找能裝下整組的車；裝不下時才依序塞剩餘空位最多的車
+  for (const group of groups) {
+    const todo = group.ids.filter(id => !assigned.has(id))
+    if (todo.length === 0) continue
+
+    // 優先找一台能整組裝下的車（取剩餘空位最接近 todo.length 的那台，不浪費）
+    const fits = cars.filter(c => avail(c) >= todo.length)
+    if (fits.length > 0) {
+      const target = fits.reduce((a, b) => avail(a) <= avail(b) ? a : b)
+      for (const id of todo) { target.members.push(id); assigned.add(id) }
+      continue
+    }
+
+    // 整群裝不下：依「剩餘空位多到少」排序，依序塞滿
+    let remainingTodo = [...todo]
+    const sortedCars = [...cars].sort((a, b) => avail(b) - avail(a))
+    for (const car of sortedCars) {
+      if (remainingTodo.length === 0) break
+      const space = avail(car)
+      if (space <= 0) continue
+      const fit = remainingTodo.slice(0, space)
+      for (const id of fit) { car.members.push(id); assigned.add(id) }
+      remainingTodo = remainingTodo.slice(space)
+    }
+  }
+
+  // 剩餘學員依班別＋組別分成小群，整群為單位排入（同班組儘量同車）
+  const remaining = largePeople.filter(r => r.student_id && !assigned.has(r.registration_id))
   const groupMap = {}
   for (const r of remaining) {
     const cls = getClasses(r)[0]
@@ -152,56 +187,27 @@ function autoArrange(largePeople, carCount, seats, relGroups) {
     if (!groupMap[key]) groupMap[key] = { className: cls?.class_name ?? '', groupName: cls?.group_name ?? '', members: [] }
     groupMap[key].members.push(r.registration_id)
   }
-
-  // 排序：先班別、再組別
-  const sortedGroups = Object.values(groupMap).sort((a, b) => {
+  const sortedClassGroups = Object.values(groupMap).sort((a, b) => {
     if (a.className !== b.className) return a.className.localeCompare(b.className, 'zh-TW')
     return a.groupName.localeCompare(b.groupName, 'zh-TW')
   })
 
-  // 逐人排入：嚴格不超過座位數，座位滿了移到下一台車（同班同組盡量同車，但不強制）
-  // 所有車都滿時，剩餘的人留在 unassigned 警示區
   let ci = 0
-  outer: for (const group of sortedGroups) {
+  outer: for (const group of sortedClassGroups) {
     for (const rid of group.members) {
-      // 往後找到有空位的車
       while (ci < carCount && cars[ci].members.length >= cars[ci].seats) ci++
-      if (ci >= carCount) break outer  // 全部座位都滿，停止排班
+      if (ci >= carCount) break outer
       cars[ci].members.push(rid)
       assigned.add(rid)
     }
   }
 
-  // 處理訪客：有備註且能配對到學員 → 盡量排同車，但不超過座位數
-  // 若該車已滿，整組（訪客＋親友）一起搬到有空位的車
-  // 沒備註或找不到學員 → 留在未分配警示區
-  const studentLarge = largePeople.filter(r => r.student_id)
-  for (const guest of largePeople.filter(r => !r.student_id && !assigned.has(r.registration_id))) {
-    const note    = getGuestNote(guest)
-    const matched = findGuestMatch(note, studentLarge)
-    if (matched) {
-      const currentCar = cars.find(c => c.members.includes(matched.registration_id))
-      if (currentCar) {
-        if (currentCar.members.length < currentCar.seats) {
-          // 車還有空位，直接把訪客塞進去
-          currentCar.members.push(guest.registration_id)
-        } else {
-          // 車已滿：找可以容納 2 人的車（訪客＋親友一起搬）
-          const carsWithRoom = cars.filter(c => c !== currentCar && c.members.length + 2 <= c.seats)
-          const targetCar = carsWithRoom.length > 0
-            // 優先選剩餘空位剛好夠的車（不浪費空間）
-            ? carsWithRoom.reduce((a, b) => (a.seats - a.members.length) <= (b.seats - b.members.length) ? a : b)
-            // 所有車都快滿了，選剩餘最多的
-            : cars.filter(c => c !== currentCar).reduce((a, b) => (a.seats - a.members.length) >= (b.seats - b.members.length) ? a : b)
-          // 把親友從原車移走
-          currentCar.members = currentCar.members.filter(id => id !== matched.registration_id)
-          currentCar.leaders = (currentCar.leaders ?? []).filter(id => id !== matched.registration_id)
-          // 親友＋訪客一起進新車
-          targetCar.members.push(matched.registration_id)
-          targetCar.members.push(guest.registration_id)
-        }
-        assigned.add(guest.registration_id)
-      }
+  // 剩餘訪客（沒填備註找不到 host，或先前 host 群組塞滿後溢出）：放任一還有空位的車
+  for (const guest of guestLarge.filter(g => !assigned.has(g.registration_id))) {
+    const target = cars.find(c => avail(c) > 0)
+    if (target) {
+      target.members.push(guest.registration_id)
+      assigned.add(guest.registration_id)
     }
   }
 
@@ -635,6 +641,33 @@ export default function CarrangementDetailPage() {
   }
 
   async function handleSave() {
+    // ── 儲存前檢查 ──
+    // 1. 人員爆掉：列出所有超額車輛，強制確認
+    const overflowList = []
+    for (const dir of ['up', 'down']) {
+      for (const car of carsByDir[dir]) {
+        if (car.members.length > car.seats) {
+          overflowList.push(`${dirLabel(dir)}・${car.car_name}（${car.members.length}/${car.seats}，超額 +${car.members.length - car.seats}）`)
+        }
+      }
+    }
+    if (overflowList.length > 0) {
+      const proceed = window.confirm(
+        `⚠️ 以下車輛人數超過座位數：\n\n${overflowList.join('\n')}\n\n仍要儲存？`
+      )
+      if (!proceed) return
+    }
+
+    // 2. 法師：整場活動都沒指派任何法師，提醒一次（可繞過）
+    const totalMonks =
+      carsByDir.up.flatMap(c => c.monks ?? []).length +
+      carsByDir.down.flatMap(c => c.monks ?? []).length
+    const hasAnyCar = carsByDir.up.length > 0 || carsByDir.down.length > 0
+    if (hasAnyCar && totalMonks === 0) {
+      const proceed = window.confirm('法師尚未排入車次，仍要儲存？')
+      if (!proceed) return
+    }
+
     setSaving(true); setMsg('')
 
     // 計算兩個方向各自的 finalSmallGroups
@@ -804,6 +837,21 @@ export default function CarrangementDetailPage() {
           </div>
         </div>
 
+        {/* ── 整場無法師提醒 ── */}
+        {(() => {
+          const totalMonksAll =
+            carsByDir.up.flatMap(c => c.monks ?? []).length +
+            carsByDir.down.flatMap(c => c.monks ?? []).length
+          const hasAnyCar = carsByDir.up.length > 0 || carsByDir.down.length > 0
+          if (!hasAnyCar || totalMonksAll > 0) return null
+          return (
+            <div className="bg-yellow-50 border border-yellow-300 rounded-xl px-4 py-3 text-sm text-yellow-800 flex items-center gap-2">
+              <span className="text-base">⚠️</span>
+              <span>法師尚未排入車次</span>
+            </div>
+          )
+        })()}
+
         {/* ── 上下山 Tab ── */}
         <div className="flex gap-2 border-b">
           {DIRECTIONS.map(d => {
@@ -893,7 +941,7 @@ export default function CarrangementDetailPage() {
 
           {/* 提示 */}
           <p className="text-xs text-gray-400 mb-3">
-            自動排車邏輯：優先將「關係連結」中的成員安排同車 → 備註有寫親友姓名的訪客排同車 → 再依班級分配剩餘座位。<br />
+            自動排車邏輯：先把「關係連結成員」與「訪客＋親友（host 學員）」整組打包同車 → 再依班級組別分配剩餘座位。<br />
             排好後可用每人右側的下拉選單手動調整車次，並勾選「領隊」標記當車領隊。
           </p>
 
