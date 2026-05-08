@@ -7,6 +7,7 @@ import {
   updateRegistration,
   deleteRegistration,
   logRegistrationChange,
+  submitFriendRegistration,
 } from '../lib/supabase'
 import DynamicForm from '../components/DynamicForm'
 import CameraScanner from '../components/CameraScanner'
@@ -20,7 +21,9 @@ export default function KioskPage() {
   const [eventItems, setEventItems] = useState([]) // [{event, fields}, ...]
 
   // 刷卡後狀態
-  const [phase, setPhase] = useState('idle') // idle | loading | overview | form | submitting | not_found | error | no_event
+  // phase: idle | loading | overview | form | submitting | not_found | error | no_event
+  //        | friend_event_choose | friend_form | friend_submitting
+  const [phase, setPhase] = useState('idle')
   const [student, setStudent] = useState(null)
   const [classes, setClasses] = useState([])
   const [statuses, setStatuses] = useState({}) // { eventId: registration|null }
@@ -33,6 +36,11 @@ export default function KioskPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [successEventName, setSuccessEventName] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
+
+  // 親友代報狀態
+  const [friendMode, setFriendMode] = useState(null) // null | 'self_plus' | 'guest_only'
+  const [friendName, setFriendName] = useState('')
+  const [friendAnswers, setFriendAnswers] = useState({})
 
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cancellingEventId, setCancellingEventId] = useState(null) // 正在確認取消的活動 ID
@@ -129,6 +137,91 @@ export default function KioskPage() {
     startFormTimer()
   }
 
+  // ── 親友代報：進入「選活動」階段 ────────────────────────────
+  function handleStartFriendFlow(mode) {
+    clearTimeout(idleTimerRef.current)
+    setFriendMode(mode)
+    setSelectedItem(null)
+    setFriendName('')
+    setFriendAnswers({})
+    setErrorMsg('')
+    setPhase('friend_event_choose')
+    startIdleTimer()
+  }
+
+  // ── 親友代報：選好活動 → 依模式進本人 form 或親友 form ────
+  function handleFriendPickEvent(item) {
+    clearTimeout(idleTimerRef.current)
+    setSelectedItem(item)
+    setErrorMsg('')
+
+    if (friendMode === 'self_plus') {
+      // 本人＋親友：先進本人填寫流程（送出時會再轉進親友 form）
+      const reg = statuses[item.event.event_id]
+      setCurrentReg(reg)
+      setIsUpdate(!!reg)
+      setAnswers(reg?.answers || {})
+      setPhase('form')
+    } else {
+      // 只報親友：直接進親友填寫
+      setFriendName('')
+      setFriendAnswers({})
+      setPhase('friend_form')
+    }
+    startFormTimer()
+  }
+
+  // ── 親友代報：送出 ───────────────────────────────────────────
+  async function handleSubmitFriend() {
+    const { event, fields } = selectedItem
+    const name = friendName.trim()
+    if (!name) {
+      setErrorMsg('請填寫親友姓名')
+      return
+    }
+    // 驗證必填（含 show_if）
+    const visibleRequired = fields.filter(f => {
+      if (!f.required) return false
+      if (!f.show_if) return true
+      return Object.entries(f.show_if).every(([k, v]) => friendAnswers[k] === v)
+    })
+    const missing = visibleRequired.filter(f => {
+      const val = friendAnswers[f.field_key]
+      return val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0)
+    })
+    if (missing.length > 0) {
+      setErrorMsg(`請填寫：${missing.map(f => f.field_label).join('、')}`)
+      return
+    }
+    setErrorMsg('')
+    clearTimeout(idleTimerRef.current)
+    setPhase('friend_submitting')
+
+    const { registrationId, error } = await submitFriendRegistration(
+      event.event_id, student.student_id, student.name, name, friendAnswers,
+    )
+    if (!registrationId) {
+      setPhase('friend_form'); setErrorMsg(error || '送出失敗'); startFormTimer(); return
+    }
+    await logRegistrationChange({
+      registrationId, eventId: event.event_id, eventName: event.name,
+      studentName: `${name}（${student.name} 親友）`,
+      changeType: 'created', oldAnswers: null,
+      newAnswers: { guest_name: name, 備註: `${student.name} 親友`, ...friendAnswers },
+    })
+
+    // 報名成功提示 + 回總覽
+    setSuccessEventName(`${event.name}（${name} 親友）`)
+    setShowSuccess(true)
+    setTimeout(() => setShowSuccess(false), SUCCESS_SECONDS * 1000)
+    setFriendMode(null)
+    setFriendName('')
+    setFriendAnswers({})
+    setSelectedItem(null)
+    setPhase('overview')
+    startIdleTimer()
+  }
+
   // ── 取消報名 ──────────────────────────────────────────────
   async function handleCancelRegistration(eventId) {
     const reg = statuses[eventId]
@@ -211,6 +304,15 @@ export default function KioskPage() {
     setShowSuccess(true)
     setTimeout(() => setShowSuccess(false), SUCCESS_SECONDS * 1000)
 
+    // 「本人＋親友」模式：本人送出後接著進親友填寫
+    if (friendMode === 'self_plus') {
+      setFriendName('')
+      setFriendAnswers({})
+      setPhase('friend_form')
+      startFormTimer()
+      return
+    }
+
     // 回到總覽
     setPhase('overview')
     startIdleTimer()
@@ -246,7 +348,22 @@ export default function KioskPage() {
     setErrorMsg('')
     setShowSuccess(false)
     setCancellingEventId(null)
+    setFriendMode(null)
+    setFriendName('')
+    setFriendAnswers({})
     setPhase(eventItems.length ? 'idle' : 'no_event')
+  }
+
+  // 從 friend_event_choose 回到總覽
+  function handleCancelFriendFlow() {
+    clearTimeout(idleTimerRef.current)
+    setFriendMode(null)
+    setSelectedItem(null)
+    setFriendName('')
+    setFriendAnswers({})
+    setErrorMsg('')
+    setPhase('overview')
+    startIdleTimer()
   }
 
   // ── 渲染 ──────────────────────────────────────────────────
@@ -286,6 +403,7 @@ export default function KioskPage() {
             onSelectEvent={handleSelectEvent}
             onRequestCancel={setCancellingEventId}
             onConfirmCancel={handleCancelRegistration}
+            onStartFriendFlow={handleStartFriendFlow}
             onDone={reset}
           />
         )}
@@ -300,9 +418,41 @@ export default function KioskPage() {
             isUpdate={isUpdate}
             errorMsg={errorMsg}
             submitting={phase === 'submitting'}
+            friendMode={friendMode}
             onChange={setAnswers}
             onSubmit={handleSubmit}
-            onBack={() => { clearTimeout(idleTimerRef.current); setPhase('overview'); startIdleTimer() }}
+            onBack={() => {
+              clearTimeout(idleTimerRef.current)
+              if (friendMode) { handleCancelFriendFlow(); return }
+              setPhase('overview'); startIdleTimer()
+            }}
+          />
+        )}
+
+        {phase === 'friend_event_choose' && (
+          <FriendEventChooseScreen
+            student={student}
+            mode={friendMode}
+            eventItems={eventItems}
+            statuses={statuses}
+            onPick={handleFriendPickEvent}
+            onCancel={handleCancelFriendFlow}
+          />
+        )}
+
+        {(phase === 'friend_form' || phase === 'friend_submitting') && selectedItem && (
+          <FriendFormScreen
+            student={student}
+            event={selectedItem.event}
+            fields={selectedItem.fields}
+            friendName={friendName}
+            answers={friendAnswers}
+            errorMsg={errorMsg}
+            submitting={phase === 'friend_submitting'}
+            onChangeName={setFriendName}
+            onChangeAnswers={setFriendAnswers}
+            onSubmit={handleSubmitFriend}
+            onBack={handleCancelFriendFlow}
           />
         )}
       </main>
@@ -379,7 +529,8 @@ function ErrorScreen({ message, onReset }) {
 // ── 總覽畫面：所有活動報名狀態 ────────────────────────────
 function OverviewScreen({
   student, classes, eventItems, statuses, showSuccess, successEventName,
-  cancellingEventId, errorMsg, onSelectEvent, onRequestCancel, onConfirmCancel, onDone,
+  cancellingEventId, errorMsg, onSelectEvent, onRequestCancel, onConfirmCancel,
+  onStartFriendFlow, onDone,
 }) {
   return (
     <div className="w-full max-w-lg">
@@ -562,6 +713,34 @@ function OverviewScreen({
         })}
       </div>
 
+      {/* 為親友代報區塊 */}
+      {(() => {
+        const hasOpenEvent = eventItems.some(({ event }) => !event.locked)
+        if (!hasOpenEvent) return null
+        return (
+          <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-4 mb-5">
+            <p className="text-kiosk-sm font-bold text-purple-700 mb-3">👥 為親友代報</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => onStartFriendFlow('self_plus')}
+                className="py-3 px-2 bg-white border-2 border-purple-300 text-purple-700 rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
+              >
+                本人 + 親友
+              </button>
+              <button
+                onClick={() => onStartFriendFlow('guest_only')}
+                className="py-3 px-2 bg-white border-2 border-purple-300 text-purple-700 rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
+              >
+                只報親友
+              </button>
+            </div>
+            <p className="text-kiosk-sm text-purple-500 mt-2 leading-snug">
+              可幫尚未到場的家人或朋友一同報名，方便排車安排同車。
+            </p>
+          </div>
+        )
+      })()}
+
       {/* 完成按鈕 */}
       <button
         onClick={onDone}
@@ -575,9 +754,17 @@ function OverviewScreen({
 }
 
 // ── 填表畫面 ─────────────────────────────────────────────
-function FormScreen({ student, classes, event, fields, answers, isUpdate, errorMsg, submitting, onChange, onSubmit, onBack }) {
+function FormScreen({ student, classes, event, fields, answers, isUpdate, errorMsg, submitting, friendMode, onChange, onSubmit, onBack }) {
   return (
     <div className="w-full max-w-lg">
+      {/* 親友代報模式提示（self_plus 第一步：填本人） */}
+      {friendMode === 'self_plus' && (
+        <div className="bg-purple-100 border-2 border-purple-300 rounded-xl px-4 py-2 mb-3 text-center">
+          <p className="text-kiosk-sm font-bold text-purple-700">第 1 步：先報名您本人</p>
+          <p className="text-kiosk-sm text-purple-600">送出後接著填親友資料</p>
+        </div>
+      )}
+
       {/* 學員資訊卡 */}
       <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-blue-600">
         <p className="text-kiosk-xl font-bold text-gray-800">{student?.name} 師兄</p>
@@ -620,6 +807,146 @@ function FormScreen({ student, classes, event, fields, answers, isUpdate, errorM
           className="flex-grow-[2] py-4 bg-blue-600 text-white rounded-2xl text-kiosk-base font-bold shadow-md disabled:opacity-50 active:scale-95 transition-transform"
         >
           {submitting ? '送出中…' : isUpdate ? '確認修改' : '確認報名'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── 親友代報：選活動畫面 ──────────────────────────────────
+function FriendEventChooseScreen({ student, mode, eventItems, statuses, onPick, onCancel }) {
+  const modeLabel = mode === 'self_plus' ? '本人 + 親友' : '只報親友'
+  return (
+    <div className="w-full max-w-lg">
+      <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-5 mb-4">
+        <p className="text-kiosk-sm text-purple-600 mb-1">代報者：{student?.name} 師兄</p>
+        <p className="text-kiosk-xl font-bold text-purple-800">{modeLabel}</p>
+        <p className="text-kiosk-sm text-purple-600 mt-2 leading-snug">
+          {mode === 'self_plus'
+            ? '請先選擇活動，再依序填寫您本人與親友資料。'
+            : '請選擇要為親友報名的活動。'}
+        </p>
+      </div>
+
+      <p className="text-kiosk-base font-bold text-gray-700 mb-3">選擇活動</p>
+      <div className="space-y-3 mb-5">
+        {eventItems.map(({ event, fields }) => {
+          const reg = statuses[event.event_id]
+          const selfRegistered = !!reg
+          const locked = !!event.locked
+          // self_plus 模式：本人已報名 → 灰，請改用「只報親友」
+          const selfPlusBlocked = mode === 'self_plus' && selfRegistered
+          const disabled = locked || selfPlusBlocked
+
+          return (
+            <button
+              key={event.event_id}
+              onClick={() => !disabled && onPick({ event, fields })}
+              disabled={disabled}
+              className={`w-full text-left bg-white rounded-2xl border-2 p-4 transition-all ${
+                disabled ? 'border-gray-200 opacity-60 cursor-not-allowed' : 'border-purple-300 hover:bg-purple-50 active:scale-[0.99]'
+              }`}
+            >
+              <p className="text-kiosk-base font-bold text-gray-800">{event.name}</p>
+              <p className="text-kiosk-sm text-gray-500 mt-0.5">
+                {event.date_start || ''}
+                {event.date_end && event.date_end !== event.date_start ? ` ～ ${event.date_end}` : ''}
+                {event.location ? `　${event.location}` : ''}
+              </p>
+              {locked && (
+                <p className="text-kiosk-sm text-amber-700 mt-1">已停止異動</p>
+              )}
+              {!locked && selfPlusBlocked && (
+                <p className="text-kiosk-sm text-gray-500 mt-1">您已報名此活動，請改用「只報親友」</p>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      <button
+        onClick={onCancel}
+        className="w-full py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium"
+      >
+        ← 返回
+      </button>
+    </div>
+  )
+}
+
+// ── 親友代報：填寫畫面 ───────────────────────────────────
+function FriendFormScreen({
+  student, event, fields, friendName, answers, errorMsg, submitting,
+  onChangeName, onChangeAnswers, onSubmit, onBack,
+}) {
+  // 精舍活動：parking_type radio 動態加「跟 OOO 同車（不另計）」選項
+  const isTemple = event.event_type === 'temple'
+  const hasParkingField = fields.some(f => f.field_key === 'parking_type')
+  const carpoolOption = `跟 ${student?.name ?? '代報者'} 同車（不另計）`
+  const fieldExtraOptions = (isTemple && hasParkingField)
+    ? { parking_type: [carpoolOption] }
+    : {}
+
+  return (
+    <div className="w-full max-w-lg">
+      <div className="bg-purple-100 border-2 border-purple-300 rounded-xl px-4 py-2 mb-3 text-center">
+        <p className="text-kiosk-sm font-bold text-purple-700">親友代報</p>
+        <p className="text-kiosk-sm text-purple-600">代報者：{student?.name} 師兄</p>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-purple-600">
+        <p className="text-kiosk-xl font-bold text-gray-800">為親友報名</p>
+        <p className="text-kiosk-base text-purple-700 font-medium mt-1">{event.name}</p>
+      </div>
+
+      {/* 親友姓名 */}
+      <div className="bg-white rounded-2xl shadow-md p-5 mb-4">
+        <p className="text-kiosk-base font-semibold text-purple-700 mb-3 flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-purple-600 text-white text-sm font-bold">★</span>
+          親友姓名
+          <span className="text-red-500 ml-1">*</span>
+        </p>
+        <input
+          type="text"
+          value={friendName}
+          onChange={e => onChangeName(e.target.value)}
+          placeholder="請輸入親友姓名"
+          className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-kiosk-base focus:outline-none focus:border-purple-500"
+        />
+      </div>
+
+      {/* 動態欄位（套用本人活動欄位 + 親友額外選項） */}
+      {fields.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-md p-5 mb-4">
+          <DynamicForm
+            fields={fields}
+            answers={answers}
+            onChange={onChangeAnswers}
+            fieldExtraOptions={fieldExtraOptions}
+          />
+        </div>
+      )}
+
+      {errorMsg && (
+        <p className="text-red-600 text-kiosk-sm bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-4">
+          ⚠ {errorMsg}
+        </p>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          onClick={onBack}
+          disabled={submitting}
+          className="flex-1 py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium disabled:opacity-50"
+        >
+          ← 返回
+        </button>
+        <button
+          onClick={onSubmit}
+          disabled={submitting}
+          className="flex-grow-[2] py-4 bg-purple-600 text-white rounded-2xl text-kiosk-base font-bold shadow-md disabled:opacity-50 active:scale-95 transition-transform"
+        >
+          {submitting ? '送出中…' : '確認代報'}
         </button>
       </div>
     </div>

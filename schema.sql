@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS registrations (
   registration_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id        UUID NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
   student_id      TEXT REFERENCES students(student_id) ON DELETE SET NULL,  -- NULL = 訪客
+  host_student_id TEXT REFERENCES students(student_id) ON DELETE SET NULL,  -- 訪客被誰代報（用於排車）
   answers         JSONB NOT NULL DEFAULT '{}',
   registered_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   checked_in_at   TIMESTAMPTZ,
@@ -90,6 +91,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_registrations_event_id   ON registrations(event_id);
 CREATE INDEX IF NOT EXISTS idx_registrations_student_id ON registrations(student_id);
+CREATE INDEX IF NOT EXISTS idx_registrations_host       ON registrations(host_student_id, event_id) WHERE host_student_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_event_fields_event_id    ON event_fields(event_id);
 CREATE INDEX IF NOT EXISTS idx_student_classes_student  ON student_classes(student_id);
 

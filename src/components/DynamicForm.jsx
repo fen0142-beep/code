@@ -6,9 +6,12 @@
  *   plate    — 車牌號碼，自動大寫、置中大字
  *   datetime — 日期時間選取器（datetime-local），放大顯示
  * show_if 邏輯：{ field_key: value } — 當對應欄位的答案等於指定值時才顯示
+ *
+ * fieldExtraOptions — 額外選項（不污染 DB 模板，只在當下渲染時 append）
+ *   形如 { parking_type: ['跟王小明同車（不另計）'] }，僅對 radio/checkbox 有效
  */
 
-export default function DynamicForm({ fields, answers, onChange }) {
+export default function DynamicForm({ fields, answers, onChange, fieldExtraOptions = {} }) {
   // 判斷欄位是否應顯示
   function isVisible(field) {
     if (!field.show_if) return true
@@ -83,7 +86,7 @@ export default function DynamicForm({ fields, answers, onChange }) {
 
           {field.field_type === 'radio' && (
             <div className="flex flex-wrap gap-3">
-              {(field.options || []).map(opt => {
+              {[...(field.options || []), ...(fieldExtraOptions[field.field_key] || [])].map(opt => {
                 const selected = answers[field.field_key] === opt
                 return (
                   <button
@@ -107,7 +110,7 @@ export default function DynamicForm({ fields, answers, onChange }) {
 
           {field.field_type === 'checkbox' && (
             <div className="flex flex-wrap gap-3">
-              {(field.options || []).map(opt => {
+              {[...(field.options || []), ...(fieldExtraOptions[field.field_key] || [])].map(opt => {
                 const current = answers[field.field_key] || []
                 const selected = current.includes(opt)
                 return (

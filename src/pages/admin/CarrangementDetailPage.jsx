@@ -45,6 +45,15 @@ function findGuestMatch(note, studentRegs) {
   return null
 }
 
+// 找訪客的 host：優先用 host_student_id（Phase 2 學員代報），fallback 用備註姓名（舊資料）
+function findGuestHost(guest, studentRegs) {
+  if (guest.host_student_id) {
+    const direct = studentRegs.find(r => r.student_id === guest.host_student_id)
+    if (direct) return direct
+  }
+  return findGuestMatch(getGuestNote(guest), studentRegs)
+}
+
 // 取得依方向對應的欄位 key
 const fieldKeysFor = direction => ({
   transport: direction === 'up' ? 'transport_up' : 'transport_down',
@@ -132,9 +141,10 @@ function autoArrange(largePeople, carCount, seats, relGroups) {
   }
 
   // 訪客 → host 配對：把同一 host 的所有訪客聚合成一組
+  // 優先用 host_student_id（Phase 2 學員代報）→ fallback 備註姓名比對（舊資料相容）
   const hostToGuests = {}
   for (const guest of guestLarge) {
-    const matched = findGuestMatch(getGuestNote(guest), studentLarge)
+    const matched = findGuestHost(guest, studentLarge)
     if (matched) {
       const hostId = matched.registration_id
       if (!hostToGuests[hostId]) hostToGuests[hostId] = []
@@ -317,8 +327,7 @@ function sortedMembersForDisplay(memberIds, regMap) {
   // 訪客插在親友後面
   const result = sortedStudents.map(r => r.registration_id)
   for (const guest of regs.filter(r => !r.student_id)) {
-    const note    = getGuestNote(guest)
-    const matched = findGuestMatch(note, studentRegsInCar)
+    const matched = findGuestHost(guest, studentRegsInCar)
     const idx     = matched ? result.indexOf(matched.registration_id) : -1
     if (idx >= 0) result.splice(idx + 1, 0, guest.registration_id)
     else result.push(guest.registration_id)
@@ -516,7 +525,7 @@ export default function CarrangementDetailPage() {
     const studentRegs = largePeople.filter(r => r.student_id)
     for (const guest of largePeople.filter(r => !r.student_id)) {
       const note    = getGuestNote(guest)
-      const matched = findGuestMatch(note, studentRegs)
+      const matched = findGuestHost(guest, studentRegs)
       map[guest.registration_id] = { note, matchedName: matched ? getName(matched) : null }
     }
     return map

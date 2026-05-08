@@ -475,6 +475,36 @@ export async function createGuestRegistration(eventId, guestName, answers) {
   return { registrationId: data.registration_id, error: null }
 }
 
+// ─── 親友代報（前台）────────────────────────────────────────
+
+/**
+ * 學員代親友報名：訪客 reg（student_id=null），但 host_student_id 指向代報者
+ * answers 自動補上 guest_name 與「備註」欄（"XXX 親友"），讓後台名單看得出代報關係
+ */
+export async function submitFriendRegistration(
+  eventId, hostStudentId, hostName, guestName, answers, terminal = 'tablet-01'
+) {
+  const allAnswers = {
+    guest_name: guestName,
+    備註: `${hostName} 親友`,
+    ...answers,
+  }
+  const { data, error } = await supabase
+    .from('registrations')
+    .insert({
+      event_id: eventId,
+      student_id: null,
+      host_student_id: hostStudentId,
+      answers: allAnswers,
+      terminal,
+    })
+    .select('registration_id')
+    .single()
+
+  if (error) return { registrationId: null, error: error.message }
+  return { registrationId: data.registration_id, error: null }
+}
+
 // ─── 學員管理（後台）────────────────────────────────────────
 
 /**
@@ -689,6 +719,7 @@ export async function getEventRegistrationsDetail(eventId) {
     .select(`
       registration_id,
       student_id,
+      host_student_id,
       answers,
       registered_at,
       students ( name, student_classes(class_name, group_name) )
