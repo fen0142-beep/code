@@ -71,7 +71,7 @@ export default function KioskPage() {
   const [showSuccess, setShowSuccess] = useState(false)
 
   // 親友代報狀態
-  const [friendMode, setFriendMode] = useState(null) // null | 'self_plus' | 'guest_only'
+  const [friendMode, setFriendMode] = useState(null) // null | 'friend'（只代親友，不再有「本人+親友」綁定模式）
   const [friendName, setFriendName] = useState('')
   const [friendAnswers, setFriendAnswers] = useState({})
 
@@ -171,9 +171,9 @@ export default function KioskPage() {
   }
 
   // ── 親友代報：進入「選活動」階段 ────────────────────────────
-  function handleStartFriendFlow(mode) {
+  function handleStartFriendFlow() {
     clearTimeout(idleTimerRef.current)
-    setFriendMode(mode)
+    setFriendMode('friend')   // 統一單一模式（不再區分本人+親友 / 只報親友）
     setSelectedItem(null)
     setFriendName('')
     setFriendAnswers({})
@@ -182,25 +182,16 @@ export default function KioskPage() {
     startIdleTimer()
   }
 
-  // ── 親友代報：選好活動 → 依模式進本人 form 或親友 form ────
+  // ── 親友代報：選好活動 → 進親友 form ─────────────────────
+  // 簡化：拿掉「本人+親友」綁定模式，學員本人報名走本人流程，
+  // 代報親友純粹只填親友，兩條線完全獨立。
   function handleFriendPickEvent(item) {
     clearTimeout(idleTimerRef.current)
     setSelectedItem(item)
     setErrorMsg('')
-
-    if (friendMode === 'self_plus') {
-      // 本人＋親友：先進本人填寫流程（送出時會再轉進親友 form）
-      const reg = statuses[item.event.event_id]
-      setCurrentReg(reg)
-      setIsUpdate(!!reg)
-      setAnswers(reg?.answers || {})
-      setPhase('form')
-    } else {
-      // 只報親友：直接進親友填寫
-      setFriendName('')
-      setFriendAnswers({})
-      setPhase('friend_form')
-    }
+    setFriendName('')
+    setFriendAnswers({})
+    setPhase('friend_form')
     startFormTimer()
   }
 
@@ -358,16 +349,7 @@ export default function KioskPage() {
     setShowSuccess(true)
     setTimeout(() => setShowSuccess(false), SUCCESS_SECONDS * 1000)
 
-    // 「本人＋親友」模式：本人送出後接著進親友填寫
-    if (friendMode === 'self_plus') {
-      setFriendName('')
-      setFriendAnswers({})
-      setPhase('friend_form')
-      startFormTimer()
-      return
-    }
-
-    // 回到總覽
+    // 回到總覽（不再有「本人+親友」的自動接續邏輯）
     setPhase('overview')
     startIdleTimer()
   }
@@ -472,12 +454,10 @@ export default function KioskPage() {
             isUpdate={isUpdate}
             errorMsg={errorMsg}
             submitting={phase === 'submitting'}
-            friendMode={friendMode}
             onChange={setAnswers}
             onSubmit={handleSubmit}
             onBack={() => {
               clearTimeout(idleTimerRef.current)
-              if (friendMode) { handleCancelFriendFlow(); return }
               setPhase('overview'); startIdleTimer()
             }}
           />
@@ -486,7 +466,6 @@ export default function KioskPage() {
         {phase === 'friend_event_choose' && (
           <FriendEventChooseScreen
             student={student}
-            mode={friendMode}
             eventItems={eventItems}
             statuses={statuses}
             onPick={handleFriendPickEvent}
@@ -515,7 +494,6 @@ export default function KioskPage() {
             studentName={student?.name ?? ''}
             friendName={friendName}
             eventName={successEventName}
-            mode={friendMode}
             onContinue={handleContinueFriend}
             onDone={handleDoneFriend}
           />
@@ -819,23 +797,15 @@ function OverviewScreen({
         if (!hasOpenEvent) return null
         return (
           <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-4 mb-5">
-            <p className="text-kiosk-sm font-bold text-purple-700 mb-3">👥 為親友代報</p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => onStartFriendFlow('self_plus')}
-                className="py-3 px-2 bg-white border-2 border-purple-300 text-purple-700 rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
-              >
-                本人 + 親友
-              </button>
-              <button
-                onClick={() => onStartFriendFlow('guest_only')}
-                className="py-3 px-2 bg-white border-2 border-purple-300 text-purple-700 rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
-              >
-                只報親友
-              </button>
-            </div>
-            <p className="text-kiosk-sm text-purple-500 mt-2 leading-snug">
-              可幫尚未到場的家人或朋友一同報名，方便排車安排同車。
+            <button
+              onClick={() => onStartFriendFlow()}
+              className="w-full py-4 px-4 bg-white border-2 border-purple-400 text-purple-700 rounded-xl text-kiosk-base font-bold active:scale-95 transition-transform shadow-sm"
+            >
+              ＋ 代為幫親友報名
+            </button>
+            <p className="text-kiosk-sm text-purple-500 mt-3 leading-snug">
+              可幫尚未到場的家人或朋友報名（不影響您自己的報名）。
+              後台會自動標註「{student?.name ?? '您'} 親友」並安排同車。
             </p>
           </div>
         )
@@ -854,17 +824,9 @@ function OverviewScreen({
 }
 
 // ── 填表畫面 ─────────────────────────────────────────────
-function FormScreen({ student, classes, event, fields, answers, isUpdate, errorMsg, submitting, friendMode, onChange, onSubmit, onBack }) {
+function FormScreen({ student, classes, event, fields, answers, isUpdate, errorMsg, submitting, onChange, onSubmit, onBack }) {
   return (
     <div className="w-full max-w-lg">
-      {/* 親友代報模式提示（self_plus 第一步：填本人） */}
-      {friendMode === 'self_plus' && (
-        <div className="bg-purple-100 border-2 border-purple-300 rounded-xl px-4 py-2 mb-3 text-center">
-          <p className="text-kiosk-sm font-bold text-purple-700">第 1 步：先報名您本人</p>
-          <p className="text-kiosk-sm text-purple-600">送出後接著填親友資料</p>
-        </div>
-      )}
-
       {/* 學員資訊卡 */}
       <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-blue-600">
         <p className="text-kiosk-xl font-bold text-gray-800">{student?.name} 師兄</p>
@@ -913,38 +875,30 @@ function FormScreen({ student, classes, event, fields, answers, isUpdate, errorM
   )
 }
 
-// ── 親友代報：選活動畫面 ──────────────────────────────────
-function FriendEventChooseScreen({ student, mode, eventItems, statuses, onPick, onCancel }) {
-  const modeLabel = mode === 'self_plus' ? '本人 + 親友' : '只報親友'
+// ── 親友代報：選活動畫面（簡化版：只報親友，與本人報名無關）─
+function FriendEventChooseScreen({ student, eventItems, onPick, onCancel }) {
   return (
     <div className="w-full max-w-lg">
       <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-5 mb-4">
         <p className="text-kiosk-sm text-purple-600 mb-1">代報者：{student?.name} 師兄</p>
-        <p className="text-kiosk-xl font-bold text-purple-800">{modeLabel}</p>
+        <p className="text-kiosk-xl font-bold text-purple-800">代為親友報名</p>
         <p className="text-kiosk-sm text-purple-600 mt-2 leading-snug">
-          {mode === 'self_plus'
-            ? '請先選擇活動，再依序填寫您本人與親友資料。'
-            : '請選擇要為親友報名的活動。'}
+          請選擇要為親友報名的活動。
         </p>
       </div>
 
       <p className="text-kiosk-base font-bold text-gray-700 mb-3">選擇活動</p>
       <div className="space-y-3 mb-5">
         {eventItems.map(({ event, fields }) => {
-          const reg = statuses[event.event_id]
-          const selfRegistered = !!reg
           const locked = !!event.locked
-          // self_plus 模式：本人已報名 → 灰，請改用「只報親友」
-          const selfPlusBlocked = mode === 'self_plus' && selfRegistered
-          const disabled = locked || selfPlusBlocked
 
           return (
             <button
               key={event.event_id}
-              onClick={() => !disabled && onPick({ event, fields })}
-              disabled={disabled}
+              onClick={() => !locked && onPick({ event, fields })}
+              disabled={locked}
               className={`w-full text-left bg-white rounded-2xl border-2 p-4 transition-all ${
-                disabled ? 'border-gray-200 opacity-60 cursor-not-allowed' : 'border-purple-300 hover:bg-purple-50 active:scale-[0.99]'
+                locked ? 'border-gray-200 opacity-60 cursor-not-allowed' : 'border-purple-300 hover:bg-purple-50 active:scale-[0.99]'
               }`}
             >
               <p className="text-kiosk-base font-bold text-gray-800">{event.name}</p>
@@ -955,9 +909,6 @@ function FriendEventChooseScreen({ student, mode, eventItems, statuses, onPick, 
               </p>
               {locked && (
                 <p className="text-kiosk-sm text-amber-700 mt-1">已停止異動</p>
-              )}
-              {!locked && selfPlusBlocked && (
-                <p className="text-kiosk-sm text-gray-500 mt-1">您已報名此活動，請改用「只報親友」</p>
               )}
             </button>
           )
@@ -1054,7 +1005,7 @@ function FriendFormScreen({
 }
 
 // ── 親友代報：送出成功，連續代報入口 ────────────────────────
-function FriendSuccessScreen({ studentName, friendName, eventName, mode, onContinue, onDone }) {
+function FriendSuccessScreen({ studentName, friendName, eventName, onContinue, onDone }) {
   return (
     <div className="w-full max-w-lg">
       <div className="bg-green-50 border-2 border-green-400 rounded-2xl px-6 py-8 mb-5 text-center">
@@ -1070,10 +1021,7 @@ function FriendSuccessScreen({ studentName, friendName, eventName, mode, onConti
 
       <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-4 mb-4">
         <p className="text-kiosk-sm text-purple-700 leading-snug">
-          {mode === 'self_plus'
-            ? `${studentName} 師兄您好，您本人與第一位親友都已完成報名。要繼續為下一位親友代報嗎？`
-            : `${studentName} 師兄您好，要繼續為下一位親友代報嗎？`
-          }
+          {studentName} 師兄您好，要繼續為下一位親友代報嗎？
         </p>
       </div>
 
