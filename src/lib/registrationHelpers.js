@@ -11,13 +11,22 @@
 // ─────────────────────────────────────────────────────────────
 
 /**
- * 從報名 answers 拿到 precept_level（容錯：找幾種常見 key + 中文 label）
+ * 從報名 answers 拿到 precept_level（容錯多種設定方式）
+ *
+ * 支援兩種設計：
+ * A. 單一 radio 欄位：answers.precept_level = '三皈' / '五戒' / '無'
+ *    （field_key 容錯：precept_level / precept / 三皈五戒 / 皈戒）
+ * B. 雙 boolean 欄位（如「報名三皈依」、「報名五戒」各一個 boolean）：
+ *    掃 answers，找 key 含「五戒」或「三皈/皈依」字樣、值為 true 的
+ *    同時都勾 → 五戒（層級較高）
+ *
  * @returns {'refuge'|'five_precepts'|null}
  */
 export function getPreceptLevel(reg) {
   if (!reg) return null
   const ans = reg.answers || {}
-  // 優先看標準 key
+
+  // ── 模式 A：單一 radio 欄位 ──
   const candidates = [
     ans.precept_level,
     ans.precept,
@@ -28,8 +37,21 @@ export function getPreceptLevel(reg) {
     if (!v) continue
     const s = String(v).trim()
     if (s === '五戒' || s === 'five_precepts' || s === 'five') return 'five_precepts'
-    if (s === '三皈' || s === 'refuge' || s === 'sangui')      return 'refuge'
+    if (s === '三皈' || s === '三皈依' || s === 'refuge' || s === 'sangui') return 'refuge'
   }
+
+  // ── 模式 B：boolean 雙欄位（key 含關鍵字、值為 true）──
+  let hasRefuge = false
+  let hasFive   = false
+  for (const [k, v] of Object.entries(ans)) {
+    if (v !== true) continue
+    const key = String(k)
+    if (key.includes('五戒')) hasFive = true
+    else if (key.includes('三皈') || key.includes('皈依')) hasRefuge = true
+  }
+  if (hasFive)   return 'five_precepts'   // 受五戒層級較高
+  if (hasRefuge) return 'refuge'
+
   return null
 }
 
