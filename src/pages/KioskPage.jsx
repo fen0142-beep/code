@@ -10,7 +10,6 @@ import {
   deleteRegistration,
   logRegistrationChange,
   submitFriendRegistration,
-  getDonorForRegistration,
 } from '../lib/supabase'
 import DynamicForm from '../components/DynamicForm'
 import CameraScanner from '../components/CameraScanner'
@@ -161,35 +160,7 @@ async function shareQRCard(cardData) {
 
 const OVERVIEW_IDLE_SECONDS = 30   // 總覽畫面閒置幾秒後自動返回
 const FORM_IDLE_SECONDS = 120      // 填表畫面閒置幾秒後自動返回（長者填表需要較多時間）
-const SUCCESS_SECONDS = 3          // 報名成功提示停留秒數（無功德主資訊時）
-
-// 功德主紫色卡片：空白欄位不顯示
-function DonorCard({ donor }) {
-  if (!donor) return null
-  const fields = [
-    { label: '功德項目', value: donor.donor_item },
-    { label: '座位',     value: donor.seat },
-    { label: '胸花',     value: donor.corsage },
-    { label: '供具',     value: donor.offering },
-    { label: '備註',     value: donor.donor_note },
-  ].filter(f => f.value && String(f.value).trim())
-  if (fields.length === 0) return null
-  return (
-    <div className="bg-purple-50 border-2 border-purple-300 rounded-2xl p-5 text-left shadow-sm">
-      <p className="text-kiosk-base font-bold text-purple-800 mb-3 flex items-center gap-2">
-        🪷 法會功德主
-      </p>
-      <dl className="space-y-2 text-kiosk-sm">
-        {fields.map(f => (
-          <div key={f.label} className="grid grid-cols-[5.5rem,1fr] gap-2">
-            <dt className="text-purple-600/80 font-medium">{f.label}</dt>
-            <dd className="text-gray-800 font-semibold break-words">{f.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  )
-}
+const SUCCESS_SECONDS = 3          // 報名成功提示停留秒數
 
 export default function KioskPage() {
   // 所有進行中活動（含欄位）
@@ -211,8 +182,6 @@ export default function KioskPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [successEventName, setSuccessEventName] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
-  const [successDonor, setSuccessDonor] = useState(null) // 報名/代報成功後查到的功德主紀錄
-  const [lastFriendDonor, setLastFriendDonor] = useState(null) // FriendSuccessScreen 用
 
   // 親友代報狀態
   const [friendMode, setFriendMode] = useState(null) // null | 'friend'（只代親友，不再有「本人+親友」綁定模式）
@@ -398,10 +367,6 @@ export default function KioskPage() {
     setLastFriendEventDate(formatEventDateRange(event.date_start, event.date_end))
     setLastFriendEventLocation(event.location || '')
     setFriendAnswers({})
-
-    // 查功德主紀錄（訪客型，用親友姓名比對）
-    const { donor: friendDonor } = await getDonorForRegistration(event.event_id, null, name)
-    setLastFriendDonor(friendDonor || null)
     // 即時更新「您代報的親友」清單（不必重新查 DB）
     setFriendRegistrations(prev => [
       {
@@ -424,7 +389,6 @@ export default function KioskPage() {
     setFriendAnswers({})
     setSelectedItem(null)
     setErrorMsg('')
-    setLastFriendDonor(null)
     setPhase('friend_event_choose')
     startFormTimer()
   }
@@ -436,7 +400,6 @@ export default function KioskPage() {
     setFriendName('')
     setFriendAnswers({})
     setSelectedItem(null)
-    setLastFriendDonor(null)
     setPhase('overview')
     startIdleTimer()
   }
@@ -522,14 +485,7 @@ export default function KioskPage() {
     setStatuses(prev => ({ ...prev, [event.event_id]: newReg }))
     setSuccessEventName(event.name)
     setShowSuccess(true)
-
-    // 查功德主紀錄（學員型）；有 → 紫色卡片常駐讓學員看清楚（不自動消失）
-    const { donor } = await getDonorForRegistration(event.event_id, student.student_id, null)
-    setSuccessDonor(donor || null)
-    if (!donor) {
-      setTimeout(() => setShowSuccess(false), SUCCESS_SECONDS * 1000)
-    }
-    // 若有功德主，由「我知道了」按鈕手動關閉
+    setTimeout(() => setShowSuccess(false), SUCCESS_SECONDS * 1000)
 
     // 回到總覽（不再有「本人+親友」的自動接續邏輯）
     setPhase('overview')
@@ -565,8 +521,6 @@ export default function KioskPage() {
     setCurrentReg(null)
     setErrorMsg('')
     setShowSuccess(false)
-    setSuccessDonor(null)
-    setLastFriendDonor(null)
     setCancellingEventId(null)
     setFriendMode(null)
     setFriendName('')
@@ -688,7 +642,6 @@ export default function KioskPage() {
             friendEventName={lastFriendEventName}
             friendEventDate={lastFriendEventDate}
             friendEventLocation={lastFriendEventLocation}
-            donor={lastFriendDonor}
             onContinue={handleContinueFriend}
             onDone={handleDoneFriend}
           />
@@ -827,22 +780,8 @@ function OverviewScreen({
 
       {/* 報名成功提示 */}
       {showSuccess && (
-        <div className="space-y-3 mb-4">
-          <div className="bg-green-50 border-2 border-green-400 rounded-2xl px-5 py-3 text-center">
-            <p className="text-green-700 font-bold text-kiosk-base">✅ {successEventName} 報名完成！</p>
-          </div>
-          {/* 法會功德主資訊（若無則整張卡片不渲染） */}
-          {successDonor && <DonorCard donor={successDonor} />}
-          {successDonor && (
-            <div className="text-center">
-              <button
-                onClick={() => { setShowSuccess(false); setSuccessDonor(null) }}
-                className="text-kiosk-sm text-purple-700 hover:text-purple-900 border-2 border-purple-300 hover:bg-purple-50 rounded-xl px-5 py-2 font-semibold"
-              >
-                我知道了
-              </button>
-            </div>
-          )}
+        <div className="bg-green-50 border-2 border-green-400 rounded-2xl px-5 py-3 mb-4 text-center">
+          <p className="text-green-700 font-bold text-kiosk-base">✅ {successEventName} 報名完成！</p>
         </div>
       )}
 
@@ -1295,7 +1234,6 @@ function FriendFormScreen({
 function FriendSuccessScreen({
   studentName, friendName, eventName, friendRegId,
   friendEventName, friendEventDate, friendEventLocation,
-  donor,
   onContinue, onDone,
 }) {
   const qrSvgId = 'friend-success-qr'
@@ -1319,13 +1257,6 @@ function FriendSuccessScreen({
           <p className="text-kiosk-sm text-gray-500 mt-1">{eventName}</p>
         )}
       </div>
-
-      {/* 法會功德主資訊（若無則整張卡片不渲染） */}
-      {donor && (
-        <div className="mb-4">
-          <DonorCard donor={donor} />
-        </div>
-      )}
 
       {/* 親友報到 QR 小卡（仿後台訪客小卡樣式） */}
       {friendRegId && (
