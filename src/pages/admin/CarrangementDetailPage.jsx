@@ -465,7 +465,7 @@ function sortedMembersForDisplay(memberIds, regMap) {
 
 // ─── PersonRow 元件 ───────────────────────────────────────────
 
-function PersonRow({ reg, carIdx, cars, smallGroups, onMove, onToggleLeader, guestInfo }) {
+function PersonRow({ reg, carIdx, cars, smallGroups, onMove, onToggleLeader, guestInfo, seq }) {
   const name     = getName(reg)
   const cls      = getClasses(reg).map(c => [c.class_name, c.group_name].filter(Boolean).join(' ')).join('／')
   const isLeader = carIdx >= 0 && (cars[carIdx]?.leaders.includes(reg.registration_id) ?? false)
@@ -474,6 +474,11 @@ function PersonRow({ reg, carIdx, cars, smallGroups, onMove, onToggleLeader, gue
 
   return (
     <div className={`flex items-center gap-2 px-4 py-2 text-sm ${isGuest ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-amber-50'}`}>
+      {seq != null && (
+        <span className="shrink-0 inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-gray-100 text-gray-500 text-xs font-mono tabular-nums">
+          {seq}
+        </span>
+      )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="font-medium truncate">{name}</span>
@@ -1406,7 +1411,7 @@ export default function CarrangementDetailPage() {
                     {car.members.length === 0 ? (
                       <div className="px-4 py-3 text-xs text-gray-400">（此車目前無人）</div>
                     ) : (
-                      sortedMembersForDisplay(car.members, regMap).map(regId => (
+                      sortedMembersForDisplay(car.members, regMap).map((regId, mi) => (
                         <PersonRow
                           key={regId}
                           reg={regMap[regId]}
@@ -1415,6 +1420,7 @@ export default function CarrangementDetailPage() {
                           onMove={movePerson}
                           onToggleLeader={toggleLeader}
                           guestInfo={guestInfoMap[regId]}
+                          seq={mi + 1}
                         />
                       ))
                     )}
@@ -1505,13 +1511,16 @@ export default function CarrangementDetailPage() {
                     <span className="text-xs text-gray-400 font-normal ml-auto">{g.allMembers.length} 人</span>
                   </div>
                   <div className="divide-y">
-                    {g.allMembers.map(r => {
+                    {g.allMembers.map((r, mi) => {
                       const cls       = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
                       const isDriver  = r.registration_id === g.key
                       const carpoolNm = r.answers?.[fieldKeysFor(direction).carpool] ?? ''
                       const isOrphan  = orphans.some(o => o.registration_id === r.registration_id)
                       return (
                         <div key={r.registration_id} className={`flex items-center gap-2 px-4 py-2 text-sm ${isOrphan ? 'bg-orange-50' : ''}`}>
+                          <span className="shrink-0 inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-gray-100 text-gray-500 text-xs font-mono tabular-nums">
+                            {mi + 1}
+                          </span>
                           <span className="flex-1 font-medium">{getName(r)}</span>
                           {cls && <span className="text-xs text-gray-400">{cls}</span>}
                           <span className="text-xs text-gray-300">

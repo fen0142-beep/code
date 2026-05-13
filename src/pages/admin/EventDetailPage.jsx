@@ -265,8 +265,7 @@ export default function EventDetailPage() {
   // 義工存取設定
   const [volunteers, setVolunteers] = useState([])
   const [eventVolunteerIds, setEventVolunteerIds] = useState(new Set())
-  const [volunteerSaving, setVolunteerSaving] = useState(false)
-  const [volunteerMsg, setVolunteerMsg] = useState('')
+  // 義工存取設定已整合到頂部「💾 儲存設定」主按鈕，不再需要獨立 state
 
   // 異動追蹤
   const [changes, setChanges] = useState([])
@@ -501,23 +500,32 @@ export default function EventDetailPage() {
     }
   }
 
-  // 儲存活動基本資料
+  // 儲存活動基本資料 + 義工存取設定（同一顆按鈕一次存）
   async function handleSaveInfo(e) {
     e.preventDefault()
     setSaving(true)
-    const { success, error } = await updateEvent(id, {
-      name: form.name,
-      date_start: form.date_start || null,
-      date_end: form.date_end || null,
-      location: form.location,
-      status: form.status,
-      event_type: form.event_type,
-      is_dharma: form.is_dharma,
-    })
+    const [infoRes, volunteerRes] = await Promise.all([
+      updateEvent(id, {
+        name: form.name,
+        date_start: form.date_start || null,
+        date_end: form.date_end || null,
+        location: form.location,
+        status: form.status,
+        event_type: form.event_type,
+        is_dharma: form.is_dharma,
+      }),
+      setEventVolunteers(id, [...eventVolunteerIds]),
+    ])
     setSaving(false)
-    setSaveMsg(success ? '✅ 已儲存' : `❌ ${error}`)
+    const okAll = infoRes.success && volunteerRes.success
+    if (okAll) {
+      setSaveMsg('✅ 已儲存（含義工存取設定）')
+      setEvent(ev => ({ ...ev, ...form }))
+    } else {
+      const errMsg = !infoRes.success ? infoRes.error : volunteerRes.error
+      setSaveMsg(`❌ 儲存失敗：${errMsg}`)
+    }
     setTimeout(() => setSaveMsg(''), 3000)
-    if (success) setEvent(ev => ({ ...ev, ...form }))
   }
 
   // 儲存動態欄位
@@ -528,14 +536,6 @@ export default function EventDetailPage() {
     const msg = success ? '✅ 欄位已儲存' : `❌ 儲存失敗：${error}`
     setSaveMsg(msg)
     if (success) setTimeout(() => setSaveMsg(''), 3000)
-  }
-
-  async function handleSaveVolunteers() {
-    setVolunteerSaving(true)
-    const { success, error } = await setEventVolunteers(id, [...eventVolunteerIds])
-    setVolunteerSaving(false)
-    setVolunteerMsg(success ? '✅ 已儲存' : `❌ ${error}`)
-    setTimeout(() => setVolunteerMsg(''), 3000)
   }
 
   async function handleDeleteEvent() {
@@ -1171,7 +1171,7 @@ export default function EventDetailPage() {
                 onChange={e => setForm(f => ({ ...f, event_type: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
               >
-                <option value="mountain">回山活動（看板顯示排車資訊）</option>
+                <option value="mountain">回山活動（看板顯示交通資訊）</option>
                 <option value="temple">精舍活動（看板顯示午齋／停車）</option>
               </select>
             </div>
@@ -1194,7 +1194,7 @@ export default function EventDetailPage() {
                   onChange={e => setForm(f => ({ ...f, is_dharma: e.target.checked }))}
                   className="w-4 h-4 accent-amber-600"
                 />
-                此為法會活動（之後會出現「功德主管理」）
+                此為精舍法會活動（勾選後可設定法會報到時，出現功德主相關資訊）
               </label>
             </div>
           </div>
@@ -1239,59 +1239,50 @@ export default function EventDetailPage() {
           </button>
         </div>
 
-        {/* 義工存取設定 */}
+        {/* 義工存取設定（勾選後請按頂部「💾 儲存設定」一併儲存） */}
         <div className="mt-4 bg-white rounded-xl border border-gray-200 p-5">
           <p className="text-sm font-semibold text-gray-700 mb-1">👤 義工存取設定</p>
-          <p className="text-xs text-gray-500 mb-3">勾選的義工帳號登入後台後，即可看到此活動的報名名單。</p>
+          <p className="text-xs text-gray-500 mb-3">
+            勾選的義工帳號登入後台後，即可看到此活動的報名名單。
+            <span className="text-amber-600">修改後請按頂部「💾 儲存設定」一併儲存。</span>
+          </p>
           {volunteers.length === 0 ? (
             <p className="text-sm text-gray-400 py-2">
               尚無義工帳號紀錄。義工以義工帳號登入後台一次後，即會自動出現在此。
             </p>
           ) : (
-            <>
-              <div className="space-y-1 mb-4">
-                {volunteers.map(v => (
-                  <label key={v.id} className="flex items-center gap-3 cursor-pointer select-none px-2 py-2 rounded-lg hover:bg-gray-50">
-                    <input
-                      type="checkbox"
-                      checked={eventVolunteerIds.has(v.id)}
-                      onChange={e => {
-                        setEventVolunteerIds(prev => {
-                          const next = new Set(prev)
-                          if (e.target.checked) next.add(v.id)
-                          else next.delete(v.id)
-                          return next
-                        })
-                      }}
-                      className="w-4 h-4 accent-amber-600 shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <span className="text-sm font-medium text-gray-700">
-                        {v.display_name && v.display_name !== v.email ? v.display_name : ''}
-                      </span>
-                      <span className="text-xs text-gray-500 ml-1">{v.email}</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleSaveVolunteers}
-                  disabled={volunteerSaving}
-                  className="text-sm font-medium px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-800 text-white transition-colors disabled:opacity-50"
-                >
-                  {volunteerSaving ? '儲存中…' : '儲存義工設定'}
-                </button>
-                {volunteerMsg && <span className="text-sm text-gray-600">{volunteerMsg}</span>}
-              </div>
-            </>
+            <div className="space-y-1">
+              {volunteers.map(v => (
+                <label key={v.id} className="flex items-center gap-3 cursor-pointer select-none px-2 py-2 rounded-lg hover:bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={eventVolunteerIds.has(v.id)}
+                    onChange={e => {
+                      setEventVolunteerIds(prev => {
+                        const next = new Set(prev)
+                        if (e.target.checked) next.add(v.id)
+                        else next.delete(v.id)
+                        return next
+                      })
+                    }}
+                    className="w-4 h-4 accent-amber-600 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium text-gray-700">
+                      {v.display_name && v.display_name !== v.email ? v.display_name : ''}
+                    </span>
+                    <span className="text-xs text-gray-500 ml-1">{v.email}</span>
+                  </div>
+                </label>
+              ))}
+            </div>
           )}
         </div>
 
         {/* 刪除活動（移至最下方，降權為灰色） */}
         <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-4 flex items-start gap-3">
           <div className="flex-1 text-xs text-gray-500">
-            <p className="font-medium text-gray-600">⚠️ 危險區域</p>
+            <p className="font-medium text-gray-600">刪除活動</p>
             <p className="mt-0.5">
               刪除後，活動設定、動態欄位與所有報名紀錄將永久移除，無法復原。
               {registrations.length > 0 && (

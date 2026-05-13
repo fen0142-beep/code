@@ -922,16 +922,30 @@ export async function getSmallCarLeaders(eventId) {
 
 /**
  * 設定（或更新）活動的總領隊
+ *
+ * 注意：5/13 Phase 2 補強後，head_leader 的 unique 從 (event_id,type)
+ * 改成 (event_id,type,registration_id)（為了讓小車多領隊）。
+ * 舊的 upsert + onConflict:'event_id,type' 會撞「no unique constraint matching ON CONFLICT」。
+ * 改成「先刪後插」維持「同活動只能有一位總領隊」的語意。
  */
 export async function setHeadLeader(eventId, registrationId) {
-  const { error } = await supabase
-    .from('head_leader')
-    .upsert(
-      { event_id: eventId, registration_id: registrationId, type: 'all' },
-      { onConflict: 'event_id,type' }
-    )
+  if (!eventId) return { success: false, error: 'eventId required' }
 
-  if (error) return { success: false, error: error.message }
+  // 先刪掉此活動所有 type='all' 的紀錄（同活動只會有一位總領隊）
+  const { error: delErr } = await supabase
+    .from('head_leader')
+    .delete()
+    .eq('event_id', eventId)
+    .eq('type', 'all')
+  if (delErr) return { success: false, error: delErr.message }
+
+  // 清空就結束（沒指定總領隊）
+  if (!registrationId) return { success: true, error: null }
+
+  const { error: insErr } = await supabase
+    .from('head_leader')
+    .insert({ event_id: eventId, registration_id: registrationId, type: 'all' })
+  if (insErr) return { success: false, error: insErr.message }
   return { success: true, error: null }
 }
 

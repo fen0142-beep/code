@@ -75,6 +75,31 @@ function DirectionBadge({ direction }) {
   return null
 }
 
+// ─── 提前上山自動報到的 sessionStorage 鎖 ──────────────────────
+// 問題：load() 在 page mount 時把「提前上山者」自動標記為已報到。
+// 領隊若手動取消其報到，重新整理（F5）後又會被自動勾回，造成「上方計數已更新但下方又恢復」的 bug。
+// 修法：用 sessionStorage 紀錄「本次 session 已自動勾過的 reg_id」，每位只勾一次。
+// 領隊取消後維持取消，直到 sessionStorage 清掉（換瀏覽器 / 隔天 / 清快取）。
+
+function getAutoCheckedSet(token) {
+  try {
+    const raw = sessionStorage.getItem(`autoChecked_${token}`)
+    return new Set(raw ? JSON.parse(raw) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function markAutoChecked(token, regIds) {
+  try {
+    const set = getAutoCheckedSet(token)
+    regIds.forEach(id => set.add(id))
+    sessionStorage.setItem(`autoChecked_${token}`, JSON.stringify([...set]))
+  } catch {
+    // sessionStorage 不可用就放棄記錄，最差結果是退回舊行為
+  }
+}
+
 // 判斷是否提前上山（任一答案日期早於活動起始日）
 // 回傳 "X月X日已上山" 字串，或 null
 function getPreArriveInfo(answers, eventDateStart) {
@@ -173,15 +198,19 @@ export default function CarCheckinPage() {
     if (carInfo.car) {
       setMode('car')
       // 提前上山者自動標記為已報到（靜默執行）— 含所有跨方向的車
+      // 注意：用 sessionStorage 過濾「本 session 已自動勾過」的人，避免取消後 F5 又被勾回
       const dateStart = carInfo.car.events?.date_start
+      const autoChecked = getAutoCheckedSet(token)
       const toAutoCheck = carInfo.linkedCars.flatMap(c =>
         (c.car_members ?? []).filter(m =>
           !m.registrations?.checked_in_at &&
-          getPreArriveInfo(m.registrations?.answers, dateStart)
+          getPreArriveInfo(m.registrations?.answers, dateStart) &&
+          !autoChecked.has(m.registration_id)
         )
       )
       if (toAutoCheck.length > 0) {
         await Promise.all(toAutoCheck.map(m => checkIn(m.registration_id)))
+        markAutoChecked(token, toAutoCheck.map(m => m.registration_id))
         const fresh = await loadCarWithLinked(token)
         setLinkedCars(fresh.linkedCars)
         setCar(fresh.linkedCars.find(c => c.car_id === carInfo.car.car_id) ?? fresh.car)
@@ -198,13 +227,17 @@ export default function CarCheckinPage() {
         ? await getAllSmallCarsProgress(eventId)
         : await getAllCarsProgress(eventId)
       // 提前上山者自動標記為已報到（靜默執行）
+      // 注意：用 sessionStorage 過濾「本 session 已自動勾過」的人，避免取消後 F5 又被勾回
       const dateStart = hlRes.headLeader.events?.date_start
+      const autoChecked = getAutoCheckedSet(token)
       const toAutoCheck = (cars ?? []).flatMap(c => c.car_members ?? []).filter(m =>
         !m.registrations?.checked_in_at &&
-        getPreArriveInfo(m.registrations?.answers, dateStart)
+        getPreArriveInfo(m.registrations?.answers, dateStart) &&
+        !autoChecked.has(m.registration_id)
       )
       if (toAutoCheck.length > 0) {
         await Promise.all(toAutoCheck.map(m => checkIn(m.registration_id)))
+        markAutoChecked(token, toAutoCheck.map(m => m.registration_id))
         const { cars: fresh } = leaderType === 'small_car'
           ? await getAllSmallCarsProgress(eventId)
           : await getAllCarsProgress(eventId)
@@ -323,6 +356,8 @@ export default function CarCheckinPage() {
   async function handleToggleCheckin(registrationId, checkedAt) {
     if (checkedAt) {
       await uncheckIn(registrationId)
+      // 取消報到時，把該 reg_id 加進 autoCheckedSet，避免後續 autoCheck 又把他勾回去
+      markAutoChecked(token, [registrationId])
     } else {
       await checkIn(registrationId)
     }
