@@ -1958,12 +1958,20 @@ export default function CarrangementDetailPage() {
                       const isOtherDriver = !isAnchor && g.candidateIds?.has(r.registration_id)
                       const carpoolNm = r.answers?.[fieldKeysFor(direction).carpool] ?? ''
                       const isOrphan  = orphans.some(o => o.registration_id === r.registration_id)
+                      const memBadges = preceptBadgeProps(r)
                       return (
                         <div key={r.registration_id} className={`flex items-center gap-2 px-4 py-2 text-sm ${isOrphan ? 'bg-orange-50' : ''}`}>
                           <span className="shrink-0 inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-gray-100 text-gray-500 text-xs font-mono tabular-nums">
                             {mi + 1}
                           </span>
-                          <span className="flex-1 font-medium">{getName(r)}</span>
+                          <span className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                            <span className="font-medium">{getName(r)}</span>
+                            {memBadges.map((b, i) => (
+                              <span key={i} className={b.className} title={b.title}>
+                                {b.children}
+                              </span>
+                            ))}
+                          </span>
                           {cls && <span className="text-xs text-gray-400">{cls}</span>}
                           <span className="text-xs text-gray-300">
                             {isAnchor && !g.needsDriverChoice
@@ -2006,9 +2014,17 @@ export default function CarrangementDetailPage() {
                     {unassignedOrphans.map(r => {
                       const cls       = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
                       const carpoolNm = r.answers?.[fieldKeysFor(direction).carpool] ?? ''
+                      const orpBadges = preceptBadgeProps(r)
                       return (
                         <div key={r.registration_id} className="flex items-center gap-2 px-4 py-2 text-sm">
-                          <span className="flex-1 font-medium">{getName(r)}</span>
+                          <span className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                            <span className="font-medium">{getName(r)}</span>
+                            {orpBadges.map((b, i) => (
+                              <span key={i} className={b.className} title={b.title}>
+                                {b.children}
+                              </span>
+                            ))}
+                          </span>
                           {cls && <span className="text-xs text-gray-400">{cls}</span>}
                           {carpoolNm && <span className="text-xs text-gray-400">→ {carpoolNm}</span>}
                           <select
