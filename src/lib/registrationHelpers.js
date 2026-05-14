@@ -11,22 +11,28 @@
 // ─────────────────────────────────────────────────────────────
 
 /**
- * 從報名 answers 拿到 precept_level（容錯多種設定方式）
+ * 同時偵測三皈與五戒（兩者可並存）
  *
- * 支援兩種設計：
+ * 支援的設計：
  * A. 單一 radio 欄位：answers.precept_level = '三皈' / '五戒' / '無'
- *    （field_key 容錯：precept_level / precept / 三皈五戒 / 皈戒）
+ *    （field_key 容錯：precept_level / precept / 三皈五戒 / 皈戒；
+ *     value 可為 string 或 array，array 代表 checkbox 多選）
  * B. 雙 boolean 欄位（如「報名三皈依」、「報名五戒」各一個 boolean）：
  *    掃 answers，找 key 含「五戒」或「三皈/皈依」字樣、值為 true 的
- *    同時都勾 → 五戒（層級較高）
  *
- * @returns {'refuge'|'five_precepts'|null}
+ * 重點：A、B 兩種模式都會掃，不會 early return。
+ * 學員若 radio 選了「三皈」、又勾了「加報五戒」boolean，兩個 flag 都會 true。
+ *
+ * @returns {{ refuge: boolean, five: boolean }}
  */
-export function getPreceptLevel(reg) {
-  if (!reg) return null
+export function getPreceptFlags(reg) {
+  if (!reg) return { refuge: false, five: false }
   const ans = reg.answers || {}
 
-  // ── 模式 A：單一 radio 欄位 ──
+  let refuge = false
+  let five   = false
+
+  // ── 模式 A：「集中型」欄位（radio 單值或 checkbox 多值）──
   const candidates = [
     ans.precept_level,
     ans.precept,
@@ -34,24 +40,42 @@ export function getPreceptLevel(reg) {
     ans['皈戒'],
   ]
   for (const v of candidates) {
-    if (!v) continue
-    const s = String(v).trim()
-    if (s === '五戒' || s === 'five_precepts' || s === 'five') return 'five_precepts'
-    if (s === '三皈' || s === '三皈依' || s === 'refuge' || s === 'sangui') return 'refuge'
+    if (v == null || v === '' || v === false) continue
+    const arr = Array.isArray(v) ? v : [v]
+    for (const item of arr) {
+      if (item == null) continue
+      const s = String(item).trim()
+      if (!s) continue
+      if (s === '五戒' || s === 'five_precepts' || s === 'five' || s.includes('五戒')) five = true
+      if (s === '三皈' || s === '三皈依' || s === 'refuge' || s === 'sangui' ||
+          s.includes('三皈') || s.includes('皈依')) refuge = true
+    }
   }
 
   // ── 模式 B：boolean 雙欄位（key 含關鍵字、值為 true）──
-  let hasRefuge = false
-  let hasFive   = false
   for (const [k, v] of Object.entries(ans)) {
     if (v !== true) continue
     const key = String(k)
-    if (key.includes('五戒')) hasFive = true
-    else if (key.includes('三皈') || key.includes('皈依')) hasRefuge = true
+    if (key.includes('五戒')) five = true
+    else if (key.includes('三皈') || key.includes('皈依')) refuge = true
   }
-  if (hasFive)   return 'five_precepts'   // 受五戒層級較高
-  if (hasRefuge) return 'refuge'
 
+  return { refuge, five }
+}
+
+/**
+ * 從報名 answers 拿到 precept_level（單一最高層級）
+ *
+ * 同時受三皈與五戒時，回 'five_precepts'（五戒層級較高）。
+ * 用於：badge 顯示、Step 0 同車獨佔分組等只需「擇一」語意的場景。
+ * 想拿到完整「同時報名」資訊請用 getPreceptFlags。
+ *
+ * @returns {'refuge'|'five_precepts'|null}
+ */
+export function getPreceptLevel(reg) {
+  const { refuge, five } = getPreceptFlags(reg)
+  if (five) return 'five_precepts'
+  if (refuge) return 'refuge'
   return null
 }
 
@@ -110,17 +134,30 @@ export function getPlateNumber(reg, fields = []) {
 }
 
 /**
- * 一個小元件等級的 helper：在 JSX 裡直接 inline 渲染 badge。
- * 用法：{renderPreceptBadge(reg)}
+ * Badge props 陣列 — 同時受三皈與五戒時兩個都會回（皈在前、戒在後）
  *
- * 不用 JSX 是因為這檔案是 .js；改成回傳 props 給呼叫者組成 <span>
+ * 用法：
+ *   const badges = preceptBadgeProps(reg)   // 0~2 個元素
+ *   badges.map(b => <span className={b.className} title={b.title}>{b.children}</span>)
+ *
+ * @returns {Array<{ className: string, title: string, children: string }>}
  */
 export function preceptBadgeProps(reg) {
-  const b = getPreceptBadge(reg)
-  if (!b) return null
-  return {
-    className: b.cls,
-    title: b.label === '皈' ? '三皈' : '五戒',
-    children: `[${b.label}]`,
+  const { refuge, five } = getPreceptFlags(reg)
+  const result = []
+  if (refuge) {
+    result.push({
+      className: 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300',
+      title: '三皈',
+      children: '[皈]',
+    })
   }
+  if (five) {
+    result.push({
+      className: 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300',
+      title: '五戒',
+      children: '[戒]',
+    })
+  }
+  return result
 }

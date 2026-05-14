@@ -18,6 +18,7 @@ import {
 } from '../../lib/supabase'
 import {
   getPreceptLevel,
+  getPreceptFlags,
   preceptBadgeProps,
   isDriverFromAnswers,
 } from '../../lib/registrationHelpers'
@@ -646,7 +647,7 @@ function PersonRow({ reg, carIdx, cars, smallGroups, onMove, onToggleLeader, gue
   const cls      = getClasses(reg).map(c => [c.class_name, c.group_name].filter(Boolean).join(' ')).join('／')
   const isLeader = carIdx >= 0 && (cars[carIdx]?.leaders.includes(reg.registration_id) ?? false)
   const isGuest  = !reg.student_id
-  const preceptBadge = preceptBadgeProps(reg)
+  const preceptBadges = preceptBadgeProps(reg)
 
   return (
     <div className={`flex items-center gap-2 px-4 py-2 text-sm ${isGuest ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-amber-50'}`}>
@@ -658,11 +659,11 @@ function PersonRow({ reg, carIdx, cars, smallGroups, onMove, onToggleLeader, gue
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="font-medium truncate">{name}</span>
-          {preceptBadge && (
-            <span className={preceptBadge.className} title={preceptBadge.title}>
-              {preceptBadge.children}
+          {preceptBadges.map((b, i) => (
+            <span key={i} className={b.className} title={b.title}>
+              {b.children}
             </span>
-          )}
+          ))}
           {isGuest && (
             <span className="text-xs text-blue-500 bg-blue-100 rounded px-1 shrink-0">訪客</span>
           )}
@@ -1250,10 +1251,12 @@ export default function CarrangementDetailPage() {
     }
 
     // 三皈／五戒備註文字（給匯出備註欄用，法師沒 answers 自動回空字串）
+    // 同時報名兩者時用「三皈、五戒」呈現（兩者可並存）
     const preceptText = r => {
-      const lv = getPreceptLevel(r)
-      if (lv === 'refuge') return '三皈'
-      if (lv === 'five_precepts') return '五戒'
+      const { refuge, five } = getPreceptFlags(r)
+      if (refuge && five) return '三皈、五戒'
+      if (five) return '五戒'
+      if (refuge) return '三皈'
       return ''
     }
 
