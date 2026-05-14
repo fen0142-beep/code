@@ -1249,6 +1249,14 @@ export default function CarrangementDetailPage() {
       return result
     }
 
+    // 三皈／五戒備註文字（給匯出備註欄用，法師沒 answers 自動回空字串）
+    const preceptText = r => {
+      const lv = getPreceptLevel(r)
+      if (lv === 'refuge') return '三皈'
+      if (lv === 'five_precepts') return '五戒'
+      return ''
+    }
+
     // 取得某 host 學員所對應的訪客（host_student_id 直接配對，或備註姓名比對相容舊資料）
     const guestsOfHost = (host, pool) => {
       if (!host?.student_id) return []
@@ -1322,7 +1330,9 @@ export default function CarrangementDetailPage() {
         const up   = upMembers.has(r.registration_id)   ? 'V' : ''
         const down = downMembers.has(r.registration_id) ? 'V' : ''
         const origNote = getGuestNote(r)
+        const pTxt = preceptText(r)
         const parts = []
+        if (pTxt) parts.push(pTxt)
         if (isLeader) parts.push('領隊')
         if (origNote) parts.push(origNote)
         data.push([seq++, carName, getName(r), clsOf(r), grpOf(r), idOf(r), '', up, down, parts.join('/')])
@@ -1391,7 +1401,9 @@ export default function CarrangementDetailPage() {
           const up_   = upMemberIds.has(r.registration_id)   ? 'V' : ''
           const down_ = downMemberIds.has(r.registration_id) ? 'V' : ''
           const origNote = getGuestNote(r)
+          const pTxt = preceptText(r)
           const parts = []
+          if (pTxt) parts.push(pTxt)
           if (isDriver) parts.push('司機')
           if (origNote) parts.push(origNote)
           data.push([seq++, carName, plate || '', getName(r), clsOf(r), grpOf(r), idOf(r), '', up_, down_, parts.join('/')])
@@ -1411,10 +1423,12 @@ export default function CarrangementDetailPage() {
         const upV   = upUnassigned.some(o => o.registration_id === id)   ? 'V' : ''
         const downV = downUnassigned.some(o => o.registration_id === id) ? 'V' : ''
         const origNote   = getGuestNote(r)
+        const pTxt = preceptText(r)
         const carpoolUp   = r.answers?.[fieldKeysFor('up').carpool]   ?? ''
         const carpoolDown = r.answers?.[fieldKeysFor('down').carpool] ?? ''
         const carpool = carpoolUp || carpoolDown
         const parts = []
+        if (pTxt) parts.push(pTxt)
         if (carpool) parts.push(`→ ${carpool}`)
         if (origNote) parts.push(origNote)
         data.push([seq++, '小車（未指定）', '', getName(r), clsOf(r), grpOf(r), idOf(r), '', upV, downV, parts.join('/')])
