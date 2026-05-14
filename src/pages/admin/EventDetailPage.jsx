@@ -29,6 +29,7 @@ import {
   getAllStudents,
   checkDuplicate,
 } from '../../lib/supabase'
+import { getPreceptFlags } from '../../lib/registrationHelpers'
 
 const STATUS_LABEL = { draft: '草稿', active: '進行中', closed: '已關閉' }
 
@@ -150,6 +151,20 @@ function computeTransportStats(regs, field, identityField) {
   return { byIdentity, total }
 }
 
+// 三皈五戒統計：refugeOnly = 只受三皈、fiveOnly = 只受五戒、both = 同時受
+function computePreceptStats(regs) {
+  let refugeOnly = 0
+  let fiveOnly   = 0
+  let both       = 0
+  for (const r of regs) {
+    const { refuge, five } = getPreceptFlags(r)
+    if (refuge && five)   both++
+    else if (five)        fiveOnly++
+    else if (refuge)      refugeOnly++
+  }
+  return { refugeOnly, fiveOnly, both, total: refugeOnly + fiveOnly + both }
+}
+
 function computeDashboardStats(regs, fields) {
   const identityField = fields.find(f => f.field_key === 'identity')
   const upField   = fields.find(f => f.field_key === 'transport_up')
@@ -172,6 +187,7 @@ function computeDashboardStats(regs, fields) {
     downStats: computeTransportStats(regs, downField, identityField),
     hasUp:   !!upField,
     hasDown: !!downField,
+    preceptStats: computePreceptStats(regs),
   }
 }
 
@@ -1612,10 +1628,11 @@ export default function EventDetailPage() {
 
           {/* 即時看板（回山版） */}
           {registrations.length > 0 && event?.event_type !== 'temple' && (() => {
-            const { identityField, identityCounts, upStats, downStats, hasUp, hasDown } =
+            const { identityField, identityCounts, upStats, downStats, hasUp, hasDown, preceptStats } =
               computeDashboardStats(registrations, fields)
             const hasIdentity = !!identityField && Object.keys(identityCounts).length > 0
-            if (!hasIdentity && !hasUp && !hasDown) return null
+            const hasPrecept  = preceptStats.total > 0
+            if (!hasIdentity && !hasUp && !hasDown && !hasPrecept) return null
 
             // 身份選項依後台定義排序
             const identityOptions = identityField?.options ?? []
@@ -1635,7 +1652,7 @@ export default function EventDetailPage() {
 
               return (
                 <div className="flex items-start gap-2 flex-wrap">
-                  <span className="text-xs text-gray-500 shrink-0 mt-1 w-14">{label}</span>
+                  <span className="text-xs text-gray-500 shrink-0 mt-1 w-20">{label}</span>
                   <div className="flex flex-wrap gap-2">
                     {useByIdentity ? (
                       identityKeys.map(id => {
@@ -1669,7 +1686,7 @@ export default function EventDetailPage() {
                 {/* 身份別人數 */}
                 {hasIdentity && (
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-gray-500 shrink-0 w-14">身份</span>
+                    <span className="text-xs text-gray-500 shrink-0 w-20">身份</span>
                     <div className="flex flex-wrap gap-2">
                       {sortedIdentities.map(val => (
                         <span key={val} className="inline-flex items-center gap-1 bg-white border border-blue-200 rounded-lg px-2.5 py-1 shadow-sm">
@@ -1678,6 +1695,38 @@ export default function EventDetailPage() {
                           <span className="text-xs text-gray-400">人</span>
                         </span>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 三皈五戒（只在活動有相關欄位且有人報名時才出現） */}
+                {hasPrecept && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-gray-500 shrink-0 w-20">三皈五戒</span>
+                    <div className="flex flex-wrap gap-2">
+                      {preceptStats.refugeOnly > 0 && (
+                        <span className="inline-flex items-center gap-1 bg-white border border-emerald-200 rounded-lg px-2.5 py-1 shadow-sm">
+                          <span className="text-xs text-emerald-700">三皈</span>
+                          <span className="text-sm font-bold text-emerald-700 leading-none">{preceptStats.refugeOnly}</span>
+                          <span className="text-xs text-gray-400">人</span>
+                        </span>
+                      )}
+                      {preceptStats.fiveOnly > 0 && (
+                        <span className="inline-flex items-center gap-1 bg-white border border-purple-200 rounded-lg px-2.5 py-1 shadow-sm">
+                          <span className="text-xs text-purple-700">五戒</span>
+                          <span className="text-sm font-bold text-purple-700 leading-none">{preceptStats.fiveOnly}</span>
+                          <span className="text-xs text-gray-400">人</span>
+                        </span>
+                      )}
+                      {preceptStats.both > 0 && (
+                        <span className="inline-flex items-center gap-1 bg-white border border-indigo-200 rounded-lg px-2.5 py-1 shadow-sm">
+                          <span className="text-xs text-emerald-700">三皈</span>
+                          <span className="text-xs text-gray-400">、</span>
+                          <span className="text-xs text-purple-700">五戒</span>
+                          <span className="text-sm font-bold text-indigo-700 leading-none ml-0.5">{preceptStats.both}</span>
+                          <span className="text-xs text-gray-400">人</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
