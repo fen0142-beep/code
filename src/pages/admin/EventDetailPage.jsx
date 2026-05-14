@@ -1699,30 +1699,40 @@ export default function EventDetailPage() {
                   </div>
                 )}
 
-                {/* 三皈五戒（只在活動有相關欄位且有人報名時才出現） */}
+                {/* 三皈五戒（三個數字互斥；活動有相關欄位且 total>0 才出現） */}
                 {hasPrecept && (
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-gray-500 shrink-0 w-20">三皈五戒</span>
                     <div className="flex flex-wrap gap-2">
                       {preceptStats.refugeOnly > 0 && (
-                        <span className="inline-flex items-center gap-1 bg-white border border-emerald-200 rounded-lg px-2.5 py-1 shadow-sm">
+                        <span
+                          title="只受三皈（未同時受五戒）"
+                          className="inline-flex items-center gap-1 bg-white border border-emerald-200 rounded-lg px-2.5 py-1 shadow-sm"
+                        >
                           <span className="text-xs text-emerald-700">三皈</span>
                           <span className="text-sm font-bold text-emerald-700 leading-none">{preceptStats.refugeOnly}</span>
                           <span className="text-xs text-gray-400">人</span>
                         </span>
                       )}
                       {preceptStats.fiveOnly > 0 && (
-                        <span className="inline-flex items-center gap-1 bg-white border border-purple-200 rounded-lg px-2.5 py-1 shadow-sm">
+                        <span
+                          title="只受五戒（未同時受三皈）"
+                          className="inline-flex items-center gap-1 bg-white border border-purple-200 rounded-lg px-2.5 py-1 shadow-sm"
+                        >
                           <span className="text-xs text-purple-700">五戒</span>
                           <span className="text-sm font-bold text-purple-700 leading-none">{preceptStats.fiveOnly}</span>
                           <span className="text-xs text-gray-400">人</span>
                         </span>
                       )}
                       {preceptStats.both > 0 && (
-                        <span className="inline-flex items-center gap-1 bg-white border border-indigo-200 rounded-lg px-2.5 py-1 shadow-sm">
+                        <span
+                          title="同時受三皈與五戒"
+                          className="inline-flex items-center gap-1 bg-white border border-indigo-200 rounded-lg px-2.5 py-1 shadow-sm"
+                        >
                           <span className="text-xs text-emerald-700">三皈</span>
                           <span className="text-xs text-gray-400">、</span>
                           <span className="text-xs text-purple-700">五戒</span>
+                          <span className="text-xs text-indigo-700">同受</span>
                           <span className="text-sm font-bold text-indigo-700 leading-none ml-0.5">{preceptStats.both}</span>
                           <span className="text-xs text-gray-400">人</span>
                         </span>
