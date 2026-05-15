@@ -507,7 +507,9 @@ export default function EventDetailPage() {
     setRegistrations(r)
     setChanges(c)
     setTemplates(tmpl || [])
-    setSessions(s || [])
+    const freshSessions = s || []
+    setSessions(freshSessions)
+    if (freshSessions.length > 0) setSessionTab(freshSessions[0].session_id)
     setSelectedGuestIds(new Set()) // 重新載入後清除選取
     setLoading(false)
   }, [id, navigate])
@@ -1467,7 +1469,7 @@ export default function EventDetailPage() {
 
         {/* 多場次場次設定 */}
         {form.multi_session && event?.event_id && (
-          <EventSessionsPanel eventId={event.event_id} onSaved={fresh => setSessions(fresh || [])} />
+          <EventSessionsPanel eventId={event.event_id} onSaved={fresh => { setSessions(fresh || []); if (fresh?.length > 0) setSessionTab(fresh[0].session_id) }} />
         )}
 
         {/* 停止異動區塊 */}
@@ -1630,16 +1632,6 @@ export default function EventDetailPage() {
           {/* 多場次：場次切換 tabs */}
           {event?.multi_session && sessions.length > 0 && (
             <div className="flex gap-1.5 mb-4 flex-wrap items-center border-b border-gray-100 pb-3">
-              <button
-                onClick={() => setSessionTab('all')}
-                className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors ${
-                  sessionTab === 'all'
-                    ? 'bg-amber-100 text-amber-800 border-amber-300'
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                全部（{registrations.length}）
-              </button>
               {sessions.map(s => {
                 const cnt = registrations.filter(r =>
                   r.answers?.sessions?.some(ss => ss.session_id === s.session_id)
