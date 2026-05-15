@@ -3,3 +3,4 @@ dist/
 .env.local
 .env
 *.local
+vite.config.js.timestamp-*
