@@ -20,6 +20,7 @@ const EMPTY_SESSION = () => ({
  * 多場次設定面板
  * Props:
  *   eventId  — 活動 ID
+ *   onSaved  — 儲存成功後回呼（傳入最新 sessions 陣列），父元件可用來更新自己的 state
  */
 export default function EventSessionsPanel({ eventId, onSaved }) {
   const [sessions, setSessions] = useState([])
@@ -245,13 +246,6 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
       <button
         onClick={addSession}
         className="mt-3 text-sm text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
-      >
-        ＋ 新增場次
-      </button>
-    </div>
-  )
-}
-ors"
       >
         ＋ 新增場次
       </button>
