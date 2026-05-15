@@ -1669,21 +1669,17 @@ export async function saveEventSessions(eventId, sessions) {
     .eq('event_id', eventId)
   if (delErr) return { success: false, error: delErr.message }
 
-  if (sessions.length === 0) return { success: true, error: null }
-
+  if (sessions.length === 0) return { success: true }
   const rows = sessions.map((s, i) => ({
-    event_id:    eventId,
-    date:        s.date || null,
+    event_id: eventId,
+    date: s.date,
     time_period: s.time_period,
-    dharma_name: (s.dharma_name || '').trim(),
-    time_start:  emptyToNull(s.time_start),
-    time_end:    emptyToNull(s.time_end),
-    sort_order:  i + 1,
+    dharma_name: s.dharma_name || null,
+    time_start: s.time_start || null,
+    time_end: s.time_end || null,
+    sort_order: i,
   }))
-
-  const { error: insertErr } = await supabase
-    .from('event_sessions')
-    .insert(rows)
-  if (insertErr) return { success: false, error: insertErr.message }
-  return { success: true, error: null }
+  const { error: insErr } = await supabase.from('event_sessions').insert(rows)
+  if (insErr) return { success: false, error: insErr.message }
+  return { success: true }
 }

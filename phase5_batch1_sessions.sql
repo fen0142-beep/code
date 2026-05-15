@@ -35,11 +35,22 @@ CREATE TABLE IF NOT EXISTS registration_session_checkins (
 CREATE INDEX IF NOT EXISTS idx_rsc_reg_id     ON registration_session_checkins(reg_id);
 CREATE INDEX IF NOT EXISTS idx_rsc_session_id ON registration_session_checkins(session_id);
 
--- ④ RLS
+-- ④ RLS + GRANT
+-- 注意：SQL Editor 建表需手動 GRANT，Dashboard 建表才自動處理
+--   authenticated / service_role → 完整讀寫
+--   anon → 只讀（前台 KioskPage 用 anon key 讀場次）
 ALTER TABLE event_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE registration_session_checkins ENABLE ROW LEVEL SECURITY;
 
--- event_sessions：登入使用者可讀；師父可寫
+GRANT ALL ON event_sessions TO authenticated, service_role;
+GRANT SELECT ON event_sessions TO anon;
+GRANT ALL ON registration_session_checkins TO authenticated, service_role;
+
+-- event_sessions：anon 可讀（前台）
+CREATE POLICY "event_sessions_select_anon" ON event_sessions
+  FOR SELECT TO anon USING (true);
+
+-- event_sessions：authenticated 完整讀寫（後台）
 CREATE POLICY "event_sessions_select" ON event_sessions
   FOR SELECT TO authenticated USING (true);
 

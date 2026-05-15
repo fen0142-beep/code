@@ -83,81 +83,22 @@ export function getPreceptLevel(reg) {
  * 對應 badge 樣式
  * @returns {{ label: '皈'|'戒', cls: string }|null}
  */
-export function getPreceptBadge(reg) {
+export function preceptBadgeProps(reg) {
   const lv = getPreceptLevel(reg)
-  if (lv === 'refuge') {
-    return {
-      label: '皈',
-      cls: 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300',
-    }
-  }
-  if (lv === 'five_precepts') {
-    return {
-      label: '戒',
-      cls: 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300',
-    }
-  }
+  if (lv === 'five_precepts') return { label: '戒', cls: 'bg-purple-100 text-purple-700 border-purple-300' }
+  if (lv === 'refuge')        return { label: '皈', cls: 'bg-emerald-100 text-emerald-700 border-emerald-300' }
   return null
 }
 
 /**
- * 判斷某筆 registration 是否為司機。
- * 規則：動態欄位（fields）中有型別為 plate 的欄位、
- *       且 answers[該欄位 key] 有非空值。
- *
- * @param {Object} reg     registration 物件（含 answers）
- * @param {Array}  fields  該活動的 event_fields
+ * 從 answers 判斷是否為司機
+ * 動態欄位中型別為 'plate' 的車牌欄位有非空值 → 視為司機
  */
-export function isDriverFromAnswers(reg, fields = []) {
-  if (!reg) return false
-  const ans = reg.answers || {}
-  for (const f of (fields || [])) {
-    if (f?.field_type !== 'plate') continue
-    const v = ans[f.field_key]
-    if (v && String(v).trim() !== '') return true
-  }
-  return false
-}
-
-/**
- * 拿出 plate 欄位的值（顯示用，回傳第一個非空者）
- */
-export function getPlateNumber(reg, fields = []) {
-  if (!reg) return ''
-  const ans = reg.answers || {}
-  for (const f of (fields || [])) {
-    if (f?.field_type !== 'plate') continue
-    const v = ans[f.field_key]
-    if (v && String(v).trim() !== '') return String(v).trim()
-  }
-  return ''
-}
-
-/**
- * Badge props 陣列 — 同時受三皈與五戒時兩個都會回（皈在前、戒在後）
- *
- * 用法：
- *   const badges = preceptBadgeProps(reg)   // 0~2 個元素
- *   badges.map(b => <span className={b.className} title={b.title}>{b.children}</span>)
- *
- * @returns {Array<{ className: string, title: string, children: string }>}
- */
-export function preceptBadgeProps(reg) {
-  const { refuge, five } = getPreceptFlags(reg)
-  const result = []
-  if (refuge) {
-    result.push({
-      className: 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300',
-      title: '三皈',
-      children: '[皈]',
-    })
-  }
-  if (five) {
-    result.push({
-      className: 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300',
-      title: '五戒',
-      children: '[戒]',
-    })
-  }
-  return result
+export function isDriverFromAnswers(answers) {
+  if (!answers) return false
+  return Object.entries(answers).some(([k, v]) => {
+    if (!v || typeof v !== 'string') return false
+    // 車牌欄位 key 慣例含 plate
+    return k.includes('plate') && v.trim().length > 0
+  })
 }

@@ -65,6 +65,52 @@ function getDisplayName(r) {
   return '-'
 }
 
+// ── 多場次 helper ───────────────────────────────────────────
+function timePeriodShort(tp) {
+  return { morning: '上', afternoon: '下', evening: '晚' }[tp] ?? tp
+}
+function timePeriodLabel(tp) {
+  return { morning: '上午', afternoon: '下午', evening: '晚上' }[tp] ?? tp
+}
+function formatSessionTabLabel(s) {
+  if (!s?.date) return ''
+  const [, mm, dd] = s.date.split('-')
+  return `${parseInt(mm)}/${parseInt(dd)}${timePeriodShort(s.time_period)}`
+}
+
+// 單一場次 CSV 匯出
+function exportSessionCSV(sessionRegs, session, event) {
+  const sessionLabel = formatSessionTabLabel(session)
+  const isMorning = session.time_period === 'morning'
+  const header = ['學員編號', '姓名']
+  if (isMorning) header.push('午齋')
+  header.push('停車', '更新時間')
+
+  const rows = sessionRegs.map(r => {
+    const name = getDisplayName(r)
+    const stamp = r.updated_at ?? r.registered_at
+    const regAt = stamp ? new Date(stamp).toLocaleString('zh-TW') : ''
+    const ssAns = r.answers?.sessions?.find(ss => ss.session_id === session.session_id) ?? {}
+    const row = [r.student_id ?? '訪客', name]
+    if (isMorning) row.push(ssAns.lunch ?? '')
+    row.push(ssAns.parking ?? '', regAt)
+    return row
+  })
+
+  const csv = [header, ...rows]
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+
+  const eventName = (event?.name ?? '活動').replace(/^\d{4}\s*/, '')
+  const filename = `${eventName}_${sessionLabel}_報名資料.csv`
+  const bom = '﻿'
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── 可排序表頭欄 ────────────────────────────────────────────
 function SortTh({ label, colKey, current, dir, onSort, className = '' }) {
   const active = current === colKey
@@ -297,6 +343,10 @@ export default function EventDetailPage() {
   const [sortKey, setSortKey] = useState('updated_at')
   const [sortDir, setSortDir] = useState('desc')
 
+  // 多場次
+  const [sessions, setSessions] = useState([])
+  const [sessionTab, setSessionTab] = useState('all')
+
   // 報名名單搜尋
   const [listSearch, setListSearch] = useState('')
 
@@ -428,7 +478,7 @@ export default function EventDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ events }, { fields: f }, { registrations: r }, { changes: c }, { volunteers: v }, { volunteerIds: va }, { templates: tmpl }] = await Promise.all([
+    const [{ events }, { fields: f }, { registrations: r }, { changes: c }, { volunteers: v }, { volunteerIds: va }, { templates: tmpl }, { sessions: s }] = await Promise.all([
       getAllEvents(),
       getEventFields(id),
       getRegistrationsWithStudents(id),
@@ -436,6 +486,7 @@ export default function EventDetailPage() {
       getVolunteers(),
       getEventVolunteers(id),
       getTemplates(),
+      getEventSessions(id),
     ])
     const ev = events.find(e => e.event_id === id)
     if (!ev) { navigate('/admin/events'); return }
@@ -456,6 +507,7 @@ export default function EventDetailPage() {
     setRegistrations(r)
     setChanges(c)
     setTemplates(tmpl || [])
+    setSessions(s || [])
     setSelectedGuestIds(new Set()) // 重新載入後清除選取
     setLoading(false)
   }, [id, navigate])
@@ -479,8 +531,16 @@ export default function EventDetailPage() {
     })
   })()
 
+  // 多場次：依選中場次過濾
+  const sessionFilteredRegistrations = (() => {
+    if (!event?.multi_session || sessionTab === 'all') return searchedRegistrations
+    return searchedRegistrations.filter(r =>
+      r.answers?.sessions?.some(ss => ss.session_id === sessionTab)
+    )
+  })()
+
   // 排序後的報名名單
-  const sortedRegistrations = [...searchedRegistrations].sort((a, b) => {
+  const sortedRegistrations = [...sessionFilteredRegistrations].sort((a, b) => {
     let aVal = '', bVal = ''
     if (sortKey === 'student_id') {
       aVal = a.student_id ?? '\uFFFF'  // 訪客排最後
@@ -1567,6 +1627,62 @@ export default function EventDetailPage() {
       {/* ── Tab: 報名名單 ── */}
       {tab === 'registrations' && (
         <div>
+          {/* 多場次：場次切換 tabs */}
+          {event?.multi_session && sessions.length > 0 && (
+            <div className="flex gap-1.5 mb-4 flex-wrap items-center border-b border-gray-100 pb-3">
+              <button
+                onClick={() => setSessionTab('all')}
+                className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors ${
+                  sessionTab === 'all'
+                    ? 'bg-amber-100 text-amber-800 border-amber-300'
+                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                全部（{registrations.length}）
+              </button>
+              {sessions.map(s => {
+                const cnt = registrations.filter(r =>
+                  r.answers?.sessions?.some(ss => ss.session_id === s.session_id)
+                ).length
+                return (
+                  <button
+                    key={s.session_id}
+                    onClick={() => setSessionTab(s.session_id)}
+                    title={s.dharma_name ?? ''}
+                    className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors ${
+                      sessionTab === s.session_id
+                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {formatSessionTabLabel(s)}（{cnt}）
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 當前場次資訊 banner */}
+          {event?.multi_session && sessionTab !== 'all' && (() => {
+            const curS = sessions.find(s => s.session_id === sessionTab)
+            if (!curS) return null
+            return (
+              <div className="mb-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
+                <span className="text-amber-500 text-lg">🪷</span>
+                <div className="text-sm">
+                  <span className="font-semibold text-amber-800">{curS.dharma_name ?? formatSessionTabLabel(curS)}</span>
+                  <span className="text-amber-600 ml-2">
+                    {curS.date?.replaceAll('-', '/')} {timePeriodLabel(curS.time_period)}
+                    {curS.time_start && curS.time_end && ` ${curS.time_start.slice(0,5)}–${curS.time_end.slice(0,5)}`}
+                  </span>
+                </div>
+                <span className="ml-auto text-xs text-amber-600 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5">
+                  {sessionFilteredRegistrations.length} 人
+                </span>
+              </div>
+            )
+          })()}
+
           {/* 異動橫幅 */}
           {lastExported && totalChangeSince > 0 && (
             <div className="mb-4 px-4 py-3 bg-orange-50 border border-orange-300 rounded-xl flex items-center gap-2">
@@ -1800,7 +1916,10 @@ export default function EventDetailPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <p className="text-sm text-gray-500">
                 共 {registrations.length} 筆報名
-                {listSearch && <span className="text-amber-700">（搜尋中：{searchedRegistrations.length}）</span>}
+                {event?.multi_session && sessionTab !== 'all' && (
+                  <span className="text-amber-700">（本場次：{sessionFilteredRegistrations.length}）</span>
+                )}
+                {listSearch && <span className="text-amber-700">（搜尋中：{sortedRegistrations.length}）</span>}
               </p>
               {hasGuests && selectedGuestIds.size > 0 && (
                 <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
@@ -1871,7 +1990,20 @@ export default function EventDetailPage() {
                 >
                   ＋ 新增訪客
                 </button>
-                {registrations.length > 0 && (
+                {/* 多場次：場次視圖 → 場次 CSV */}
+                {event?.multi_session && sessionTab !== 'all' && sessionFilteredRegistrations.length > 0 && (() => {
+                  const curS = sessions.find(s => s.session_id === sessionTab)
+                  return (
+                    <button
+                      onClick={() => exportSessionCSV(sortedRegistrations, curS, event)}
+                      className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                    >
+                      ⬇️ 匯出本場次 CSV
+                    </button>
+                  )
+                })()}
+                {/* 全部 CSV（非多場次，或多場次全部視圖）*/}
+                {(!event?.multi_session || sessionTab === 'all') && registrations.length > 0 && (
                   <button
                     onClick={async () => {
                       exportCSV(registrations, fields, event)
@@ -1916,7 +2048,8 @@ export default function EventDetailPage() {
                       onSort={handleSort}
                       className="sticky left-0 z-20 bg-gray-50 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]"
                     />
-                    {fields.filter(f => !hiddenFieldKeys.has(f.field_key)).map(f => (
+                    {/* 一般動態欄位（非多場次）*/}
+                    {!event?.multi_session && fields.filter(f => !hiddenFieldKeys.has(f.field_key)).map(f => (
                       <SortTh
                         key={f.field_id ?? f.field_key}
                         label={f.field_label}
@@ -1926,6 +2059,19 @@ export default function EventDetailPage() {
                         onSort={handleSort}
                       />
                     ))}
+                    {/* 多場次：全部視圖 → 場次欄；場次視圖 → 午齋/停車 */}
+                    {event?.multi_session && sessionTab === 'all' && (
+                      <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">參加場次</th>
+                    )}
+                    {event?.multi_session && sessionTab !== 'all' && (() => {
+                      const curS = sessions.find(s => s.session_id === sessionTab)
+                      return <>
+                        {curS?.time_period === 'morning' && (
+                          <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">午齋</th>
+                        )}
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">停車</th>
+                      </>
+                    })()}
                     {showCheckin && <SortTh label="報到" colKey="checked_in_at" current={sortKey} dir={sortDir} onSort={handleSort} />}
                     {showRegTime && <SortTh label="更新時間" colKey="updated_at" current={sortKey} dir={sortDir} onSort={handleSort} />}
                     <th className="sticky right-0 z-20 bg-gray-50 px-3 py-2 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.08)]" />
@@ -1988,11 +2134,43 @@ export default function EventDetailPage() {
                             )}
                           </span>
                         </td>
-                        {fields.filter(f => !hiddenFieldKeys.has(f.field_key)).map(f => (
+                        {/* 一般動態欄位（非多場次）*/}
+                        {!event?.multi_session && fields.filter(f => !hiddenFieldKeys.has(f.field_key)).map(f => (
                           <td key={f.field_id} className="px-3 py-1.5 text-gray-700">
                             {formatFieldValue(f, r.answers?.[f.field_key])}
                           </td>
                         ))}
+                        {/* 多場次：全部視圖 → 場次 badge 列 */}
+                        {event?.multi_session && sessionTab === 'all' && (
+                          <td className="px-3 py-1.5">
+                            <div className="flex flex-wrap gap-1">
+                              {(r.answers?.sessions ?? []).map(ss => {
+                                const s = sessions.find(x => x.session_id === ss.session_id)
+                                if (!s) return null
+                                return (
+                                  <span
+                                    key={ss.session_id}
+                                    title={s.dharma_name ?? ''}
+                                    className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                                  >
+                                    {formatSessionTabLabel(s)}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          </td>
+                        )}
+                        {/* 多場次：場次視圖 → 午齋/停車 */}
+                        {event?.multi_session && sessionTab !== 'all' && (() => {
+                          const curS = sessions.find(s => s.session_id === sessionTab)
+                          const ssAns = r.answers?.sessions?.find(ss => ss.session_id === sessionTab) ?? {}
+                          return <>
+                            {curS?.time_period === 'morning' && (
+                              <td className="px-3 py-1.5 text-sm text-gray-700">{ssAns.lunch ?? '-'}</td>
+                            )}
+                            <td className="px-3 py-1.5 text-sm text-gray-700">{ssAns.parking ?? '-'}</td>
+                          </>
+                        })()}
                         {showCheckin && (
                           <td className="px-3 py-1.5">
                             {r.checked_in_at
@@ -2088,6 +2266,407 @@ export default function EventDetailPage() {
           )}
         </div>
       )}
+    </AdminLayout>
+  )
+}
+
+                {hasUp   && <TransportRow label="上山" stats={upStats}   />}
+                {hasDown && <TransportRow label="下山" stats={downStats} />}
+              </div>
+            )
+          })()}
+
+          {/* 搜尋列 */}
+          <div className="mb-3 flex items-center gap-2">
+            <div className="relative flex-1 max-w-md">
+              <input
+                value={listSearch}
+                onChange={e => setListSearch(e.target.value)}
+                placeholder="🔍 搜尋姓名、學員編號、班級或答案…"
+                className="w-full pl-3 pr-9 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300"
+              />
+              {listSearch && (
+                <button
+                  onClick={() => setListSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 text-base leading-none w-5 h-5 flex items-center justify-center"
+                  title="清除"
+                >×</button>
+              )}
+            </div>
+            {listSearch && (
+              <span className="text-xs text-gray-500">
+                找到 {searchedRegistrations.length} 筆
+              </span>
+            )}
+          </div>
+
+          {/* 工具列 */}
+          <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="text-sm text-gray-500">
+                共 {registrations.length} 筆報名
+                {event?.multi_session && sessionTab !== 'all' && (
+                  <span className="text-amber-700">（本場次：{sessionFilteredRegistrations.length}）</span>
+                )}
+                {listSearch && <span className="text-amber-700">（搜尋中：{sortedRegistrations.length}）</span>}
+              </p>
+              {hasGuests && selectedGuestIds.size > 0 && (
+                <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                  已選 {selectedGuestIds.size} 位訪客
+                </span>
+              )}
+              {/* 欄位顯隱切換 */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-gray-400">顯示欄位：</span>
+                {[
+                  { key: 'checkin', label: '報到', val: showCheckin, set: setShowCheckin },
+                  { key: 'regtime', label: '更新時間', val: showRegTime, set: setShowRegTime },
+                ].map(col => (
+                  <button
+                    key={col.key}
+                    onClick={() => col.set(v => !v)}
+                    className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                      col.val
+                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                        : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {col.val ? '✓ ' : ''}{col.label}
+                  </button>
+                ))}
+                {/* 交通欄位群組切換（有對應欄位才顯示） */}
+                {FIELD_GROUPS.map(group => {
+                  const exists = group.keys.some(k => fields.find(f => f.field_key === k))
+                  if (!exists) return null
+                  const allHidden = group.keys.every(k => hiddenFieldKeys.has(k))
+                  return (
+                    <button
+                      key={group.key}
+                      onClick={() => toggleFieldGroup(group.keys)}
+                      className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                        !allHidden
+                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                          : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      {!allHidden ? '✓ ' : ''}{group.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            {isAdmin && (
+              <div className="flex flex-wrap gap-2">
+                {/* 批次列印按鈕（有選取時才顯示）*/}
+                {selectedGuestIds.size > 0 && (
+                  <button
+                    onClick={() => setBatchPrintOpen(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                  >
+                    🖨️ 批次列印（{selectedGuestIds.size}）
+                  </button>
+                )}
+                <button
+                  onClick={openStudentModal}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                  title="從學員清單選人補登報名（不必刷學員證）"
+                >
+                  ＋ 新增學員報名
+                </button>
+                <button
+                  onClick={openGuestModal}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                >
+                  ＋ 新增訪客
+                </button>
+                {/* 多場次：場次視圖 → 場次 CSV */}
+                {event?.multi_session && sessionTab !== 'all' && sessionFilteredRegistrations.length > 0 && (() => {
+                  const curS = sessions.find(s => s.session_id === sessionTab)
+                  return (
+                    <button
+                      onClick={() => exportSessionCSV(sortedRegistrations, curS, event)}
+                      className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                    >
+                      ⬇️ 匯出本場次 CSV
+                    </button>
+                  )
+                })()}
+                {/* 全部 CSV（非多場次，或多場次全部視圖）*/}
+                {(!event?.multi_session || sessionTab === 'all') && registrations.length > 0 && (
+                  <button
+                    onClick={async () => {
+                      exportCSV(registrations, fields, event)
+                      await recordExportTime(id)
+                      const now = new Date().toISOString()
+                      setEvent(ev => ({ ...ev, last_exported_at: now }))
+                    }}
+                    className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                  >
+                    ⬇️ 匯出 CSV
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {registrations.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-12">尚無報名紀錄</p>
+          ) : (
+            <div className="w-full bg-white rounded-xl border border-gray-200 overflow-auto max-h-[calc(100vh-300px)]">
+              <table className="w-full min-w-max text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    {isAdmin && hasGuests && (
+                      <th className="px-3 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={allGuestsSelected}
+                          onChange={toggleSelectAllGuests}
+                          title="全選訪客"
+                          className="accent-amber-600 cursor-pointer w-4 h-4"
+                        />
+                      </th>
+                    )}
+                    <SortTh label="學員編號" colKey="student_id" current={sortKey} dir={sortDir} onSort={handleSort} />
+                    <SortTh
+                      label="姓名"
+                      colKey="name"
+                      current={sortKey}
+                      dir={sortDir}
+                      onSort={handleSort}
+                      className="sticky left-0 z-20 bg-gray-50 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]"
+                    />
+                    {/* 一般動態欄位（非多場次）*/}
+                    {!event?.multi_session && fields.filter(f => !hiddenFieldKeys.has(f.field_key)).map(f => (
+                      <SortTh
+                        key={f.field_id ?? f.field_key}
+                        label={f.field_label}
+                        colKey={`field:${f.field_key}`}
+                        current={sortKey}
+                        dir={sortDir}
+                        onSort={handleSort}
+                      />
+                    ))}
+                    {/* 多場次：全部視圖 → 場次欄；場次視圖 → 午齋/停車 */}
+                    {event?.multi_session && sessionTab === 'all' && (
+                      <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">參加場次</th>
+                    )}
+                    {event?.multi_session && sessionTab !== 'all' && (() => {
+                      const curS = sessions.find(s => s.session_id === sessionTab)
+                      return <>
+                        {curS?.time_period === 'morning' && (
+                          <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">午齋</th>
+                        )}
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">停車</th>
+                      </>
+                    })()}
+                    {showCheckin && <SortTh label="報到" colKey="checked_in_at" current={sortKey} dir={sortDir} onSort={handleSort} />}
+                    {showRegTime && <SortTh label="更新時間" colKey="updated_at" current={sortKey} dir={sortDir} onSort={handleSort} />}
+                    <th className="sticky right-0 z-20 bg-gray-50 px-3 py-2 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.08)]" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRegistrations.map(r => {
+                    const isGuest = !r.student_id
+                    const isSelected = isGuest && selectedGuestIds.has(r.registration_id)
+                    return (
+                      <tr
+                        key={r.registration_id}
+                        className={`border-b border-gray-50 transition-colors ${
+                          isSelected ? 'bg-blue-50' : 'hover:bg-amber-50/30'
+                        }`}
+                      >
+                        {isAdmin && hasGuests && (
+                          <td className="px-3 py-1.5 text-center">
+                            {isGuest && (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleGuestSelect(r.registration_id)}
+                                className="accent-amber-600 cursor-pointer w-4 h-4"
+                              />
+                            )}
+                          </td>
+                        )}
+                        <td className="px-3 py-1.5 font-mono text-xs text-gray-500">
+                          {r.student_id ?? (
+                            <button
+                              onClick={() => setQrModal({ registrationId: r.registration_id, name: getDisplayName(r) })}
+                              className="text-amber-600 font-sans hover:text-amber-800 hover:underline"
+                              title="點擊查看 QR code"
+                            >
+                              訪客 🔍
+                            </button>
+                          )}
+                        </td>
+                        <td className={`px-3 py-1.5 font-medium sticky left-0 z-[1] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] ${isSelected ? 'bg-blue-50' : 'bg-white'}`}>
+                          <span className="flex items-center gap-1.5 flex-wrap">
+                            {getDisplayName(r)}
+                            {newRegIds.has(r.registration_id) && (
+                              <span className="text-xs bg-green-100 text-green-700 border border-green-300 px-1.5 py-0.5 rounded-full font-normal leading-none">新</span>
+                            )}
+                            {modifiedRegIds.has(r.registration_id) && (
+                              <button
+                                onClick={() => {
+                                  const latest = changes.find(c =>
+                                    c.registration_id === r.registration_id && c.change_type === 'modified'
+                                  )
+                                  if (latest) setDiffModal(latest)
+                                }}
+                                className="text-xs bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded-full font-normal leading-none hover:bg-amber-200 cursor-pointer"
+                                title="點擊查看修改明細"
+                              >
+                                改 🔍
+                              </button>
+                            )}
+                          </span>
+                        </td>
+                        {/* 一般動態欄位（非多場次）*/}
+                        {!event?.multi_session && fields.filter(f => !hiddenFieldKeys.has(f.field_key)).map(f => (
+                          <td key={f.field_id} className="px-3 py-1.5 text-gray-700">
+                            {formatFieldValue(f, r.answers?.[f.field_key])}
+                          </td>
+                        ))}
+                        {/* 多場次：全部視圖 → 場次 badge 列 */}
+                        {event?.multi_session && sessionTab === 'all' && (
+                          <td className="px-3 py-1.5">
+                            <div className="flex flex-wrap gap-1">
+                              {(r.answers?.sessions ?? []).map(ss => {
+                                const s = sessions.find(x => x.session_id === ss.session_id)
+                                if (!s) return null
+                                return (
+                                  <span
+                                    key={ss.session_id}
+                                    title={s.dharma_name ?? ''}
+                                    className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                                  >
+                                    {formatSessionTabLabel(s)}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          </td>
+                        )}
+                        {/* 多場次：場次視圖 → 午齋/停車 */}
+                        {event?.multi_session && sessionTab !== 'all' && (() => {
+                          const curS = sessions.find(s => s.session_id === sessionTab)
+                          const ssAns = r.answers?.sessions?.find(ss => ss.session_id === sessionTab) ?? {}
+                          return <>
+                            {curS?.time_period === 'morning' && (
+                              <td className="px-3 py-1.5 text-sm text-gray-700">{ssAns.lunch ?? '-'}</td>
+                            )}
+                            <td className="px-3 py-1.5 text-sm text-gray-700">{ssAns.parking ?? '-'}</td>
+                          </>
+                        })()}
+                        {showCheckin && (
+                          <td className="px-3 py-1.5">
+                            {r.checked_in_at
+                              ? <span className="text-green-600 text-xs font-medium">✓ 已報到</span>
+                              : <span className="text-gray-300 text-xs">—</span>
+                            }
+                          </td>
+                        )}
+                        {showRegTime && (
+                          <td className="px-3 py-1.5 text-xs text-gray-400 whitespace-nowrap">
+                            {(r.updated_at ?? r.registered_at)
+                              ? new Date(r.updated_at ?? r.registered_at).toLocaleString('zh-TW', { hour12: false })
+                              : '-'}
+                          </td>
+                        )}
+                        <td className={`px-3 py-1.5 text-right sticky right-0 z-[1] shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)] ${isSelected ? 'bg-blue-50' : 'bg-white'}`}>
+                          {isAdmin && (
+                            <div className="flex gap-2 justify-end">
+                              {r.checked_in_at && (
+                                <button
+                                  onClick={() => handleUncheckIn(r.registration_id, getDisplayName(r))}
+                                  className="text-xs text-orange-500 hover:text-orange-700 border border-orange-200 hover:border-orange-400 px-2 py-1 rounded transition-colors"
+                                >
+                                  取消報到
+                                </button>
+                              )}
+                              <button
+                                onClick={() => openEditModal(r)}
+                                className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-2 py-1 rounded transition-colors"
+                              >
+                                ✏️ 編輯
+                              </button>
+                              <button
+                                onClick={() => handleDeleteRegistration(r.registration_id, getDisplayName(r))}
+                                className="text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 px-2 py-1 rounded transition-colors"
+                              >
+                                取消報名
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 已取消區塊（永遠顯示，不受匯出基準限制） */}
+          {cancelledChanges.length > 0 && (
+            <div className="mt-4">
+              <button
+                onClick={() => setShowCancelled(v => !v)}
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <span>{showCancelled ? '▼' : '▶'}</span>
+                <span>已取消（共 {cancelledChanges.length} 筆）</span>
+              </button>
+              {showCancelled && (
+                <div className="mt-2 bg-gray-50 rounded-xl border border-gray-200 overflow-auto">
+                  <table className="w-full min-w-max text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-100">
+                        <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">姓名</th>
+                        <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">取消時間</th>
+                        {fields.map(f => (
+                          <th key={f.field_id ?? f.field_key} className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">
+                            {f.field_label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cancelledChanges.map(c => (
+                        <tr key={c.id} className="border-b border-gray-100 text-gray-400">
+                          <td className="px-3 py-1.5 line-through whitespace-nowrap">{c.student_name}</td>
+                          <td className="px-3 py-1.5 text-xs whitespace-nowrap">
+                            {c.cancelled_at ? new Date(c.cancelled_at).toLocaleString('zh-TW', { hour12: false }) : '-'}
+                          </td>
+                          {fields.map(f => (
+                            <td key={f.field_id ?? f.field_key} className="px-3 py-1.5 text-xs whitespace-nowrap">
+                              {formatFieldValue(f, c.old_answers?.[f.field_key])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+      )}
+
+    </AdminLayout>
+  )
+}
+
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+      )}
+
     </AdminLayout>
   )
 }

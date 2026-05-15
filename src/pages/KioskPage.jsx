@@ -1474,116 +1474,6 @@ function FriendFormScreen({
   )
 }
 
-// ── 親友代報：送出成功，QR 小卡 + 連續代報入口 ──────────────
-function FriendSuccessScreen({
-  studentName, friendName, eventName, friendRegId,
-  friendEventName, friendEventDate, friendEventLocation,
-  onContinue, onDone,
-}) {
-  const qrSvgId = 'friend-success-qr'
-  const cardData = {
-    svgId: qrSvgId,
-    name: friendName,
-    eventName: friendEventName,
-    eventDate: friendEventDate,
-    location: friendEventLocation,
-  }
-
-  return (
-    <div className="w-full max-w-lg">
-      <div className="bg-green-50 border-2 border-green-400 rounded-2xl px-6 py-5 mb-4 text-center">
-        <div className="text-5xl mb-2">✅</div>
-        <p className="text-kiosk-xl font-bold text-green-800 mb-1">代報完成</p>
-        <p className="text-kiosk-base text-gray-700">
-          已成功為 <span className="font-bold text-purple-700">{friendName}</span> 報名
-        </p>
-        {eventName && (
-          <p className="text-kiosk-sm text-gray-500 mt-1">{eventName}</p>
-        )}
-      </div>
-
-      {/* 親友報到 QR 小卡（仿後台訪客小卡樣式） */}
-      {friendRegId && (
-        <div className="bg-white border-2 border-purple-200 rounded-2xl p-4 mb-4">
-          <p className="text-kiosk-sm font-bold text-purple-700 mb-3 text-center">
-            🎫 {friendName} 的報到 QR 小卡
-          </p>
-          <QRCardPreview
-            svgId={qrSvgId}
-            regId={friendRegId}
-            name={friendName}
-            eventName={friendEventName}
-            eventDate={friendEventDate}
-            location={friendEventLocation}
-          />
-          <p className="text-kiosk-sm text-gray-500 text-center mt-3 mb-3 leading-snug">
-            可下載成圖片或分享給 {friendName}，當天現場掃此碼即可報到。
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => downloadQRCard(cardData)}
-              className="py-3 px-3 bg-white border-2 border-purple-300 text-purple-700 rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
-            >
-              📥 下載小卡
-            </button>
-            <button
-              onClick={() => shareQRCard(cardData)}
-              className="py-3 px-3 bg-purple-600 text-white rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
-            >
-              📤 分享給親友
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-3 mb-4">
-        <p className="text-kiosk-sm text-purple-700 leading-snug">
-          {studentName} 師兄您好，要繼續為下一位親友代報嗎？
-        </p>
-      </div>
-
-      <div className="flex gap-3">
-        <button
-          onClick={onDone}
-          className="flex-1 py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium active:scale-95 transition-transform"
-        >
-          ✓ 完成返回
-        </button>
-        <button
-          onClick={onContinue}
-          className="flex-grow-[2] py-4 bg-purple-600 text-white rounded-2xl text-kiosk-base font-bold shadow-md active:scale-95 transition-transform"
-        >
-          ＋ 再代報一位
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── QR 小卡預覽（FriendSuccessScreen 與 FriendQRModal 共用）─
-function QRCardPreview({ svgId, regId, name, eventName, eventDate, location }) {
-  return (
-    <div className="bg-white border-2 border-gray-200 rounded-xl p-4 mx-auto" style={{ maxWidth: 320 }}>
-      <p className="text-center text-kiosk-sm text-gray-400 tracking-widest">普 宜 精 舍</p>
-      <p className="text-center text-kiosk-sm text-purple-500 mt-1 mb-3">— 親友代報・報到 QR —</p>
-      <div className="flex justify-center bg-gray-50 rounded-lg p-2 mb-3">
-        <QRCodeSVG id={svgId} value={String(regId)} size={180} level="M" includeMargin />
-      </div>
-      <p className="text-center text-kiosk-base font-bold text-gray-800">{name}</p>
-      {eventName && (
-        <p className="text-center text-kiosk-sm text-gray-600 mt-0.5">{eventName}</p>
-      )}
-      {eventDate && (
-        <p className="text-center text-kiosk-sm text-gray-500 mt-0.5">{eventDate}</p>
-      )}
-      {location && (
-        <p className="text-center text-kiosk-sm text-gray-500">{location}</p>
-      )}
-      <p className="text-center text-xs text-gray-400 mt-2">當天現場掃此碼即可報到</p>
-    </div>
-  )
-}
-
 // ── 多場次：場次選擇畫面 ────────────────────────────────────
 function SessionSelectScreen({
   student, classes, event,
@@ -1592,102 +1482,92 @@ function SessionSelectScreen({
   onToggleSession, onChangeSubAnswer, onSelectAll,
   onSubmit, onBack,
 }) {
-  const allSelected  = sessionItems.length > 0 && sessionItems.every(s => sessionSelections[s.session_id])
-  const anySelected  = sessionItems.some(s => sessionSelections[s.session_id])
-  const selectedCount = sessionItems.filter(s => sessionSelections[s.session_id]).length
+  const allSelected = sessionItems.length > 0 && sessionItems.every(s => sessionSelections[s.session_id])
 
   return (
     <div className="w-full max-w-lg">
       {/* 學員資訊卡 */}
-      <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-blue-600">
+      <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-amber-500">
         <p className="text-kiosk-xl font-bold text-gray-800">{student?.name} 師兄</p>
-        <p className="text-kiosk-base text-blue-700 font-medium mt-1">{event.name}</p>
+        <p className="text-kiosk-base text-amber-700 font-medium mt-1">{event.name}</p>
         <div className="flex flex-wrap gap-2 mt-2">
           {classes.map((c, i) => (
-            <span key={i} className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-kiosk-sm">
+            <span key={i} className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-kiosk-sm">
               {c.class_name}{c.group_name ? `・${c.group_name}` : ''}
             </span>
           ))}
         </div>
       </div>
 
-      {/* 場次選擇卡片區 */}
+      {/* 場次選擇區 */}
       <div className="bg-white rounded-2xl shadow-md p-5 mb-4">
-        {/* 標題 + 全選 checkbox */}
+        {/* 標題 + 全選 */}
         <div className="flex items-center justify-between mb-4">
-          <p className="text-kiosk-base font-bold text-gray-800">
-            您將參加哪些場次？
-            {selectedCount > 0 && (
-              <span className="ml-2 text-kiosk-sm text-blue-600 font-normal">已選 {selectedCount} 場</span>
-            )}
-          </p>
-          <label className="flex items-center gap-2 cursor-pointer select-none shrink-0 ml-3">
+          <p className="text-kiosk-base font-bold text-gray-800">您將參加哪些場次？</p>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={allSelected}
               onChange={e => onSelectAll(e.target.checked)}
-              className="w-5 h-5 accent-blue-600"
+              className="w-5 h-5 accent-amber-600"
             />
-            <span className="text-kiosk-sm text-blue-700 font-medium whitespace-nowrap">全部參加</span>
+            <span className="text-kiosk-sm text-amber-700 font-medium">全部參加</span>
           </label>
         </div>
 
+        {/* 場次卡片 */}
         <div className="space-y-3">
-          {sessionItems.map(session => {
-            const selected = !!sessionSelections[session.session_id]
-            const sub      = sessionSubAnswers[session.session_id] || {}
-            const isMorning = session.time_period === 'morning'
-            const timeRange = (session.time_start && session.time_end)
-              ? ` ${session.time_start.slice(0, 5)}–${session.time_end.slice(0, 5)}`
-              : ''
-
+          {sessionItems.map(s => {
+            const checked = !!sessionSelections[s.session_id]
+            const sub = sessionSubAnswers[s.session_id] || {}
+            const isMorning = s.time_period === 'morning'
             return (
               <div
-                key={session.session_id}
-                className={`rounded-xl border-2 transition-all ${
-                  selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-gray-50'
+                key={s.session_id}
+                className={`border-2 rounded-xl p-4 transition-colors ${
+                  checked ? 'border-amber-400 bg-amber-50' : 'border-gray-200 bg-gray-50'
                 }`}
               >
-                {/* 場次主列（可點擊的 label） */}
-                <label className="flex items-start gap-3 p-4 cursor-pointer select-none">
+                {/* 場次標題列 */}
+                <label className="flex items-start gap-3 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={selected}
-                    onChange={e => onToggleSession(session.session_id, e.target.checked)}
-                    className="w-6 h-6 accent-blue-600 mt-0.5 shrink-0"
+                    checked={checked}
+                    onChange={e => onToggleSession(s.session_id, e.target.checked)}
+                    className="w-6 h-6 accent-amber-600 mt-0.5 shrink-0"
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-kiosk-base font-bold text-gray-800">
-                      {formatSessionDate(session.date)}
-                      <span className="ml-1 text-blue-700">{timePeriodLabel(session.time_period)}</span>
-                      {timeRange && (
-                        <span className="ml-1 text-kiosk-sm text-gray-500 font-normal">{timeRange}</span>
+                    <p className="text-kiosk-base font-semibold text-gray-800 leading-snug">
+                      {formatSessionDate(s.date)}{timePeriodLabel(s.time_period) ? `（${timePeriodLabel(s.time_period)}）` : ''}
+                      {s.time_start && s.time_end && (
+                        <span className="text-kiosk-sm text-gray-500 font-normal ml-2">
+                          {s.time_start.slice(0, 5)}–{s.time_end.slice(0, 5)}
+                        </span>
                       )}
                     </p>
-                    {session.dharma_name && (
-                      <p className="text-kiosk-sm text-gray-600 mt-0.5">{session.dharma_name}</p>
+                    {s.dharma_name && (
+                      <p className="text-kiosk-sm text-amber-700 mt-0.5">{s.dharma_name}</p>
                     )}
                   </div>
                 </label>
 
-                {/* 已勾選 → 顯示子問題 */}
-                {selected && (
-                  <div className="px-4 pb-4 space-y-4 border-t border-blue-200 pt-3">
-                    {/* 午齋（上午場才有） */}
+                {/* 子欄位（勾選後展開）*/}
+                {checked && (
+                  <div className="mt-3 ml-9 space-y-2.5">
+                    {/* 午齋（上午場才問）*/}
                     {isMorning && (
                       <div>
-                        <p className="text-kiosk-sm font-semibold text-gray-700 mb-2">
-                          午齋 <span className="text-red-500">*</span>
-                        </p>
+                        <p className="text-kiosk-sm text-gray-600 mb-1.5">午齋</p>
                         <div className="flex gap-2">
                           {['需要', '不需要'].map(opt => (
                             <button
                               key={opt}
-                              onClick={() => onChangeSubAnswer(session.session_id, 'lunch', opt)}
-                              className={`flex-1 py-3 rounded-xl text-kiosk-sm font-bold border-2 transition-all active:scale-95 ${
+                              type="button"
+                              onClick={() => onChangeSubAnswer(s.session_id, 'lunch', opt)}
+                              className={`flex-1 py-2 rounded-xl text-kiosk-sm font-medium border-2 transition-colors ${
                                 sub.lunch === opt
-                                  ? 'bg-blue-600 text-white border-blue-600'
-                                  : 'bg-white text-gray-700 border-gray-300'
+                                  ? 'border-amber-500 bg-amber-100 text-amber-800'
+                                  : 'border-gray-200 bg-white text-gray-600'
                               }`}
                             >
                               {opt}
@@ -1696,21 +1576,19 @@ function SessionSelectScreen({
                         </div>
                       </div>
                     )}
-
-                    {/* 停車（每場都有） */}
+                    {/* 停車 */}
                     <div>
-                      <p className="text-kiosk-sm font-semibold text-gray-700 mb-2">
-                        停車方式 <span className="text-red-500">*</span>
-                      </p>
-                      <div className="flex gap-2">
-                        {['不停車', '機車', '轎車'].map(opt => (
+                      <p className="text-kiosk-sm text-gray-600 mb-1.5">停車</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {['機車', '轎車', '不需要'].map(opt => (
                           <button
                             key={opt}
-                            onClick={() => onChangeSubAnswer(session.session_id, 'parking', opt)}
-                            className={`flex-1 py-3 rounded-xl text-kiosk-sm font-bold border-2 transition-all active:scale-95 ${
+                            type="button"
+                            onClick={() => onChangeSubAnswer(s.session_id, 'parking', opt)}
+                            className={`px-4 py-2 rounded-xl text-kiosk-sm font-medium border-2 transition-colors ${
                               sub.parking === opt
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-white text-gray-700 border-gray-300'
+                                ? 'border-amber-500 bg-amber-100 text-amber-800'
+                                : 'border-gray-200 bg-white text-gray-600'
                             }`}
                           >
                             {opt}
@@ -1726,14 +1604,12 @@ function SessionSelectScreen({
         </div>
       </div>
 
-      {/* 錯誤提示 */}
       {errorMsg && (
         <p className="text-red-600 text-kiosk-sm bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-4">
           ⚠ {errorMsg}
         </p>
       )}
 
-      {/* 按鈕 */}
       <div className="flex gap-3">
         <button
           onClick={onBack}
@@ -1744,69 +1620,55 @@ function SessionSelectScreen({
         </button>
         <button
           onClick={onSubmit}
-          disabled={submitting || !anySelected}
-          className="flex-grow-[2] py-4 bg-blue-600 text-white rounded-2xl text-kiosk-base font-bold shadow-md disabled:opacity-50 active:scale-95 transition-transform"
+          disabled={submitting}
+          className="flex-grow-[2] py-4 bg-amber-600 text-white rounded-2xl text-kiosk-base font-bold shadow-md disabled:opacity-50 active:scale-95 transition-transform"
         >
           {submitting ? '送出中…' : isUpdate ? '確認修改' : '確認報名'}
         </button>
       </div>
-      <p className="text-center text-kiosk-sm text-gray-400 mt-3">{FORM_IDLE_SECONDS} 秒無操作自動返回</p>
     </div>
   )
 }
 
-// ── 代報親友 QR Modal（點清單裡某位親友的「查看 QR」開啟） ──
-function FriendQRModal({ friend, onClose }) {
-  if (!friend) return null
-  const qrSvgId = `friend-modal-qr-${friend.registration_id}`
-  const cardData = {
-    svgId: qrSvgId,
-    name: friend.name,
-    eventName: friend.eventName,
-    eventDate: friend.eventDate,
-    location: friend.location,
-  }
+// ── 親友代報成功畫面 ────────────────────────────────────────
+function FriendSuccessScreen({
+  studentName, friendName, eventName,
+  friendRegId, friendEventName, friendEventDate, friendEventLocation,
+  onContinue, onDone,
+}) {
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-kiosk-base font-bold text-purple-700">🎫 報到 QR 小卡</p>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none w-8 h-8"
-            aria-label="關閉"
-          >
-            ×
-          </button>
-        </div>
-        <QRCardPreview
-          svgId={qrSvgId}
-          regId={friend.registration_id}
-          name={friend.name}
-          eventName={friend.eventName}
-          eventDate={friend.eventDate}
-          location={friend.location}
-        />
-        <div className="grid grid-cols-2 gap-2 mt-4">
-          <button
-            onClick={() => downloadQRCard(cardData)}
-            className="py-3 px-3 bg-white border-2 border-purple-300 text-purple-700 rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
-          >
-            📥 下載小卡
-          </button>
-          <button
-            onClick={() => shareQRCard(cardData)}
-            className="py-3 px-3 bg-purple-600 text-white rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
-          >
-            📤 分享給親友
-          </button>
-        </div>
+    <div className="w-full max-w-lg text-center">
+      <div className="text-6xl mb-4">🎉</div>
+      <h2 className="text-kiosk-2xl font-bold text-gray-800 mb-2">代報完成！</h2>
+      <p className="text-kiosk-base text-gray-600 mb-6">
+        已為 <span className="font-bold text-purple-700">{friendName}</span> 完成報名
+      </p>
+
+      <div className="bg-white rounded-2xl shadow-md p-5 mb-6 text-left space-y-2">
+        <p className="text-kiosk-sm text-gray-500">活動</p>
+        <p className="text-kiosk-base font-semibold text-gray-800">{friendEventName || eventName}</p>
+        {friendEventDate && (
+          <p className="text-kiosk-sm text-gray-500">{friendEventDate}</p>
+        )}
+        {friendEventLocation && (
+          <p className="text-kiosk-sm text-gray-500">{friendEventLocation}</p>
+        )}
+        <p className="text-kiosk-sm text-gray-400 mt-2">代報者：{studentName} 師兄</p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <button
+          onClick={onContinue}
+          className="w-full py-4 bg-purple-600 text-white rounded-2xl text-kiosk-base font-bold shadow-md active:scale-95 transition-transform"
+        >
+          ＋ 再代報一位
+        </button>
+        <button
+          onClick={onDone}
+          className="w-full py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium"
+        >
+          完成，返回總覽
+        </button>
       </div>
     </div>
   )
