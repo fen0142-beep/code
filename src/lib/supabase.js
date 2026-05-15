@@ -1658,28 +1658,56 @@ export async function getEventSessions(eventId) {
 }
 
 /**
- * 全刪再 insert（與 saveEventFields 相同模式）
- * sessions: [{ date, time_period, dharma_name, time_start, time_end }]
- * sort_order 由陣列順序決定
+ * 保留既有 session_id（避免報名紀錄裡的 session_id 失效）
+ * - 有 session_id 的：UPDATE（保留 UUID）
+ * - 沒有 session_id 的：INSERT（新場次）
+ * - 原本有、現在移除的：DELETE
  */
 export async function saveEventSessions(eventId, sessions) {
-  const { error: delErr } = await supabase
-    .from('event_sessions')
-    .delete()
-    .eq('event_id', eventId)
-  if (delErr) return { success: false, error: delErr.message }
+  // 區分新舊
+  const existingSessions = sessions.filter(s => s.session_id)
+  const newSessions      = sessions.filter(s => !s.session_id)
+  const keepIds          = new Set(existingSessions.map(s => s.session_id))
 
-  if (sessions.length === 0) return { success: true }
-  const rows = sessions.map((s, i) => ({
-    event_id: eventId,
-    date: s.date,
-    time_period: s.time_period,
-    dharma_name: s.dharma_name || null,
-    time_start: s.time_start || null,
-    time_end: s.time_end || null,
-    sort_order: i,
-  }))
-  const { error: insErr } = await supabase.from('event_sessions').insert(rows)
-  if (insErr) return { success: false, error: insErr.message }
+  // 1. 刪除被移除的場次
+  const { data: dbRows } = await supabase
+    .from('event_sessions').select('session_id').eq('event_id', eventId)
+  const toDelete = (dbRows || []).map(r => r.session_id).filter(id => !keepIds.has(id))
+  if (toDelete.length > 0) {
+    const { error: delErr } = await supabase
+      .from('event_sessions').delete().in('session_id', toDelete)
+    if (delErr) return { success: false, error: delErr.message }
+  }
+
+  // 2. UPDATE 既有場次（含 sort_order）
+  for (const s of existingSessions) {
+    const idx = sessions.indexOf(s)
+    const { error: upErr } = await supabase
+      .from('event_sessions')
+      .update({
+        date: s.date, time_period: s.time_period,
+        dharma_name: s.dharma_name || null,
+        time_start: s.time_start || null,
+        time_end: s.time_end || null,
+        sort_order: idx,
+      })
+      .eq('session_id', s.session_id)
+    if (upErr) return { success: false, error: upErr.message }
+  }
+
+  // 3. INSERT 新場次
+  if (newSessions.length > 0) {
+    const rows = newSessions.map(s => ({
+      event_id: eventId,
+      date: s.date, time_period: s.time_period,
+      dharma_name: s.dharma_name || null,
+      time_start: s.time_start || null,
+      time_end: s.time_end || null,
+      sort_order: sessions.indexOf(s),
+    }))
+    const { error: insErr } = await supabase.from('event_sessions').insert(rows)
+    if (insErr) return { success: false, error: insErr.message }
+  }
+
   return { success: true }
 }
