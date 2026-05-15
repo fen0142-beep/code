@@ -21,7 +21,7 @@ const EMPTY_SESSION = () => ({
  * Props:
  *   eventId  — 活動 ID
  */
-export default function EventSessionsPanel({ eventId }) {
+export default function EventSessionsPanel({ eventId, onSaved }) {
   const [sessions, setSessions] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [saving,   setSaving]   = useState(false)
@@ -102,6 +102,7 @@ export default function EventSessionsPanel({ eventId }) {
     setSessions(fresh.map(s => ({ ...s, _key: s.session_id })))
     setMsg('✅ 場次已儲存')
     setTimeout(() => setMsg(''), 3000)
+    onSaved?.(fresh)  // 通知父元件更新 sessions state
   }
 
   // ── 渲染 ────────────────────────────────────────────────
@@ -244,6 +245,13 @@ export default function EventSessionsPanel({ eventId }) {
       <button
         onClick={addSession}
         className="mt-3 text-sm text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
+      >
+        ＋ 新增場次
+      </button>
+    </div>
+  )
+}
+ors"
       >
         ＋ 新增場次
       </button>
