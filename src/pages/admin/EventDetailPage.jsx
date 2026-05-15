@@ -28,8 +28,10 @@ import {
   getTemplates,
   getAllStudents,
   checkDuplicate,
+  getEventSessions,
 } from '../../lib/supabase'
 import { getPreceptFlags } from '../../lib/registrationHelpers'
+import EventSessionsPanel from '../../components/EventSessionsPanel'
 
 const STATUS_LABEL = { draft: '草稿', active: '進行中', closed: '已關閉' }
 
@@ -448,6 +450,7 @@ export default function EventDetailPage() {
       status: ev.status,
       event_type: ev.event_type ?? 'mountain',
       is_dharma: !!ev.is_dharma,
+      multi_session: !!ev.multi_session,
     })
     setFields(f)
     setRegistrations(r)
@@ -542,6 +545,7 @@ export default function EventDetailPage() {
         status: form.status,
         event_type: form.event_type,
         is_dharma: form.is_dharma,
+        multi_session: form.multi_session,
       }),
       setEventVolunteers(id, [...eventVolunteerIds]),
     ])
@@ -1383,9 +1387,28 @@ export default function EventDetailPage() {
                 此為精舍法會活動（勾選後可設定法會報到時，出現功德主相關資訊）
               </label>
             </div>
+            {/* 多場次報名 — 只在精舍法會時才顯示 */}
+            {form.event_type === 'temple' && form.is_dharma && (
+              <div className="sm:col-span-2">
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!form.multi_session}
+                    onChange={e => setForm(f => ({ ...f, multi_session: e.target.checked }))}
+                    className="w-4 h-4 accent-indigo-600"
+                  />
+                  啟用多場次報名（適用梁皇寶懺等多日法會，學員一次勾選所有場次）
+                </label>
+              </div>
+            )}
           </div>
           {/* （原本底部的儲存按鈕已移至頁面頂部 sticky bar） */}
         </form>
+
+        {/* 多場次場次設定 */}
+        {form.multi_session && event?.event_id && (
+          <EventSessionsPanel eventId={event.event_id} />
+        )}
 
         {/* 停止異動區塊 */}
         <div className={`mt-4 rounded-xl border-2 p-5 flex items-start gap-4 ${

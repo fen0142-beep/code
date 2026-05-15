@@ -1628,3 +1628,46 @@ function emptyToNull(v) {
   const s = String(v).trim()
   return s === '' ? null : s
 }
+
+// ─── Phase 5：多場次報名 ───────────────────────────────────
+
+export async function getEventSessions(eventId) {
+  const { data, error } = await supabase
+    .from('event_sessions')
+    .select('*')
+    .eq('event_id', eventId)
+    .order('sort_order', { ascending: true })
+  if (error) return { sessions: [], error: error.message }
+  return { sessions: data || [], error: null }
+}
+
+/**
+ * 全刪再 insert（與 saveEventFields 相同模式）
+ * sessions: [{ date, time_period, dharma_name, time_start, time_end }]
+ * sort_order 由陣列順序決定
+ */
+export async function saveEventSessions(eventId, sessions) {
+  const { error: delErr } = await supabase
+    .from('event_sessions')
+    .delete()
+    .eq('event_id', eventId)
+  if (delErr) return { success: false, error: delErr.message }
+
+  if (sessions.length === 0) return { success: true, error: null }
+
+  const rows = sessions.map((s, i) => ({
+    event_id:    eventId,
+    date:        s.date || null,
+    time_period: s.time_period,
+    dharma_name: (s.dharma_name || '').trim(),
+    time_start:  emptyToNull(s.time_start),
+    time_end:    emptyToNull(s.time_end),
+    sort_order:  i + 1,
+  }))
+
+  const { error: insertErr } = await supabase
+    .from('event_sessions')
+    .insert(rows)
+  if (insertErr) return { success: false, error: insertErr.message }
+  return { success: true, error: null }
+}
