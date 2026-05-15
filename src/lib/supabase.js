@@ -57,10 +57,26 @@ export async function getActiveEvents() {
     fieldsMap[f.event_id].push(f)
   }
 
+  // 多場次活動：一併撈 event_sessions
+  const multiIds = events.filter(e => e.multi_session).map(e => e.event_id)
+  let sessionsMap = {}
+  if (multiIds.length > 0) {
+    const { data: allSessions } = await supabase
+      .from('event_sessions')
+      .select('*')
+      .in('event_id', multiIds)
+      .order('sort_order', { ascending: true })
+    for (const s of (allSessions || [])) {
+      if (!sessionsMap[s.event_id]) sessionsMap[s.event_id] = []
+      sessionsMap[s.event_id].push(s)
+    }
+  }
+
   return {
     events: events.map(ev => ({
       event: ev,
       fields: fieldsMap[ev.event_id] || [],
+      sessions: sessionsMap[ev.event_id] || [],
     })),
     error: null,
   }

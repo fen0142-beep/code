@@ -158,6 +158,29 @@ async function shareQRCard(cardData) {
   }
 }
 
+// ── 多場次輔助函式 ───────────────────────────────────────────
+// "2026-05-24" → "5/24（六）"
+function formatSessionDate(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const weekDays = ['日', '一', '二', '三', '四', '五', '六']
+  return `${m}/${day}（${weekDays[d.getDay()]}）`
+}
+
+function timePeriodLabel(tp) {
+  if (tp === 'morning')   return '上午'
+  if (tp === 'afternoon') return '下午'
+  if (tp === 'evening')   return '晚上'
+  return tp || ''
+}
+
+// 場次短標：「5/24（六）上午」
+function formatSessionLabel(session) {
+  return `${formatSessionDate(session.date)}${timePeriodLabel(session.time_period)}`
+}
+
 const OVERVIEW_IDLE_SECONDS = 30   // 總覽畫面閒置幾秒後自動返回
 const FORM_IDLE_SECONDS = 120      // 填表畫面閒置幾秒後自動返回（長者填表需要較多時間）
 const SUCCESS_SECONDS = 3          // 報名成功提示停留秒數
@@ -194,6 +217,11 @@ export default function KioskPage() {
   const [lastFriendEventLocation, setLastFriendEventLocation] = useState('')
   // 該學員代報過的所有親友清單（OverviewScreen 顯示用）
   const [friendRegistrations, setFriendRegistrations] = useState([])
+
+  // 多場次報名狀態
+  const [sessionItems, setSessionItems] = useState([])       // event_sessions 陣列
+  const [sessionSelections, setSessionSelections] = useState({}) // { session_id: bool }
+  const [sessionSubAnswers, setSessionSubAnswers] = useState({}) // { session_id: { lunch?, parking? } }
 
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cancellingEventId, setCancellingEventId] = useState(null) // 正在確認取消的活動 ID
@@ -287,10 +315,172 @@ export default function KioskPage() {
     setSelectedItem(item)
     setCurrentReg(reg)
     setIsUpdate(!!reg)
-    setAnswers(reg?.answers || {})
     setErrorMsg('')
-    setPhase('form')
+
+    if (item.event.multi_session) {
+      // 多場次模式：初始化場次 selections（若已報名則預填）
+      const sessions = item.sessions || []
+      const existingSessions = reg?.answers?.sessions || []
+      const initSelections = {}
+      const initSubAnswers = {}
+      for (const s of sessions) {
+        const found = existingSessions.find(e => e.session_id === s.session_id)
+        initSelections[s.session_id] = !!found
+        initSubAnswers[s.session_id] = found
+          ? { lunch: found.lunch, parking: found.parking }
+          : {}
+      }
+      setSessionItems(sessions)
+      setSessionSelections(initSelections)
+      setSessionSubAnswers(initSubAnswers)
+      setPhase('session_select')
+    } else {
+      // 一般模式
+      setAnswers(reg?.answers || {})
+      setPhase('form')
+    }
     startFormTimer()
+  }
+
+  // ── 多場次：切換單一場次勾選 ─────────────────────────────
+  function handleToggleSession(sessionId, checked) {
+    clearTimeout(idleTimerRef.current)
+    startFormTimer()
+    setSessionSelections(prev => ({ ...prev, [sessionId]: checked }))
+    if (checked) {
+      // 從已勾選的第一場複製答案過來（預填）
+      const firstSelectedId = sessionItems.find(s => sessionSelections[s.session_id])?.session_id
+      if (firstSelectedId) {
+        const firstSub = sessionSubAnswers[firstSelectedId] || {}
+        setSessionSubAnswers(prev => ({
+          ...prev,
+          [sessionId]: { ...firstSub },
+        }))
+      }
+    }
+  }
+
+  // ── 多場次：修改某場的子答案（午齋 / 停車）──────────────
+  function handleChangeSubAnswer(sessionId, key, value) {
+    clearTimeout(idleTimerRef.current)
+    startFormTimer()
+    setSessionSubAnswers(prev => ({
+      ...prev,
+      [sessionId]: { ...(prev[sessionId] || {}), [key]: value },
+    }))
+  }
+
+  // ── 多場次：全選 / 取消全選 ──────────────────────────────
+  function handleSelectAll(checked) {
+    clearTimeout(idleTimerRef.current)
+    startFormTimer()
+    const newSelections = {}
+    for (const s of sessionItems) newSelections[s.session_id] = checked
+
+    if (checked) {
+      // 把第一場的答案複製到所有尚無答案的場次
+      const firstFilledSub = sessionItems.reduce((found, s) => {
+        if (found) return found
+        const sub = sessionSubAnswers[s.session_id]
+        return (sub?.lunch || sub?.parking) ? sub : null
+      }, null)
+      if (firstFilledSub) {
+        const newSubAnswers = { ...sessionSubAnswers }
+        for (const s of sessionItems) {
+          const sub = newSubAnswers[s.session_id] || {}
+          if (!sub.lunch && !sub.parking) {
+            newSubAnswers[s.session_id] = { ...firstFilledSub }
+          }
+        }
+        setSessionSubAnswers(newSubAnswers)
+      }
+    }
+    setSessionSelections(newSelections)
+  }
+
+  // ── 多場次：送出 ─────────────────────────────────────────
+  async function handleSubmitSessions() {
+    const { event } = selectedItem
+    const selectedIds = sessionItems
+      .filter(s => sessionSelections[s.session_id])
+      .map(s => s.session_id)
+
+    if (selectedIds.length === 0) {
+      setErrorMsg('請至少選擇一個場次')
+      return
+    }
+
+    // 驗證每場的必填子欄位
+    const missingList = []
+    for (const sId of selectedIds) {
+      const s = sessionItems.find(x => x.session_id === sId)
+      const sub = sessionSubAnswers[sId] || {}
+      if (!sub.parking) missingList.push(`${formatSessionLabel(s)}：請選擇停車方式`)
+      if (s.time_period === 'morning' && !sub.lunch) missingList.push(`${formatSessionLabel(s)}：請選擇午齋`)
+    }
+    if (missingList.length > 0) {
+      setErrorMsg(missingList[0])
+      return
+    }
+
+    setErrorMsg('')
+    clearTimeout(idleTimerRef.current)
+    setPhase('session_submitting')
+
+    const sessions = sessionItems
+      .filter(s => sessionSelections[s.session_id])
+      .map(s => {
+        const sub = sessionSubAnswers[s.session_id] || {}
+        return {
+          session_id: s.session_id,
+          ...(s.time_period === 'morning' ? { lunch: sub.lunch } : {}),
+          parking: sub.parking,
+        }
+      })
+    const sessionsAnswer = { sessions }
+
+    let success, error
+    if (isUpdate && currentReg) {
+      const oldAnswers = { ...currentReg.answers }
+      ;({ success, error } = await updateRegistration(currentReg.registration_id, sessionsAnswer, false))
+      if (success) {
+        await logRegistrationChange({
+          registrationId: currentReg.registration_id,
+          eventId: event.event_id, eventName: event.name,
+          studentName: student.name,
+          changeType: 'modified', oldAnswers, newAnswers: sessionsAnswer,
+        })
+      }
+    } else {
+      ;({ success, error } = await submitRegistration(event.event_id, student.student_id, sessionsAnswer, 'tablet-01', false))
+      if (success) {
+        await logRegistrationChange({
+          registrationId: null,
+          eventId: event.event_id, eventName: event.name,
+          studentName: student.name,
+          changeType: 'created', oldAnswers: null, newAnswers: sessionsAnswer,
+        })
+      }
+    }
+
+    if (!success) {
+      setPhase('session_select')
+      setErrorMsg(error)
+      startFormTimer()
+      return
+    }
+
+    const newReg = {
+      registration_id: currentReg?.registration_id || 'new',
+      event_id: event.event_id,
+      answers: sessionsAnswer,
+    }
+    setStatuses(prev => ({ ...prev, [event.event_id]: newReg }))
+    setSuccessEventName(event.name)
+    setShowSuccess(true)
+    setTimeout(() => setShowSuccess(false), SUCCESS_SECONDS * 1000)
+    setPhase('overview')
+    startIdleTimer()
   }
 
   // ── 親友代報：進入「選活動」階段 ────────────────────────────
@@ -530,6 +720,9 @@ export default function KioskPage() {
     setLastFriendEventDate('')
     setLastFriendEventLocation('')
     setFriendRegistrations([])
+    setSessionItems([])
+    setSessionSelections({})
+    setSessionSubAnswers({})
     setPhase(eventItems.length ? 'idle' : 'no_event')
   }
 
@@ -600,6 +793,28 @@ export default function KioskPage() {
             submitting={phase === 'submitting'}
             onChange={setAnswers}
             onSubmit={handleSubmit}
+            onBack={() => {
+              clearTimeout(idleTimerRef.current)
+              setPhase('overview'); startIdleTimer()
+            }}
+          />
+        )}
+
+        {(phase === 'session_select' || phase === 'session_submitting') && selectedItem && (
+          <SessionSelectScreen
+            student={student}
+            classes={classes}
+            event={selectedItem.event}
+            sessionItems={sessionItems}
+            sessionSelections={sessionSelections}
+            sessionSubAnswers={sessionSubAnswers}
+            isUpdate={isUpdate}
+            errorMsg={errorMsg}
+            submitting={phase === 'session_submitting'}
+            onToggleSession={handleToggleSession}
+            onChangeSubAnswer={handleChangeSubAnswer}
+            onSelectAll={handleSelectAll}
+            onSubmit={handleSubmitSessions}
             onBack={() => {
               clearTimeout(idleTimerRef.current)
               setPhase('overview'); startIdleTimer()
@@ -793,7 +1008,7 @@ function OverviewScreen({
             const bReg = statuses[b.event.event_id] ? 1 : 0
             return aReg - bReg
           })
-          .map(({ event, fields }) => {
+          .map(({ event, fields, sessions = [] }) => {
           const reg = statuses[event.event_id]
           const registered = !!reg
           const confirming = cancellingEventId === event.event_id
@@ -814,8 +1029,37 @@ function OverviewScreen({
                     {event.date_end && event.date_end !== event.date_start ? ` ～ ${event.date_end}` : ''}
                     {event.location ? `　${event.location}` : ''}
                   </p>
-                  {/* 已報名則顯示報名資料摘要（依後台欄位順序） */}
+                  {/* 已報名則顯示報名資料摘要 */}
                   {registered && !confirming && reg.answers && (() => {
+                    // 多場次模式：顯示場次 badge 清單
+                    if (event.multi_session && Array.isArray(reg.answers.sessions)) {
+                      const regSessions = reg.answers.sessions
+                      if (regSessions.length === 0) return null
+                      return (
+                        <details className="mt-3 group">
+                          <summary className="cursor-pointer text-kiosk-sm text-blue-700 select-none list-none flex items-center gap-1 mb-2">
+                            <span className="inline-block transition-transform group-open:rotate-90">▶</span>
+                            <span>已選 {regSessions.length} 個場次</span>
+                          </summary>
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {regSessions.map(rs => {
+                              const s = sessions.find(x => x.session_id === rs.session_id)
+                              return (
+                                <span
+                                  key={rs.session_id}
+                                  className="bg-blue-100 text-blue-800 px-2.5 py-1 rounded-lg text-kiosk-sm font-medium"
+                                >
+                                  {s ? formatSessionLabel(s) : rs.session_id.slice(0, 8)}
+                                  {rs.parking && rs.parking !== '不停車' && `・${rs.parking}`}
+                                  {rs.lunch && `・午齋${rs.lunch}`}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </details>
+                      )
+                    }
+                    // 一般欄位模式
                     const items = fields.reduce((acc, f) => {
                       const v = reg.answers[f.field_key]
                       if (v === undefined || v === null || v === '') return acc
@@ -878,7 +1122,7 @@ function OverviewScreen({
                     <>
                       {!registered && (
                         <button
-                          onClick={() => onSelectEvent({ event, fields })}
+                          onClick={() => onSelectEvent({ event, fields, sessions })}
                           className="px-4 py-2 bg-blue-600 text-white rounded-xl text-kiosk-sm font-bold shadow active:scale-95 transition-transform"
                         >
                           立即報名
@@ -886,7 +1130,7 @@ function OverviewScreen({
                       )}
                       {registered && !confirming && (
                         <button
-                          onClick={() => onSelectEvent({ event, fields })}
+                          onClick={() => onSelectEvent({ event, fields, sessions })}
                           className="px-4 py-2 border-2 border-green-400 text-green-700 rounded-xl text-kiosk-sm font-medium bg-green-50 active:scale-95 transition-transform"
                         >
                           ✓ 已報名<br/>
@@ -1336,6 +1580,177 @@ function QRCardPreview({ svgId, regId, name, eventName, eventDate, location }) {
         <p className="text-center text-kiosk-sm text-gray-500">{location}</p>
       )}
       <p className="text-center text-xs text-gray-400 mt-2">當天現場掃此碼即可報到</p>
+    </div>
+  )
+}
+
+// ── 多場次：場次選擇畫面 ────────────────────────────────────
+function SessionSelectScreen({
+  student, classes, event,
+  sessionItems, sessionSelections, sessionSubAnswers,
+  isUpdate, errorMsg, submitting,
+  onToggleSession, onChangeSubAnswer, onSelectAll,
+  onSubmit, onBack,
+}) {
+  const allSelected  = sessionItems.length > 0 && sessionItems.every(s => sessionSelections[s.session_id])
+  const anySelected  = sessionItems.some(s => sessionSelections[s.session_id])
+  const selectedCount = sessionItems.filter(s => sessionSelections[s.session_id]).length
+
+  return (
+    <div className="w-full max-w-lg">
+      {/* 學員資訊卡 */}
+      <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-blue-600">
+        <p className="text-kiosk-xl font-bold text-gray-800">{student?.name} 師兄</p>
+        <p className="text-kiosk-base text-blue-700 font-medium mt-1">{event.name}</p>
+        <div className="flex flex-wrap gap-2 mt-2">
+          {classes.map((c, i) => (
+            <span key={i} className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-kiosk-sm">
+              {c.class_name}{c.group_name ? `・${c.group_name}` : ''}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* 場次選擇卡片區 */}
+      <div className="bg-white rounded-2xl shadow-md p-5 mb-4">
+        {/* 標題 + 全選 checkbox */}
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-kiosk-base font-bold text-gray-800">
+            您將參加哪些場次？
+            {selectedCount > 0 && (
+              <span className="ml-2 text-kiosk-sm text-blue-600 font-normal">已選 {selectedCount} 場</span>
+            )}
+          </p>
+          <label className="flex items-center gap-2 cursor-pointer select-none shrink-0 ml-3">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={e => onSelectAll(e.target.checked)}
+              className="w-5 h-5 accent-blue-600"
+            />
+            <span className="text-kiosk-sm text-blue-700 font-medium whitespace-nowrap">全部參加</span>
+          </label>
+        </div>
+
+        <div className="space-y-3">
+          {sessionItems.map(session => {
+            const selected = !!sessionSelections[session.session_id]
+            const sub      = sessionSubAnswers[session.session_id] || {}
+            const isMorning = session.time_period === 'morning'
+            const timeRange = (session.time_start && session.time_end)
+              ? ` ${session.time_start.slice(0, 5)}–${session.time_end.slice(0, 5)}`
+              : ''
+
+            return (
+              <div
+                key={session.session_id}
+                className={`rounded-xl border-2 transition-all ${
+                  selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-gray-50'
+                }`}
+              >
+                {/* 場次主列（可點擊的 label） */}
+                <label className="flex items-start gap-3 p-4 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={e => onToggleSession(session.session_id, e.target.checked)}
+                    className="w-6 h-6 accent-blue-600 mt-0.5 shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-kiosk-base font-bold text-gray-800">
+                      {formatSessionDate(session.date)}
+                      <span className="ml-1 text-blue-700">{timePeriodLabel(session.time_period)}</span>
+                      {timeRange && (
+                        <span className="ml-1 text-kiosk-sm text-gray-500 font-normal">{timeRange}</span>
+                      )}
+                    </p>
+                    {session.dharma_name && (
+                      <p className="text-kiosk-sm text-gray-600 mt-0.5">{session.dharma_name}</p>
+                    )}
+                  </div>
+                </label>
+
+                {/* 已勾選 → 顯示子問題 */}
+                {selected && (
+                  <div className="px-4 pb-4 space-y-4 border-t border-blue-200 pt-3">
+                    {/* 午齋（上午場才有） */}
+                    {isMorning && (
+                      <div>
+                        <p className="text-kiosk-sm font-semibold text-gray-700 mb-2">
+                          午齋 <span className="text-red-500">*</span>
+                        </p>
+                        <div className="flex gap-2">
+                          {['需要', '不需要'].map(opt => (
+                            <button
+                              key={opt}
+                              onClick={() => onChangeSubAnswer(session.session_id, 'lunch', opt)}
+                              className={`flex-1 py-3 rounded-xl text-kiosk-sm font-bold border-2 transition-all active:scale-95 ${
+                                sub.lunch === opt
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'bg-white text-gray-700 border-gray-300'
+                              }`}
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 停車（每場都有） */}
+                    <div>
+                      <p className="text-kiosk-sm font-semibold text-gray-700 mb-2">
+                        停車方式 <span className="text-red-500">*</span>
+                      </p>
+                      <div className="flex gap-2">
+                        {['不停車', '機車', '轎車'].map(opt => (
+                          <button
+                            key={opt}
+                            onClick={() => onChangeSubAnswer(session.session_id, 'parking', opt)}
+                            className={`flex-1 py-3 rounded-xl text-kiosk-sm font-bold border-2 transition-all active:scale-95 ${
+                              sub.parking === opt
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white text-gray-700 border-gray-300'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 錯誤提示 */}
+      {errorMsg && (
+        <p className="text-red-600 text-kiosk-sm bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-4">
+          ⚠ {errorMsg}
+        </p>
+      )}
+
+      {/* 按鈕 */}
+      <div className="flex gap-3">
+        <button
+          onClick={onBack}
+          disabled={submitting}
+          className="flex-1 py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium disabled:opacity-50"
+        >
+          ← 返回
+        </button>
+        <button
+          onClick={onSubmit}
+          disabled={submitting || !anySelected}
+          className="flex-grow-[2] py-4 bg-blue-600 text-white rounded-2xl text-kiosk-base font-bold shadow-md disabled:opacity-50 active:scale-95 transition-transform"
+        >
+          {submitting ? '送出中…' : isUpdate ? '確認修改' : '確認報名'}
+        </button>
+      </div>
+      <p className="text-center text-kiosk-sm text-gray-400 mt-3">{FORM_IDLE_SECONDS} 秒無操作自動返回</p>
     </div>
   )
 }
