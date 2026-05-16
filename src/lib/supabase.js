@@ -1725,7 +1725,7 @@ export async function saveEventSessions(eventId, sessions) {
 }
 
 // ─── Phase 5：場次共用子欄位（event_session_fields）───────
-// 多場次活動每場下方共用的子欄位（例：午齋、停車、寮房…）
+// 多場次活動每場下方共用的子欄位（例：午齋、停車…）
 
 export async function getEventSessionFields(eventId) {
   const { data, error } = await supabase

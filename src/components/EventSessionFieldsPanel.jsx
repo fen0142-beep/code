@@ -201,7 +201,7 @@ export default function EventSessionFieldsPanel({ eventId }) {
         <div>
           <p className="text-sm font-semibold text-emerald-800">📋 場次共用子欄位</p>
           <p className="text-xs text-gray-600 mt-0.5">
-            學員勾選任一場次時，下方會出現的子問題（例：午齋、停車、寮房…）。
+            學員勾選任一場次時，下方會出現的子問題（例：午齋、停車…）。
             可指定只在特定時段顯示。新增、修改、刪除皆自動儲存。
           </p>
         </div>
@@ -237,7 +237,7 @@ export default function EventSessionFieldsPanel({ eventId }) {
                         updateField(f._key, patch)
                       }}
                       onBlur={handleBlur}
-                      placeholder="例：寮房"
+                      placeholder="例：午齋"
                       className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-400"
                     />
                   </div>
