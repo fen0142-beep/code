@@ -22,7 +22,6 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
   const [saving,   setSaving]   = useState(false)
   const [msg,      setMsg]      = useState('')
 
-  // 永遠保持最新的 sessions，避免 async 閉包抓到舊值
   const sessionsRef = useRef(sessions)
 
   useEffect(() => {
@@ -37,12 +36,14 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
     })
   }, [eventId])
 
-  // 核心儲存函式，接受最新 sessions 列表（避免 stale closure）
   async function doSave(list) {
-    // 有任何場次日期空白 → 使用者還在填，靜默跳過
     if (list.some(s => !s.date)) return
 
-    // 重複場次 → 警告，不儲存
+    if (list.some(s => !s.dharma_name?.trim())) {
+      setMsg('⚠️ 場次設定內，不可有空白欄位，請確認各欄位是否皆已填寫')
+      return
+    }
+
     const seen = new Set()
     for (const s of list) {
       const key = s.date + '_' + s.time_period
@@ -69,16 +70,14 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
     onSaved?.(fresh)
   }
 
-  // 只更新 state（文字欄位 onChange，onBlur 時再存）
   function updateSession(key, field, value) {
     setSessions(prev => {
       const next = prev.map(s => s._key === key ? { ...s, [field]: value } : s)
-      sessionsRef.current = next  // 同步更新 ref，確保 onBlur 拿到最新值
+      sessionsRef.current = next
       return next
     })
   }
 
-  // 更新 state 並立即存（select onChange 用）
   function updateAndSave(key, field, value) {
     const next = sessions.map(s => s._key === key ? { ...s, [field]: value } : s)
     setSessions(next)
@@ -86,7 +85,6 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
     doSave(next)
   }
 
-  // onBlur 觸發自動存
   function handleBlur() {
     doSave(sessionsRef.current)
   }
@@ -95,7 +93,6 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
     const next = [...sessions, EMPTY_SESSION()]
     setSessions(next)
     sessionsRef.current = next
-    // 新增場次日期尚未填，不觸發儲存
   }
 
   function removeSession(key) {
@@ -131,6 +128,16 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
     )
   }
 
+  const statusClass = saving
+    ? 'bg-gray-100 text-gray-500 opacity-100'
+    : msg.startsWith('✅')
+      ? 'bg-green-50 text-green-700 opacity-100'
+      : msg.startsWith('⚠')
+        ? 'bg-amber-50 text-amber-700 opacity-100'
+        : msg.startsWith('❌')
+          ? 'bg-red-50 text-red-700 opacity-100'
+          : 'opacity-0 pointer-events-none'
+
   return (
     <div className="mt-4 bg-white rounded-xl border border-indigo-200 p-5">
       <div className="flex items-center justify-between mb-3">
@@ -140,20 +147,7 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
             填完日期後系統自動儲存；刪除、移動場次亦即時生效。
           </p>
         </div>
-        {/* 自動儲存狀態指示 */}
-        <span className={
-          'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-opacity ' + (
-          saving
-            ? 'bg-gray-100 text-gray-500 opacity-100'
-            : msg.startsWith('✅')
-              ? 'bg-green-50 text-green-700 opacity-100'
-              : msg.startsWith('⚠️')
-                ? 'bg-amber-50 text-amber-700 opacity-100'
-                : msg.startsWith('❌')
-                  ? 'bg-red-50 text-red-700 opacity-100'
-                  : 'opacity-0 pointer-events-none'
-          )
-        }>
+        <span className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-opacity ' + statusClass}>
           {saving ? '儲存中…' : msg}
         </span>
       </div>
@@ -168,7 +162,7 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
                 <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-2 w-6">#</th>
                 <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-2">日期 *</th>
                 <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-2">時段 *</th>
-                <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-2">法會名稱</th>
+                <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-2">法會名稱 *</th>
                 <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-2">開始</th>
                 <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-2">結束</th>
                 <th className="text-left text-xs font-medium text-gray-500 pb-2 w-20">排序 / 刪</th>
