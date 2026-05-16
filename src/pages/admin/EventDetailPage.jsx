@@ -313,6 +313,46 @@ function computeTempleStats(regs, fields) {
   }
 }
 
+// 多場次精舍活動：依場次聚合 報名/午齋/機車/轎車
+//
+// 規則：
+// - 一個 registration = 一個人（人數不重複）
+// - 人次 = 所有 answers.sessions[] 的條數總和
+// - 午齋只在 time_period === 'morning' 場次計（其他場次顯示「—」）
+// - 場次被刪除後 reg 仍引用 → 略過該條
+function computeMultiSessionStats(regs, sessions) {
+  const uniquePeople = regs.length
+
+  // 預建桶子，保證 sessions 順序穩定
+  const bySession = new Map()
+  for (const s of sessions) {
+    bySession.set(s.session_id, { count: 0, lunch: 0, motorcycle: 0, car: 0 })
+  }
+
+  let totalAttendance = 0
+  for (const r of regs) {
+    const arr = Array.isArray(r.answers?.sessions) ? r.answers.sessions : []
+    for (const ss of arr) {
+      const bucket = bySession.get(ss?.session_id)
+      if (!bucket) continue  // 已被刪掉的場次，略過
+      bucket.count++
+      totalAttendance++
+      if (ss.lunch === '需要') bucket.lunch++
+      if (ss.parking === '機車') bucket.motorcycle++
+      else if (ss.parking === '轎車') bucket.car++
+    }
+  }
+
+  // 依日期分組（保留 sessions 原排序）
+  const byDate = new Map()
+  for (const s of sessions) {
+    if (!byDate.has(s.date)) byDate.set(s.date, [])
+    byDate.get(s.date).push(s)
+  }
+
+  return { uniquePeople, totalAttendance, bySession, byDate }
+}
+
 // ── 主頁面 ─────────────────────────────────────────────────
 export default function EventDetailPage() {
   const { id } = useParams()
@@ -346,6 +386,9 @@ export default function EventDetailPage() {
   // 多場次
   const [sessions, setSessions] = useState([])
   const [sessionTab, setSessionTab] = useState('all')
+
+  // 多場次即時看板：詳細統計表格摺疊狀態（預設收起）
+  const [showSessionStatsDetail, setShowSessionStatsDetail] = useState(false)
 
   // 報名名單搜尋
   const [listSearch, setListSearch] = useState('')
@@ -1690,8 +1733,141 @@ export default function EventDetailPage() {
             </div>
           )}
 
-          {/* 即時看板（精舍版） */}
-          {registrations.length > 0 && event?.event_type === 'temple' && (() => {
+          {/* 即時看板（精舍・多場次版）— 取代單場版 */}
+          {registrations.length > 0 && event?.event_type === 'temple' && event?.multi_session && sessions.length > 0 && (() => {
+            const { uniquePeople, totalAttendance, bySession, byDate } =
+              computeMultiSessionStats(registrations, sessions)
+
+            // 至少要有人或有場次才顯示
+            if (uniquePeople === 0) return null
+
+            const dayEntries = Array.from(byDate.entries())  // [[date, sessionList], ...]
+
+            // 詳細表格合計
+            let sumCount = 0, sumLunch = 0, sumMc = 0, sumCar = 0
+            let hasAnyMorning = false
+            for (const s of sessions) {
+              const b = bySession.get(s.session_id) ?? { count:0, lunch:0, motorcycle:0, car:0 }
+              sumCount += b.count
+              sumMc    += b.motorcycle
+              sumCar   += b.car
+              if (s.time_period === 'morning') { sumLunch += b.lunch; hasAnyMorning = true }
+            }
+
+            // 日期顯示：5/24
+            const fmtMd = d => {
+              if (!d) return ''
+              const [, mm, dd] = d.split('-')
+              return `${parseInt(mm)}/${parseInt(dd)}`
+            }
+            // 加星期（依星期幾顯示）
+            const fmtDow = d => {
+              if (!d) return ''
+              const dow = new Date(d + 'T00:00:00').getDay()
+              return ['日','一','二','三','四','五','六'][dow]
+            }
+
+            return (
+              <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-widest">即時看板（精舍・多場次）</p>
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="text-gray-600">報名</span>
+                    <span className="font-bold text-emerald-700 text-lg leading-none">{uniquePeople}</span>
+                    <span className="text-xs text-gray-500">人（不重複）</span>
+                    <span className="text-gray-300">│</span>
+                    <span className="text-gray-600">合計</span>
+                    <span className="font-bold text-emerald-700 text-lg leading-none">{totalAttendance}</span>
+                    <span className="text-xs text-gray-500">人次</span>
+                  </div>
+                </div>
+
+                {/* 每日卡片橫向排列 */}
+                <div className="flex flex-wrap gap-2">
+                  {dayEntries.map(([date, sessList]) => (
+                    <div key={date} className="bg-white border border-emerald-200 rounded-lg px-3 py-2 shadow-sm min-w-[120px]">
+                      <div className="text-xs font-semibold text-gray-700 mb-1">
+                        {fmtMd(date)}（{fmtDow(date)}）
+                      </div>
+                      <div className="space-y-0.5">
+                        {sessList.map(s => {
+                          const b = bySession.get(s.session_id) ?? { count: 0 }
+                          return (
+                            <div key={s.session_id} className="flex items-baseline justify-between gap-2 text-xs">
+                              <span className="text-gray-500">{timePeriodLabel(s.time_period)}</span>
+                              <span>
+                                <span className="font-bold text-emerald-700 text-sm">{b.count}</span>
+                                <span className="text-gray-400 ml-0.5">人</span>
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 詳細統計表格（可摺疊） */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowSessionStatsDetail(v => !v)}
+                    className="text-xs text-emerald-700 hover:text-emerald-900 font-medium inline-flex items-center gap-1"
+                  >
+                    <span>{showSessionStatsDetail ? '▾' : '▸'}</span>
+                    詳細統計
+                  </button>
+                  {showSessionStatsDetail && (
+                    <div className="mt-2 bg-white border border-emerald-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead className="bg-emerald-100/60 text-emerald-900">
+                          <tr>
+                            <th className="text-left  px-3 py-1.5 font-medium">場次</th>
+                            <th className="text-right px-3 py-1.5 font-medium">報名</th>
+                            <th className="text-right px-3 py-1.5 font-medium">午齋</th>
+                            <th className="text-right px-3 py-1.5 font-medium">機車</th>
+                            <th className="text-right px-3 py-1.5 font-medium">轎車</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sessions.map(s => {
+                            const b = bySession.get(s.session_id) ?? { count:0, lunch:0, motorcycle:0, car:0 }
+                            const isMorning = s.time_period === 'morning'
+                            return (
+                              <tr key={s.session_id} className="border-t border-emerald-100">
+                                <td className="px-3 py-1.5 text-gray-700">
+                                  {fmtMd(s.date)} {timePeriodLabel(s.time_period)}
+                                  {s.dharma_name && <span className="text-gray-400 ml-1">· {s.dharma_name}</span>}
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-medium text-emerald-700">{b.count}</td>
+                                <td className="px-3 py-1.5 text-right text-amber-600">
+                                  {isMorning ? b.lunch : <span className="text-gray-300">—</span>}
+                                </td>
+                                <td className="px-3 py-1.5 text-right text-blue-700">{b.motorcycle}</td>
+                                <td className="px-3 py-1.5 text-right text-indigo-700">{b.car}</td>
+                              </tr>
+                            )
+                          })}
+                          <tr className="border-t-2 border-emerald-300 bg-emerald-50/50 font-semibold">
+                            <td className="px-3 py-1.5 text-gray-700">合計</td>
+                            <td className="px-3 py-1.5 text-right text-emerald-700">{sumCount}</td>
+                            <td className="px-3 py-1.5 text-right text-amber-700">
+                              {hasAnyMorning ? sumLunch : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-blue-700">{sumMc}</td>
+                            <td className="px-3 py-1.5 text-right text-indigo-700">{sumCar}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* 即時看板（精舍版・單場） */}
+          {registrations.length > 0 && event?.event_type === 'temple' && !event?.multi_session && (() => {
             const { identityField, identityCounts, hasLunch, lunchCount, hasParking, motorcycle, car } =
               computeTempleStats(registrations, fields)
             const hasIdentity = !!identityField && Object.keys(identityCounts).length > 0
