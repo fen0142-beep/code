@@ -181,6 +181,28 @@ function formatSessionLabel(session) {
   return `${formatSessionDate(session.date)}${timePeriodLabel(session.time_period)}`
 }
 
+// 場次共用子欄位 fallback（DB 沒有設定時用，與遷移前寫死的行為一致）
+const FALLBACK_SESSION_FIELDS = [
+  { field_key: 'lunch',   field_label: '午齋', field_type: 'radio',
+    options: ['需要', '不需要'],            show_if_period: ['morning'], required: true },
+  { field_key: 'parking', field_label: '停車', field_type: 'radio',
+    options: ['機車', '轎車', '不需要'],    show_if_period: [],          required: true },
+]
+
+// 該子欄位是否會在這場顯示
+function isFieldVisibleForSession(field, session) {
+  const periods = field.show_if_period || []
+  if (periods.length === 0) return true
+  return periods.includes(session.time_period)
+}
+
+// 子欄位的答案是否「已填」
+function isAnswerFilled(field, value) {
+  if (field.field_type === 'boolean') return typeof value === 'boolean'
+  if (value === undefined || value === null) return false
+  return String(value).trim() !== ''
+}
+
 const OVERVIEW_IDLE_SECONDS = 30   // 總覽畫面閒置幾秒後自動返回
 const FORM_IDLE_SECONDS = 120      // 填表畫面閒置幾秒後自動返回（長者填表需要較多時間）
 const SUCCESS_SECONDS = 3          // 報名成功提示停留秒數
@@ -220,8 +242,9 @@ export default function KioskPage() {
 
   // 多場次報名狀態
   const [sessionItems, setSessionItems] = useState([])       // event_sessions 陣列
+  const [sessionFields, setSessionFieldsState] = useState([]) // event_session_fields 陣列（動態子欄位 schema）
   const [sessionSelections, setSessionSelections] = useState({}) // { session_id: bool }
-  const [sessionSubAnswers, setSessionSubAnswers] = useState({}) // { session_id: { lunch?, parking? } }
+  const [sessionSubAnswers, setSessionSubAnswers] = useState({}) // { session_id: { [field_key]: value } }
 
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cancellingEventId, setCancellingEventId] = useState(null) // 正在確認取消的活動 ID
@@ -320,17 +343,28 @@ export default function KioskPage() {
     if (item.event.multi_session) {
       // 多場次模式：初始化場次 selections（若已報名則預填）
       const sessions = item.sessions || []
+      const schema = (item.sessionFields && item.sessionFields.length > 0)
+        ? item.sessionFields
+        : FALLBACK_SESSION_FIELDS
       const existingSessions = reg?.answers?.sessions || []
       const initSelections = {}
       const initSubAnswers = {}
       for (const s of sessions) {
         const found = existingSessions.find(e => e.session_id === s.session_id)
         initSelections[s.session_id] = !!found
-        initSubAnswers[s.session_id] = found
-          ? { lunch: found.lunch, parking: found.parking }
-          : {}
+        if (found) {
+          // 把已存的所有 schema key 撈出來（往後新增子欄位也安全）
+          const sub = {}
+          for (const f of schema) {
+            if (f.field_key in found) sub[f.field_key] = found[f.field_key]
+          }
+          initSubAnswers[s.session_id] = sub
+        } else {
+          initSubAnswers[s.session_id] = {}
+        }
       }
       setSessionItems(sessions)
+      setSessionFieldsState(schema)
       setSessionSelections(initSelections)
       setSessionSubAnswers(initSubAnswers)
       setPhase('session_select')
@@ -352,9 +386,17 @@ export default function KioskPage() {
       const firstSelectedId = sessionItems.find(s => sessionSelections[s.session_id])?.session_id
       if (firstSelectedId) {
         const firstSub = sessionSubAnswers[firstSelectedId] || {}
+        const targetSession = sessionItems.find(s => s.session_id === sessionId)
+        // 只複製對此場「可見」的子欄位答案
+        const filtered = {}
+        for (const f of sessionFields) {
+          if (targetSession && isFieldVisibleForSession(f, targetSession) && f.field_key in firstSub) {
+            filtered[f.field_key] = firstSub[f.field_key]
+          }
+        }
         setSessionSubAnswers(prev => ({
           ...prev,
-          [sessionId]: { ...firstSub },
+          [sessionId]: filtered,
         }))
       }
     }
@@ -378,18 +420,28 @@ export default function KioskPage() {
     for (const s of sessionItems) newSelections[s.session_id] = checked
 
     if (checked) {
-      // 把第一場的答案複製到所有尚無答案的場次
+      // 找第一場「有填過任一子欄位」的答案，複製到所有尚無答案的場次
       const firstFilledSub = sessionItems.reduce((found, s) => {
         if (found) return found
         const sub = sessionSubAnswers[s.session_id]
-        return (sub?.lunch || sub?.parking) ? sub : null
+        if (!sub) return null
+        const hasAny = sessionFields.some(f => isAnswerFilled(f, sub[f.field_key]))
+        return hasAny ? sub : null
       }, null)
       if (firstFilledSub) {
         const newSubAnswers = { ...sessionSubAnswers }
         for (const s of sessionItems) {
           const sub = newSubAnswers[s.session_id] || {}
-          if (!sub.lunch && !sub.parking) {
-            newSubAnswers[s.session_id] = { ...firstFilledSub }
+          const hasAny = sessionFields.some(f => isAnswerFilled(f, sub[f.field_key]))
+          if (!hasAny) {
+            // 只複製對此場可見的欄位
+            const filtered = {}
+            for (const f of sessionFields) {
+              if (isFieldVisibleForSession(f, s) && f.field_key in firstFilledSub) {
+                filtered[f.field_key] = firstFilledSub[f.field_key]
+              }
+            }
+            newSubAnswers[s.session_id] = filtered
           }
         }
         setSessionSubAnswers(newSubAnswers)
@@ -410,13 +462,18 @@ export default function KioskPage() {
       return
     }
 
-    // 驗證每場的必填子欄位
+    // 驗證每場的必填子欄位（動態 schema 驅動）
     const missingList = []
     for (const sId of selectedIds) {
       const s = sessionItems.find(x => x.session_id === sId)
       const sub = sessionSubAnswers[sId] || {}
-      if (!sub.parking) missingList.push(`${formatSessionLabel(s)}：請選擇停車方式`)
-      if (s.time_period === 'morning' && !sub.lunch) missingList.push(`${formatSessionLabel(s)}：請選擇午齋`)
+      for (const f of sessionFields) {
+        if (!isFieldVisibleForSession(f, s)) continue
+        if (!(f.required ?? true)) continue
+        if (!isAnswerFilled(f, sub[f.field_key])) {
+          missingList.push(`${formatSessionLabel(s)}：請填寫「${f.field_label}」`)
+        }
+      }
     }
     if (missingList.length > 0) {
       setErrorMsg(missingList[0])
@@ -427,15 +484,17 @@ export default function KioskPage() {
     clearTimeout(idleTimerRef.current)
     setPhase('session_submitting')
 
+    // 組合 answers.sessions：每場只寫入對該場可見的子欄位
     const sessions = sessionItems
       .filter(s => sessionSelections[s.session_id])
       .map(s => {
         const sub = sessionSubAnswers[s.session_id] || {}
-        return {
-          session_id: s.session_id,
-          ...(s.time_period === 'morning' ? { lunch: sub.lunch } : {}),
-          parking: sub.parking,
+        const row = { session_id: s.session_id }
+        for (const f of sessionFields) {
+          if (!isFieldVisibleForSession(f, s)) continue
+          if (f.field_key in sub) row[f.field_key] = sub[f.field_key]
         }
+        return row
       })
     const sessionsAnswer = { sessions }
 
@@ -721,6 +780,7 @@ export default function KioskPage() {
     setLastFriendEventLocation('')
     setFriendRegistrations([])
     setSessionItems([])
+    setSessionFieldsState([])
     setSessionSelections({})
     setSessionSubAnswers({})
     setPhase(eventItems.length ? 'idle' : 'no_event')
@@ -806,6 +866,7 @@ export default function KioskPage() {
             classes={classes}
             event={selectedItem.event}
             sessionItems={sessionItems}
+            sessionFields={sessionFields}
             sessionSelections={sessionSelections}
             sessionSubAnswers={sessionSubAnswers}
             isUpdate={isUpdate}
@@ -1477,12 +1538,13 @@ function FriendFormScreen({
 // ── 多場次：場次選擇畫面 ────────────────────────────────────
 function SessionSelectScreen({
   student, classes, event,
-  sessionItems, sessionSelections, sessionSubAnswers,
+  sessionItems, sessionFields, sessionSelections, sessionSubAnswers,
   isUpdate, errorMsg, submitting,
   onToggleSession, onChangeSubAnswer, onSelectAll,
   onSubmit, onBack,
 }) {
   const allSelected = sessionItems.length > 0 && sessionItems.every(s => sessionSelections[s.session_id])
+  const fields = (sessionFields && sessionFields.length > 0) ? sessionFields : FALLBACK_SESSION_FIELDS
 
   return (
     <div className="w-full max-w-lg">
@@ -1520,7 +1582,6 @@ function SessionSelectScreen({
           {sessionItems.map(s => {
             const checked = !!sessionSelections[s.session_id]
             const sub = sessionSubAnswers[s.session_id] || {}
-            const isMorning = s.time_period === 'morning'
             return (
               <div
                 key={s.session_id}
@@ -1551,51 +1612,66 @@ function SessionSelectScreen({
                   </div>
                 </label>
 
-                {/* 子欄位（勾選後展開）*/}
+                {/* 子欄位（勾選後展開，依 schema 動態渲染）*/}
                 {checked && (
                   <div className="mt-3 ml-9 space-y-2.5">
-                    {/* 午齋（上午場才問）*/}
-                    {isMorning && (
-                      <div>
-                        <p className="text-kiosk-sm text-gray-600 mb-1.5">午齋</p>
-                        <div className="flex gap-2">
-                          {['需要', '不需要'].map(opt => (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() => onChangeSubAnswer(s.session_id, 'lunch', opt)}
-                              className={`flex-1 py-2 rounded-xl text-kiosk-sm font-medium border-2 transition-colors ${
-                                sub.lunch === opt
-                                  ? 'border-amber-500 bg-amber-100 text-amber-800'
-                                  : 'border-gray-200 bg-white text-gray-600'
-                              }`}
-                            >
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {/* 停車 */}
-                    <div>
-                      <p className="text-kiosk-sm text-gray-600 mb-1.5">停車</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {['機車', '轎車', '不需要'].map(opt => (
-                          <button
-                            key={opt}
-                            type="button"
-                            onClick={() => onChangeSubAnswer(s.session_id, 'parking', opt)}
-                            className={`px-4 py-2 rounded-xl text-kiosk-sm font-medium border-2 transition-colors ${
-                              sub.parking === opt
-                                ? 'border-amber-500 bg-amber-100 text-amber-800'
-                                : 'border-gray-200 bg-white text-gray-600'
-                            }`}
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    {fields.filter(f => isFieldVisibleForSession(f, s)).map(f => {
+                      const val = sub[f.field_key]
+                      if (f.field_type === 'radio') {
+                        const opts = f.options || []
+                        return (
+                          <div key={f.field_key}>
+                            <p className="text-kiosk-sm text-gray-600 mb-1.5">{f.field_label}</p>
+                            <div className="flex gap-2 flex-wrap">
+                              {opts.map(opt => (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  onClick={() => onChangeSubAnswer(s.session_id, f.field_key, opt)}
+                                  className={`flex-1 min-w-[5rem] py-2 px-3 rounded-xl text-kiosk-sm font-medium border-2 transition-colors ${
+                                    val === opt
+                                      ? 'border-amber-500 bg-amber-100 text-amber-800'
+                                      : 'border-gray-200 bg-white text-gray-600'
+                                  }`}
+                                >
+                                  {opt}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      }
+                      if (f.field_type === 'boolean') {
+                        return (
+                          <div key={f.field_key}>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={val === true}
+                                onChange={e => onChangeSubAnswer(s.session_id, f.field_key, e.target.checked)}
+                                className="w-5 h-5 accent-amber-600"
+                              />
+                              <span className="text-kiosk-sm text-gray-700">{f.field_label}</span>
+                            </label>
+                          </div>
+                        )
+                      }
+                      if (f.field_type === 'text') {
+                        return (
+                          <div key={f.field_key}>
+                            <p className="text-kiosk-sm text-gray-600 mb-1.5">{f.field_label}</p>
+                            <input
+                              type="text"
+                              value={val || ''}
+                              onChange={e => onChangeSubAnswer(s.session_id, f.field_key, e.target.value)}
+                              className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-kiosk-sm focus:outline-none focus:border-amber-400"
+                              placeholder=""
+                            />
+                          </div>
+                        )
+                      }
+                      return null
+                    })}
                   </div>
                 )}
               </div>
@@ -1669,6 +1745,107 @@ function FriendSuccessScreen({
         >
           完成，返回總覽
         </button>
+      </div>
+    </div>
+  )
+}
+                            </label>
+                          </div>
+                        )
+                      }
+                      if (f.field_type === 'text') {
+                        return (
+                          <div key={f.field_key}>
+                            <p className="text-kiosk-sm text-gray-600 mb-1.5">{f.field_label}</p>
+                            <input
+                              type="text"
+                              value={val || ''}
+                              onChange={e => onChangeSubAnswer(s.session_id, f.field_key, e.target.value)}
+                              className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-kiosk-sm focus:outline-none focus:border-amber-400"
+                            />
+                          </div>
+                        )
+                      }
+                      return null
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {errorMsg && (
+        <p className="text-red-600 text-kiosk-sm bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-4">
+          ⚠ {errorMsg}
+        </p>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          onClick={onBack}
+          disabled={submitting}
+          className="flex-1 py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium disabled:opacity-50"
+        >
+          ← 返回
+        </button>
+        <button
+          onClick={onSubmit}
+          disabled={submitting}
+          className="flex-grow-[2] py-4 bg-amber-600 text-white rounded-2xl text-kiosk-base font-bold shadow-md disabled:opacity-50 active:scale-95 transition-transform"
+        >
+          {submitting ? '送出中…' : isUpdate ? '確認修改' : '確認報名'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── 親友代報成功畫面 ────────────────────────────────────────
+function FriendSuccessScreen({
+  studentName, friendName, eventName,
+  friendRegId, friendEventName, friendEventDate, friendEventLocation,
+  onContinue, onDone,
+}) {
+  return (
+    <div className="w-full max-w-lg text-center">
+      <div className="text-6xl mb-4">🎉</div>
+      <h2 className="text-kiosk-2xl font-bold text-gray-800 mb-2">代報完成！</h2>
+      <p className="text-kiosk-base text-gray-600 mb-6">
+        已為 <span className="font-bold text-purple-700">{friendName}</span> 完成報名
+      </p>
+
+      <div className="bg-white rounded-2xl shadow-md p-5 mb-6 text-left space-y-2">
+        <p className="text-kiosk-sm text-gray-500">活動</p>
+        <p className="text-kiosk-base font-semibold text-gray-800">{friendEventName || eventName}</p>
+        {friendEventDate && (
+          <p className="text-kiosk-sm text-gray-500">{friendEventDate}</p>
+        )}
+        {friendEventLocation && (
+          <p className="text-kiosk-sm text-gray-500">{friendEventLocation}</p>
+        )}
+        <p className="text-kiosk-sm text-gray-400 mt-2">代報者：{studentName} 師兄</p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <button
+          onClick={onContinue}
+          className="w-full py-4 bg-purple-600 text-white rounded-2xl text-kiosk-base font-bold shadow-md active:scale-95 transition-transform"
+        >
+          ＋ 再代報一位
+        </button>
+        <button
+          onClick={onDone}
+          className="w-full py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium"
+        >
+          完成，返回總覽
+        </button>
+      </div>
+    </div>
+  )
+}
+ </div>
       </div>
     </div>
   )

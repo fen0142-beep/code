@@ -57,9 +57,10 @@ export async function getActiveEvents() {
     fieldsMap[f.event_id].push(f)
   }
 
-  // 多場次活動：一併撈 event_sessions
+  // 多場次活動：一併撈 event_sessions 與場次共用子欄位
   const multiIds = events.filter(e => e.multi_session).map(e => e.event_id)
   let sessionsMap = {}
+  let sessionFieldsMap = {}
   if (multiIds.length > 0) {
     const { data: allSessions } = await supabase
       .from('event_sessions')
@@ -70,6 +71,16 @@ export async function getActiveEvents() {
       if (!sessionsMap[s.event_id]) sessionsMap[s.event_id] = []
       sessionsMap[s.event_id].push(s)
     }
+
+    const { data: allSessionFields } = await supabase
+      .from('event_session_fields')
+      .select('*')
+      .in('event_id', multiIds)
+      .order('sort_order', { ascending: true })
+    for (const f of (allSessionFields || [])) {
+      if (!sessionFieldsMap[f.event_id]) sessionFieldsMap[f.event_id] = []
+      sessionFieldsMap[f.event_id].push(f)
+    }
   }
 
   return {
@@ -77,6 +88,7 @@ export async function getActiveEvents() {
       event: ev,
       fields: fieldsMap[ev.event_id] || [],
       sessions: sessionsMap[ev.event_id] || [],
+      sessionFields: sessionFieldsMap[ev.event_id] || [],
     })),
     error: null,
   }
@@ -1710,4 +1722,49 @@ export async function saveEventSessions(eventId, sessions) {
   }
 
   return { success: true }
+}
+
+// ─── Phase 5：場次共用子欄位（event_session_fields）───────
+// 多場次活動每場下方共用的子欄位（例：午齋、停車、寮房…）
+
+export async function getEventSessionFields(eventId) {
+  const { data, error } = await supabase
+    .from('event_session_fields')
+    .select('*')
+    .eq('event_id', eventId)
+    .order('sort_order', { ascending: true })
+  if (error) return { fields: [], error: error.message }
+  return { fields: data || [], error: null }
+}
+
+/**
+ * 全量覆蓋儲存（先 delete 再 insert，沿用 event_fields pattern）
+ * field 結構：{ field_key, field_label, field_type, options, show_if_period, required }
+ * show_if_period：array，空 = 所有時段都顯示
+ */
+export async function saveEventSessionFields(eventId, fields) {
+  const { error: delErr } = await supabase
+    .from('event_session_fields')
+    .delete()
+    .eq('event_id', eventId)
+  if (delErr) return { success: false, error: delErr.message }
+
+  if (!fields || fields.length === 0) return { success: true, error: null }
+
+  const rows = fields.map((f, i) => ({
+    event_id: eventId,
+    field_key: f.field_key,
+    field_label: f.field_label,
+    field_type: f.field_type || 'radio',
+    options: f.options || [],
+    show_if_period: f.show_if_period || [],
+    sort_order: i + 1,
+    required: f.required ?? true,
+  }))
+
+  const { error: insErr } = await supabase
+    .from('event_session_fields')
+    .insert(rows)
+  if (insErr) return { success: false, error: insErr.message }
+  return { success: true, error: null }
 }

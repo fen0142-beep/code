@@ -32,6 +32,7 @@ import {
 } from '../../lib/supabase'
 import { getPreceptFlags } from '../../lib/registrationHelpers'
 import EventSessionsPanel from '../../components/EventSessionsPanel'
+import EventSessionFieldsPanel from '../../components/EventSessionFieldsPanel'
 
 const STATUS_LABEL = { draft: '草稿', active: '進行中', closed: '已關閉' }
 
@@ -1512,7 +1513,10 @@ export default function EventDetailPage() {
 
         {/* 多場次場次設定 */}
         {form.multi_session && event?.event_id && (
-          <EventSessionsPanel eventId={event.event_id} onSaved={fresh => { setSessions(fresh || []); if (fresh?.length > 0) setSessionTab(fresh[0].session_id) }} />
+          <>
+            <EventSessionFieldsPanel eventId={event.event_id} />
+            <EventSessionsPanel eventId={event.event_id} onSaved={fresh => { setSessions(fresh || []); if (fresh?.length > 0) setSessionTab(fresh[0].session_id) }} />
+          </>
         )}
 
         {/* 停止異動區塊 */}
@@ -2438,4 +2442,14 @@ export default function EventDetailPage() {
   )
 }
 
-      
+                          </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </AdminLayout>
+  )
+}
