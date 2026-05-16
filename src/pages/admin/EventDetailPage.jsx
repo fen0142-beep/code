@@ -1492,8 +1492,8 @@ export default function EventDetailPage() {
                 此為精舍法會活動（勾選後可設定法會報到時，出現功德主相關資訊）
               </label>
             </div>
-            {/* 多場次報名 — 只在精舍法會時才顯示 */}
-            {form.event_type === 'temple' && form.is_dharma && (
+            {/* 多場次報名 — 精舍活動即可啟用，不須限定法會 */}
+            {form.event_type === 'temple' && (
               <div className="sm:col-span-2">
                 <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
                   <input

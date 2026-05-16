@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { getEventSessions, saveEventSessions } from '../lib/supabase'
 
 const TIME_PERIOD_OPTIONS = [
@@ -22,75 +22,105 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
   const [saving,   setSaving]   = useState(false)
   const [msg,      setMsg]      = useState('')
 
+  // 永遠保持最新的 sessions，避免 async 閉包抓到舊值
+  const sessionsRef = useRef(sessions)
+
   useEffect(() => {
     if (!eventId) return
     setLoading(true)
     getEventSessions(eventId).then(({ sessions: data, error }) => {
-      if (error) { setMsg(`❌ 載入失敗：${error}`); setLoading(false); return }
-      setSessions(data.map(s => ({ ...s, _key: s.session_id })))
+      if (error) { setMsg('❌ 載入失敗：' + error); setLoading(false); return }
+      const mapped = data.map(s => ({ ...s, _key: s.session_id }))
+      setSessions(mapped)
+      sessionsRef.current = mapped
       setLoading(false)
     })
   }, [eventId])
 
-  function addSession() {
-    setSessions(prev => [...prev, EMPTY_SESSION()])
-  }
+  // 核心儲存函式，接受最新 sessions 列表（避免 stale closure）
+  async function doSave(list) {
+    // 有任何場次日期空白 → 使用者還在填，靜默跳過
+    if (list.some(s => !s.date)) return
 
-  function removeSession(key) {
-    setSessions(prev => prev.filter(s => s._key !== key))
-  }
-
-  function updateSession(key, field, value) {
-    setSessions(prev => prev.map(s =>
-      s._key === key ? { ...s, [field]: value } : s
-    ))
-  }
-
-  function moveUp(idx) {
-    if (idx === 0) return
-    setSessions(prev => {
-      const next = [...prev]
-      ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
-      return next
-    })
-  }
-
-  function moveDown(idx) {
-    setSessions(prev => {
-      if (idx === prev.length - 1) return prev
-      const next = [...prev]
-      ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
-      return next
-    })
-  }
-
-  async function handleSave() {
-    for (const s of sessions) {
-      if (!s.date)        { setMsg('❌ 請填寫所有場次的日期'); return }
-      if (!s.time_period) { setMsg('❌ 請填寫所有場次的時段'); return }
-    }
-
+    // 重複場次 → 警告，不儲存
     const seen = new Set()
-    for (const s of sessions) {
-      const key = `${s.date}_${s.time_period}`
+    for (const s of list) {
+      const key = s.date + '_' + s.time_period
       if (seen.has(key)) {
         const label = TIME_PERIOD_OPTIONS.find(o => o.value === s.time_period)?.label ?? s.time_period
-        setMsg(`⚠️ 日期 ${s.date} 的「${label}」場次重複，請確認後再儲存`)
+        setMsg('⚠️ 日期 ' + s.date + ' 的「' + label + '」場次重複，請修正')
         return
       }
       seen.add(key)
     }
 
     setSaving(true)
-    const { success, error } = await saveEventSessions(eventId, sessions)
+    setMsg('')
+    const { success, error } = await saveEventSessions(eventId, list)
     setSaving(false)
-    if (!success) { setMsg(`❌ 儲存失敗：${error}`); return }
+    if (!success) { setMsg('❌ 儲存失敗：' + error); return }
 
     const { sessions: fresh } = await getEventSessions(eventId)
-    setSessions(fresh.map(s => ({ ...s, _key: s.session_id })))
-    setMsg('✅ 場次已儲存')
-    setTimeout(() => setMsg(''), 3000)
+    const mapped = fresh.map(s => ({ ...s, _key: s.session_id }))
+    setSessions(mapped)
+    sessionsRef.current = mapped
+    setMsg('✅ 已儲存')
+    setTimeout(() => setMsg(''), 2000)
     onSaved?.(fresh)
+  }
+
+  // 只更新 state（文字欄位 onChange，onBlur 時再存）
+  function updateSession(key, field, value) {
+    setSessions(prev => {
+      const next = prev.map(s => s._key === key ? { ...s, [field]: value } : s)
+      sessionsRef.current = next  // 同步更新 ref，確保 onBlur 拿到最新值
+      return next
+    })
+  }
+
+  // 更新 state 並立即存（select onChange 用）
+  function updateAndSave(key, field, value) {
+    const next = sessions.map(s => s._key === key ? { ...s, [field]: value } : s)
+    setSessions(next)
+    sessionsRef.current = next
+    doSave(next)
+  }
+
+  // onBlur 觸發自動存
+  function handleBlur() {
+    doSave(sessionsRef.current)
+  }
+
+  function addSession() {
+    const next = [...sessions, EMPTY_SESSION()]
+    setSessions(next)
+    sessionsRef.current = next
+    // 新增場次日期尚未填，不觸發儲存
+  }
+
+  function removeSession(key) {
+    const next = sessions.filter(s => s._key !== key)
+    setSessions(next)
+    sessionsRef.current = next
+    doSave(next)
+  }
+
+  function moveUp(idx) {
+    if (idx === 0) return
+    const next = [...sessions]
+    ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+    setSessions(next)
+    sessionsRef.current = next
+    doSave(next)
+  }
+
+  function moveDown(idx) {
+    if (idx === sessions.length - 1) return
+    const next = [...sessions]
+    ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
+    setSessions(next)
+    sessionsRef.current = next
+    doSave(next)
   }
 
   if (loading) {
@@ -107,27 +137,26 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
         <div>
           <p className="text-sm font-semibold text-indigo-800">📅 場次設定</p>
           <p className="text-xs text-gray-500 mt-0.5">
-            新增活動的每個場次，前台學員刷卡後可一次勾選要參加的場次。
+            填完日期後系統自動儲存；刪除、移動場次亦即時生效。
           </p>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="text-sm font-medium px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors disabled:opacity-50 shrink-0"
-        >
-          {saving ? '儲存中…' : '💾 儲存場次'}
-        </button>
+        {/* 自動儲存狀態指示 */}
+        <span className={
+          'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-opacity ' + (
+          saving
+            ? 'bg-gray-100 text-gray-500 opacity-100'
+            : msg.startsWith('✅')
+              ? 'bg-green-50 text-green-700 opacity-100'
+              : msg.startsWith('⚠️')
+                ? 'bg-amber-50 text-amber-700 opacity-100'
+                : msg.startsWith('❌')
+                  ? 'bg-red-50 text-red-700 opacity-100'
+                  : 'opacity-0 pointer-events-none'
+          )
+        }>
+          {saving ? '儲存中…' : msg}
+        </span>
       </div>
-
-      {msg && (
-        <p className={`text-xs mb-3 px-3 py-2 rounded-lg ${
-          msg.startsWith('✅') ? 'bg-green-50 text-green-700'
-          : msg.startsWith('⚠️') ? 'bg-amber-50 text-amber-700'
-          : 'bg-red-50 text-red-700'
-        }`}>
-          {msg}
-        </p>
-      )}
 
       {sessions.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-4">尚無場次，點下方「＋ 新增場次」開始設定</p>
@@ -147,20 +176,21 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
             </thead>
             <tbody>
               {sessions.map((s, idx) => {
-                const dupKey = `${s.date}_${s.time_period}`
-                const isDup  = s.date && sessions.filter(x => `${x.date}_${x.time_period}` === dupKey).length > 1
+                const dupKey = s.date + '_' + s.time_period
+                const isDup  = s.date && sessions.filter(x => (x.date + '_' + x.time_period) === dupKey).length > 1
 
                 return (
-                  <tr key={s._key} className={`border-b border-gray-100 ${isDup ? 'bg-amber-50' : ''}`}>
+                  <tr key={s._key} className={'border-b border-gray-100 ' + (isDup ? 'bg-amber-50' : '')}>
                     <td className="py-1.5 pr-2 text-gray-400 text-xs">{idx + 1}</td>
                     <td className="py-1.5 pr-2">
                       <input type="date" value={s.date}
                         onChange={e => updateSession(s._key, 'date', e.target.value)}
+                        onBlur={handleBlur}
                         className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400 w-36" />
                     </td>
                     <td className="py-1.5 pr-2">
                       <select value={s.time_period}
-                        onChange={e => updateSession(s._key, 'time_period', e.target.value)}
+                        onChange={e => updateAndSave(s._key, 'time_period', e.target.value)}
                         className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400">
                         {TIME_PERIOD_OPTIONS.map(o => (
                           <option key={o.value} value={o.value}>{o.label}</option>
@@ -171,17 +201,20 @@ export default function EventSessionsPanel({ eventId, onSaved }) {
                     <td className="py-1.5 pr-2">
                       <input type="text" value={s.dharma_name}
                         onChange={e => updateSession(s._key, 'dharma_name', e.target.value)}
+                        onBlur={handleBlur}
                         placeholder="例：梁皇寶懺第一卷"
                         className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400 w-44" />
                     </td>
                     <td className="py-1.5 pr-2">
                       <input type="time" value={s.time_start}
                         onChange={e => updateSession(s._key, 'time_start', e.target.value)}
+                        onBlur={handleBlur}
                         className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400 w-24" />
                     </td>
                     <td className="py-1.5 pr-2">
                       <input type="time" value={s.time_end}
                         onChange={e => updateSession(s._key, 'time_end', e.target.value)}
+                        onBlur={handleBlur}
                         className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400 w-24" />
                     </td>
                     <td className="py-1.5">
