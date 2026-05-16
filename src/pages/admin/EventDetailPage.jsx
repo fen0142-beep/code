@@ -2441,15 +2441,3 @@ export default function EventDetailPage() {
     </AdminLayout>
   )
 }
-
-                          </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </AdminLayout>
-  )
-}
