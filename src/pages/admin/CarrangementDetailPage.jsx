@@ -36,7 +36,13 @@ const DIRECTIONS = [
 const dirLabel = d => DIRECTIONS.find(x => x.key === d)?.label ?? d
 
 // 取得顯示名稱（相容訪客）
-const getName    = r => r.students?.name ?? r.answers?.guest_name ?? '訪客'
+const getName    = r => {
+  if (r.students?.name) return r.students.name
+  const g = r.answers?.guest_name
+  if (!g) return '訪客'
+  const host = r.answers?.host_name
+  return host ? `${g}（${host} 親友）` : g
+}
 const getClasses = r => r.students?.student_classes ?? []
 
 // 取得備註欄（相容多種可能的 field_key）
@@ -1338,7 +1344,9 @@ export default function CarrangementDetailPage() {
         if (pTxt) parts.push(pTxt)
         if (isLeader) parts.push('領隊')
         if (origNote) parts.push(origNote)
-        data.push([seq++, carName, getName(r), clsOf(r), grpOf(r), idOf(r), '', up, down, parts.join('/')])
+        // 訪客電話：guest_phone（Supabase cron 活動結束 7 天後自動清除）
+        const phone = r.student_id ? '' : (r.answers?.guest_phone ?? '')
+        data.push([seq++, carName, getName(r), clsOf(r), grpOf(r), idOf(r), phone, up, down, parts.join('/')])
       }
 
       return XLSX.utils.aoa_to_sheet([headers, ...data])
@@ -1409,7 +1417,9 @@ export default function CarrangementDetailPage() {
           if (pTxt) parts.push(pTxt)
           if (isDriver) parts.push('司機')
           if (origNote) parts.push(origNote)
-          data.push([seq++, carName, plate || '', getName(r), clsOf(r), grpOf(r), idOf(r), '', up_, down_, parts.join('/')])
+          // 訪客電話：guest_phone（Supabase cron 活動結束 7 天後自動清除）
+          const phone = r.student_id ? '' : (r.answers?.guest_phone ?? '')
+          data.push([seq++, carName, plate || '', getName(r), clsOf(r), grpOf(r), idOf(r), phone, up_, down_, parts.join('/')])
         }
       }
 
@@ -1434,7 +1444,9 @@ export default function CarrangementDetailPage() {
         if (pTxt) parts.push(pTxt)
         if (carpool) parts.push(`→ ${carpool}`)
         if (origNote) parts.push(origNote)
-        data.push([seq++, '小車（未指定）', '', getName(r), clsOf(r), grpOf(r), idOf(r), '', upV, downV, parts.join('/')])
+        // 訪客電話：guest_phone（Supabase cron 活動結束 7 天後自動清除）
+        const phone = r.student_id ? '' : (r.answers?.guest_phone ?? '')
+        data.push([seq++, '小車（未指定）', '', getName(r), clsOf(r), grpOf(r), idOf(r), phone, upV, downV, parts.join('/')])
       }
 
       return data.length > 0 ? XLSX.utils.aoa_to_sheet([headers, ...data]) : null

@@ -232,6 +232,7 @@ export default function KioskPage() {
   // 親友代報狀態
   const [friendMode, setFriendMode] = useState(null) // null | 'friend'（只代親友，不再有「本人+親友」綁定模式）
   const [friendName, setFriendName] = useState('')
+  const [friendPhone, setFriendPhone] = useState('') // 親友電話（選填）→ answers.guest_phone；Supabase cron 在活動結束 7 天後清除
   const [friendAnswers, setFriendAnswers] = useState({})
   // 上次代報成功的 registration_id 與活動 metadata（給 success 畫面產 QR 小卡用）
   const [lastFriendRegId, setLastFriendRegId] = useState('')
@@ -549,6 +550,7 @@ export default function KioskPage() {
     setFriendMode('friend')   // 統一單一模式（不再區分本人+親友 / 只報親友）
     setSelectedItem(null)
     setFriendName('')
+    setFriendPhone('')
     setFriendAnswers({})
     setErrorMsg('')
     setPhase('friend_event_choose')
@@ -563,6 +565,7 @@ export default function KioskPage() {
     setSelectedItem(item)
     setErrorMsg('')
     setFriendName('')
+    setFriendPhone('')
     setFriendAnswers({})
 
     if (item.event.multi_session) {
@@ -642,18 +645,25 @@ export default function KioskPage() {
       })
     const sessionsAnswer = { sessions }
 
+    const phone = friendPhone.trim()
     const { registrationId, error } = await submitFriendRegistration(
       event.event_id, student.student_id, student.name, name, sessionsAnswer,
-      'tablet-01', false,
+      'tablet-01', false, phone,
     )
     if (!registrationId) {
       setPhase('friend_session_select'); setErrorMsg(error || '送出失敗'); startFormTimer(); return
+    }
+    const friendAnswersForLog = {
+      guest_name: name,
+      host_name: student.name,
+      ...(phone ? { guest_phone: phone } : {}),
+      ...sessionsAnswer,
     }
     await logRegistrationChange({
       registrationId, eventId: event.event_id, eventName: event.name,
       studentName: `${name}(${student.name} 親友)`,
       changeType: 'created', oldAnswers: null,
-      newAnswers: { guest_name: name, 備註: `${student.name} 親友`, ...sessionsAnswer },
+      newAnswers: friendAnswersForLog,
     })
 
     setSuccessEventName(`${event.name}(${name} 親友)`)
@@ -665,7 +675,7 @@ export default function KioskPage() {
       {
         registration_id: registrationId,
         event_id: event.event_id,
-        answers: { guest_name: name, 備註: `${student.name} 親友`, ...sessionsAnswer },
+        answers: friendAnswersForLog,
         registered_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -702,18 +712,25 @@ export default function KioskPage() {
     setPhase('friend_submitting')
 
     const friendIsDriver = isDriverFromAnswers({ answers: friendAnswers }, fields)
+    const phone = friendPhone.trim()
     const { registrationId, error } = await submitFriendRegistration(
       event.event_id, student.student_id, student.name, name, friendAnswers,
-      'tablet-01', friendIsDriver,
+      'tablet-01', friendIsDriver, phone,
     )
     if (!registrationId) {
       setPhase('friend_form'); setErrorMsg(error || '送出失敗'); startFormTimer(); return
+    }
+    const friendAnswersForLog = {
+      guest_name: name,
+      host_name: student.name,
+      ...(phone ? { guest_phone: phone } : {}),
+      ...friendAnswers,
     }
     await logRegistrationChange({
       registrationId, eventId: event.event_id, eventName: event.name,
       studentName: `${name}（${student.name} 親友）`,
       changeType: 'created', oldAnswers: null,
-      newAnswers: { guest_name: name, 備註: `${student.name} 親友`, ...friendAnswers },
+      newAnswers: friendAnswersForLog,
     })
 
     // 報名成功 → 進入「再代報一位 / 完成返回」選擇畫面
@@ -729,7 +746,7 @@ export default function KioskPage() {
       {
         registration_id: registrationId,
         event_id: event.event_id,
-        answers: { guest_name: name, 備註: `${student.name} 親友`, ...friendAnswers },
+        answers: friendAnswersForLog,
         registered_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -743,6 +760,7 @@ export default function KioskPage() {
   function handleContinueFriend() {
     clearTimeout(idleTimerRef.current)
     setFriendName('')
+    setFriendPhone('')
     setFriendAnswers({})
     setSelectedItem(null)
     setErrorMsg('')
@@ -755,6 +773,7 @@ export default function KioskPage() {
     clearTimeout(idleTimerRef.current)
     setFriendMode(null)
     setFriendName('')
+    setFriendPhone('')
     setFriendAnswers({})
     setSelectedItem(null)
     setPhase('overview')
@@ -1007,10 +1026,12 @@ export default function KioskPage() {
             event={selectedItem.event}
             fields={selectedItem.fields}
             friendName={friendName}
+            friendPhone={friendPhone}
             answers={friendAnswers}
             errorMsg={errorMsg}
             submitting={phase === 'friend_submitting'}
             onChangeName={setFriendName}
+            onChangePhone={setFriendPhone}
             onChangeAnswers={setFriendAnswers}
             onSubmit={handleSubmitFriend}
             onBack={handleCancelFriendFlow}
@@ -1036,6 +1057,8 @@ export default function KioskPage() {
             onBack={handleCancelFriendFlow}
             friendName={friendName}
             onFriendNameChange={setFriendName}
+            friendPhone={friendPhone}
+            onFriendPhoneChange={setFriendPhone}
           />
         )}
 
@@ -1589,8 +1612,8 @@ function FriendEventChooseScreen({ student, eventItems, onPick, onCancel }) {
 
 // ── 親友代報：填寫畫面 ───────────────────────────────────
 function FriendFormScreen({
-  student, event, fields, friendName, answers, errorMsg, submitting,
-  onChangeName, onChangeAnswers, onSubmit, onBack,
+  student, event, fields, friendName, friendPhone, answers, errorMsg, submitting,
+  onChangeName, onChangePhone, onChangeAnswers, onSubmit, onBack,
 }) {
   // 精舍活動：parking_type radio 動態加「跟 OOO 同車（不另計）」選項
   const isTemple = event.event_type === 'temple'
@@ -1624,6 +1647,19 @@ function FriendFormScreen({
           value={friendName}
           onChange={e => onChangeName(e.target.value)}
           placeholder="請輸入親友姓名"
+          className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-kiosk-base focus:outline-none focus:border-purple-500"
+        />
+        {/* 親友電話（選填）— 寫入 answers.guest_phone；活動結束 7 天後自動清除（Supabase cron） */}
+        <p className="text-kiosk-sm font-medium text-gray-600 mt-4 mb-2">
+          親友電話
+          <span className="text-gray-400 text-xs ml-2">（選填，活動結束後自動清除）</span>
+        </p>
+        <input
+          type="tel"
+          inputMode="tel"
+          value={friendPhone || ''}
+          onChange={e => onChangePhone && onChangePhone(e.target.value)}
+          placeholder="如有需要聯絡親友時填寫"
           className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-kiosk-base focus:outline-none focus:border-purple-500"
         />
       </div>
@@ -1674,6 +1710,7 @@ function SessionSelectScreen({
   onToggleSession, onChangeSubAnswer, onSelectAll,
   onSubmit, onBack,
   friendName, onFriendNameChange,
+  friendPhone, onFriendPhoneChange,
 }) {
   const allSelected = sessionItems.length > 0 && sessionItems.every(s => sessionSelections[s.session_id])
   const fields = (sessionFields && sessionFields.length > 0) ? sessionFields : FALLBACK_SESSION_FIELDS
@@ -1692,6 +1729,19 @@ function SessionSelectScreen({
             value={friendName}
             onChange={e => onFriendNameChange(e.target.value)}
             placeholder="請輸入親友姓名"
+            className="w-full border-2 border-purple-200 rounded-xl px-4 py-3 text-kiosk-base focus:border-purple-500 focus:outline-none"
+          />
+          {/* 親友電話（選填）— 寫入 answers.guest_phone；活動結束 7 天後自動清除 */}
+          <label className="block text-kiosk-sm text-gray-600 mb-1 mt-3">
+            親友電話
+            <span className="text-gray-400 text-xs ml-2">（選填，活動結束後自動清除）</span>
+          </label>
+          <input
+            type="tel"
+            inputMode="tel"
+            value={friendPhone || ''}
+            onChange={e => onFriendPhoneChange && onFriendPhoneChange(e.target.value)}
+            placeholder="如有需要聯絡親友時填寫"
             className="w-full border-2 border-purple-200 rounded-xl px-4 py-3 text-kiosk-base focus:border-purple-500 focus:outline-none"
           />
         </div>

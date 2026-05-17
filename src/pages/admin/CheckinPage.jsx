@@ -169,7 +169,9 @@ export default function CheckinPage() {
     }
 
     const name = isGuest
-      ? (registration.answers?.guest_name ?? '訪客')
+      ? (registration.answers?.host_name
+          ? `${registration.answers?.guest_name ?? '訪客'}（${registration.answers.host_name} 親友）`
+          : (registration.answers?.guest_name ?? '訪客'))
       : (registration.students?.name ?? scanned)
 
     // 查功德主紀錄（學員型用 student_id、訪客型用 name；查不到回 null）
@@ -251,7 +253,10 @@ export default function CheckinPage() {
                 <div className="text-center text-gray-400 py-12 text-sm">無符合的報名紀錄</div>
               ) : (
                 filteredRegs.map(r => {
-                  const name  = r.students?.name ?? r.answers?.guest_name ?? '訪客'
+                  const guestNameLabel = r.answers?.host_name
+                    ? `${r.answers?.guest_name ?? '訪客'}（${r.answers.host_name} 親友）`
+                    : (r.answers?.guest_name ?? '訪客')
+                  const name  = r.students?.name ?? guestNameLabel
                   const sid   = r.student_id ?? ''
                   const cls   = (r.students?.student_classes ?? [])
                     .map(c => c.class_name + (c.group_name ? ' ' + c.group_name : ''))

@@ -60,9 +60,14 @@ function formatEventDate(ev) {
 }
 
 // ── 顯示名稱（學員或訪客）────────────────────────────────────
-function getDisplayName(r) {
+// 訪客若 answers.host_name 有值（代報親友）→ 顯示「親友姓名（XX 親友）」
+// 舊資料（無 host_name，但有 host_student_id）由呼叫端 join 後從 students 反查名字，再傳入 hostFallback
+function getDisplayName(r, hostFallback) {
   if (r.students?.name) return r.students.name
-  if (r.answers?.guest_name) return r.answers.guest_name
+  if (r.answers?.guest_name) {
+    const host = r.answers?.host_name || hostFallback
+    return host ? `${r.answers.guest_name}（${host} 親友）` : r.answers.guest_name
+  }
   return '-'
 }
 
@@ -1060,13 +1065,13 @@ export default function EventDetailPage() {
                     })}
                   </>
                 )}
-                {unchangedKeys.filter(k => k !== 'guest_name').length > 0 && (
+                {unchangedKeys.filter(k => !['guest_name','host_name','guest_phone'].includes(k)).length > 0 && (
                   <details className="mt-2">
                     <summary className="text-xs text-gray-400 cursor-pointer select-none hover:text-gray-600">
-                      未修改的欄位（{unchangedKeys.filter(k => k !== 'guest_name').length} 項）
+                      未修改的欄位（{unchangedKeys.filter(k => !['guest_name','host_name','guest_phone'].includes(k)).length} 項）
                     </summary>
                     <div className="mt-2 space-y-1">
-                      {unchangedKeys.filter(k => k !== 'guest_name').map(key => {
+                      {unchangedKeys.filter(k => !['guest_name','host_name','guest_phone'].includes(k)).map(key => {
                         const fieldDef = fields.find(f => f.field_key === key)
                         const label = fieldDef?.field_label ?? key
                         return (

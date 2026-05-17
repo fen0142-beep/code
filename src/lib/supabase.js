@@ -546,14 +546,21 @@ export async function createGuestRegistration(eventId, guestName, answers, isDri
 
 /**
  * 學員代親友報名：訪客 reg（student_id=null），但 host_student_id 指向代報者
- * answers 自動補上 guest_name 與「備註」欄（"XXX 親友"），讓後台名單看得出代報關係
+ *
+ * answers 結構化儲存：
+ *  - guest_name：親友姓名
+ *  - host_name ：代報者姓名（取代舊版「備註: "XX 親友"」污染做法）
+ *  - guest_phone：訪客電話（選填；Supabase pg_cron 在活動結束 7 天後自動清除）
+ *
+ * 舊版 `備註: "XX 親友"` 已停用 — 下游讀取端優先讀 host_name，並對舊資料保留 fallback。
  */
 export async function submitFriendRegistration(
-  eventId, hostStudentId, hostName, guestName, answers, terminal = 'tablet-01', isDriver = false
+  eventId, hostStudentId, hostName, guestName, answers, terminal = 'tablet-01', isDriver = false, guestPhone = ''
 ) {
   const allAnswers = {
     guest_name: guestName,
-    備註: `${hostName} 親友`,
+    host_name: hostName,
+    ...(guestPhone ? { guest_phone: guestPhone } : {}),
     ...answers,
   }
   const { data, error } = await supabase
