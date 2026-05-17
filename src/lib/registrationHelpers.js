@@ -80,14 +80,14 @@ export function getPreceptLevel(reg) {
 }
 
 /**
- * 對應 badge 樣式
- * @returns {{ label: '皈'|'戒', cls: string }|null}
+ * 對應 badge 樣式（回傳陣列，可直接 .map()）
+ * @returns {Array<{ children: string, className: string, title: string }>}
  */
 export function preceptBadgeProps(reg) {
   const lv = getPreceptLevel(reg)
-  if (lv === 'five_precepts') return { label: '戒', cls: 'bg-purple-100 text-purple-700 border-purple-300' }
-  if (lv === 'refuge')        return { label: '皈', cls: 'bg-emerald-100 text-emerald-700 border-emerald-300' }
-  return null
+  if (lv === 'five_precepts') return [{ children: '戒', className: 'text-xs bg-purple-100 text-purple-700 border border-purple-300 rounded px-1', title: '五戒' }]
+  if (lv === 'refuge')        return [{ children: '皈', className: 'text-xs bg-emerald-100 text-emerald-700 border border-emerald-300 rounded px-1', title: '皈依' }]
+  return []
 }
 
 /**
