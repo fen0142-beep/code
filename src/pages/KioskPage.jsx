@@ -1550,13 +1550,14 @@ function FriendEventChooseScreen({ student, eventItems, onPick, onCancel }) {
 
       <p className="text-kiosk-base font-bold text-gray-700 mb-3">選擇活動</p>
       <div className="space-y-3 mb-5">
-        {eventItems.map(({ event, fields }) => {
+        {eventItems.map((item) => {
+          const { event, fields } = item
           const locked = !!event.locked
 
           return (
             <button
               key={event.event_id}
-              onClick={() => !locked && onPick({ event, fields })}
+              onClick={() => !locked && onPick(item)}
               disabled={locked}
               className={`w-full text-left bg-white rounded-2xl border-2 p-4 transition-all ${
                 locked ? 'border-gray-200 opacity-60 cursor-not-allowed' : 'border-purple-300 hover:bg-purple-50 active:scale-[0.99]'
