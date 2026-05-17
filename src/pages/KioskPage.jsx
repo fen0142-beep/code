@@ -1749,3 +1749,84 @@ function FriendSuccessScreen({
     </div>
   )
 }
+
+// ── QR 小卡預覽（FriendSuccessScreen 與 FriendQRModal 共用）─
+function QRCardPreview({ svgId, regId, name, eventName, eventDate, location }) {
+  return (
+    <div className="bg-white border-2 border-gray-200 rounded-xl p-4 mx-auto" style={{ maxWidth: 320 }}>
+      <p className="text-center text-kiosk-sm text-gray-400 tracking-widest">普 宜 精 舍</p>
+      <p className="text-center text-kiosk-sm text-purple-500 mt-1 mb-3">— 親友代報・報到 QR —</p>
+      <div className="flex justify-center bg-gray-50 rounded-lg p-2 mb-3">
+        <QRCodeSVG id={svgId} value={String(regId)} size={180} level="M" includeMargin />
+      </div>
+      <p className="text-center text-kiosk-base font-bold text-gray-800">{name}</p>
+      {eventName && (
+        <p className="text-center text-kiosk-sm text-gray-600 mt-0.5">{eventName}</p>
+      )}
+      {eventDate && (
+        <p className="text-center text-kiosk-sm text-gray-500 mt-0.5">{eventDate}</p>
+      )}
+      {location && (
+        <p className="text-center text-kiosk-sm text-gray-500">{location}</p>
+      )}
+      <p className="text-center text-xs text-gray-400 mt-2">當天現場掃此碼即可報到</p>
+    </div>
+  )
+}
+
+// ── 代報親友 QR Modal（點清單裡某位親友的「查看 QR」開啟） ──
+function FriendQRModal({ friend, onClose }) {
+  if (!friend) return null
+  const qrSvgId = `friend-modal-qr-${friend.registration_id}`
+  const cardData = {
+    svgId: qrSvgId,
+    name: friend.name,
+    eventName: friend.eventName,
+    eventDate: friend.eventDate,
+    location: friend.location,
+  }
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-kiosk-base font-bold text-purple-700">🎫 報到 QR 小卡</p>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none w-8 h-8"
+            aria-label="關閉"
+          >
+            ×
+          </button>
+        </div>
+        <QRCardPreview
+          svgId={qrSvgId}
+          regId={friend.registration_id}
+          name={friend.name}
+          eventName={friend.eventName}
+          eventDate={friend.eventDate}
+          location={friend.location}
+        />
+        <div className="grid grid-cols-2 gap-2 mt-4">
+          <button
+            onClick={() => downloadQRCard(cardData)}
+            className="py-3 px-3 bg-white border-2 border-purple-300 text-purple-700 rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
+          >
+            📥 下載小卡
+          </button>
+          <button
+            onClick={() => shareQRCard(cardData)}
+            className="py-3 px-3 bg-purple-600 text-white rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
+          >
+            📤 分享給親友
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
