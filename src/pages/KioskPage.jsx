@@ -214,6 +214,7 @@ export default function KioskPage() {
   // 刷卡後狀態
   // phase: idle | loading | overview | form | submitting | not_found | error | no_event
   //        | friend_event_choose | friend_form | friend_submitting
+  //        | friend_session_select | friend_session_submitting | friend_success
   const [phase, setPhase] = useState('idle')
   const [student, setStudent] = useState(null)
   const [classes, setClasses] = useState([])
@@ -563,8 +564,115 @@ export default function KioskPage() {
     setErrorMsg('')
     setFriendName('')
     setFriendAnswers({})
-    setPhase('friend_form')
+
+    if (item.event.multi_session) {
+      // 親友・多場次：初始化 sessions 狀態（與本人流程一致,但不預填既有報名）
+      const sessions = item.sessions || []
+      const schema = (item.sessionFields && item.sessionFields.length > 0)
+        ? item.sessionFields
+        : FALLBACK_SESSION_FIELDS
+      const initSelections = {}
+      const initSubAnswers = {}
+      for (const s of sessions) {
+        initSelections[s.session_id] = false
+        initSubAnswers[s.session_id] = {}
+      }
+      setSessionItems(sessions)
+      setSessionFieldsState(schema)
+      setSessionSelections(initSelections)
+      setSessionSubAnswers(initSubAnswers)
+      setPhase('friend_session_select')
+    } else {
+      setPhase('friend_form')
+    }
     startFormTimer()
+  }
+
+  // ── 親友代報・多場次：送出 ────────────────────────────────────
+  async function handleSubmitFriendSessions() {
+    const { event } = selectedItem
+    const name = friendName.trim()
+    if (!name) {
+      setErrorMsg('請填寫親友姓名')
+      return
+    }
+
+    const selectedIds = sessionItems
+      .filter(s => sessionSelections[s.session_id])
+      .map(s => s.session_id)
+
+    if (selectedIds.length === 0) {
+      setErrorMsg('請至少選擇一個場次')
+      return
+    }
+
+    // 驗證每場必填子欄位
+    const missingList = []
+    for (const sId of selectedIds) {
+      const s = sessionItems.find(x => x.session_id === sId)
+      const sub = sessionSubAnswers[sId] || {}
+      for (const f of sessionFields) {
+        if (!isFieldVisibleForSession(f, s)) continue
+        if (!(f.required ?? true)) continue
+        if (!isAnswerFilled(f, sub[f.field_key])) {
+          missingList.push(`${formatSessionLabel(s)}:請填寫「${f.field_label}」`)
+        }
+      }
+    }
+    if (missingList.length > 0) {
+      setErrorMsg(missingList[0])
+      return
+    }
+
+    setErrorMsg('')
+    clearTimeout(idleTimerRef.current)
+    setPhase('friend_session_submitting')
+
+    // 組合 answers.sessions（與本人流程一致）
+    const sessions = sessionItems
+      .filter(s => sessionSelections[s.session_id])
+      .map(s => {
+        const sub = sessionSubAnswers[s.session_id] || {}
+        const row = { session_id: s.session_id }
+        for (const f of sessionFields) {
+          if (!isFieldVisibleForSession(f, s)) continue
+          if (f.field_key in sub) row[f.field_key] = sub[f.field_key]
+        }
+        return row
+      })
+    const sessionsAnswer = { sessions }
+
+    const { registrationId, error } = await submitFriendRegistration(
+      event.event_id, student.student_id, student.name, name, sessionsAnswer,
+      'tablet-01', false,
+    )
+    if (!registrationId) {
+      setPhase('friend_session_select'); setErrorMsg(error || '送出失敗'); startFormTimer(); return
+    }
+    await logRegistrationChange({
+      registrationId, eventId: event.event_id, eventName: event.name,
+      studentName: `${name}(${student.name} 親友)`,
+      changeType: 'created', oldAnswers: null,
+      newAnswers: { guest_name: name, 備註: `${student.name} 親友`, ...sessionsAnswer },
+    })
+
+    setSuccessEventName(`${event.name}(${name} 親友)`)
+    setLastFriendRegId(registrationId)
+    setLastFriendEventName(event.name)
+    setLastFriendEventDate(formatEventDateRange(event.date_start, event.date_end))
+    setLastFriendEventLocation(event.location || '')
+    setFriendRegistrations(prev => [
+      {
+        registration_id: registrationId,
+        event_id: event.event_id,
+        answers: { guest_name: name, 備註: `${student.name} 親友`, ...sessionsAnswer },
+        registered_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      ...prev,
+    ])
+    setPhase('friend_success')
+    startIdleTimer()
   }
 
   // ── 親友代報：送出 ───────────────────────────────────────────
@@ -906,6 +1014,28 @@ export default function KioskPage() {
             onChangeAnswers={setFriendAnswers}
             onSubmit={handleSubmitFriend}
             onBack={handleCancelFriendFlow}
+          />
+        )}
+
+        {(phase === 'friend_session_select' || phase === 'friend_session_submitting') && selectedItem && (
+          <SessionSelectScreen
+            student={student}
+            classes={classes}
+            event={selectedItem.event}
+            sessionItems={sessionItems}
+            sessionFields={sessionFields}
+            sessionSelections={sessionSelections}
+            sessionSubAnswers={sessionSubAnswers}
+            isUpdate={false}
+            errorMsg={errorMsg}
+            submitting={phase === 'friend_session_submitting'}
+            onToggleSession={handleToggleSession}
+            onChangeSubAnswer={handleChangeSubAnswer}
+            onSelectAll={handleSelectAll}
+            onSubmit={handleSubmitFriendSessions}
+            onBack={handleCancelFriendFlow}
+            friendName={friendName}
+            onFriendNameChange={setFriendName}
           />
         )}
 
@@ -1542,24 +1672,41 @@ function SessionSelectScreen({
   isUpdate, errorMsg, submitting,
   onToggleSession, onChangeSubAnswer, onSelectAll,
   onSubmit, onBack,
+  friendName, onFriendNameChange,
 }) {
   const allSelected = sessionItems.length > 0 && sessionItems.every(s => sessionSelections[s.session_id])
   const fields = (sessionFields && sessionFields.length > 0) ? sessionFields : FALLBACK_SESSION_FIELDS
+  const isFriendMode = typeof friendName === 'string' && typeof onFriendNameChange === 'function'
 
   return (
     <div className="w-full max-w-lg">
-      {/* 學員資訊卡 */}
-      <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-amber-500">
-        <p className="text-kiosk-xl font-bold text-gray-800">{student?.name} 師兄</p>
-        <p className="text-kiosk-base text-amber-700 font-medium mt-1">{event.name}</p>
-        <div className="flex flex-wrap gap-2 mt-2">
-          {classes.map((c, i) => (
-            <span key={i} className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-kiosk-sm">
-              {c.class_name}{c.group_name ? `・${c.group_name}` : ''}
-            </span>
-          ))}
+      {/* 學員資訊卡 / 親友姓名輸入 */}
+      {isFriendMode ? (
+        <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-purple-500">
+          <p className="text-kiosk-sm text-purple-700 font-bold mb-1">🎫 為親友代報・{student?.name} 師兄</p>
+          <p className="text-kiosk-base text-purple-700 font-medium mb-3">{event.name}</p>
+          <label className="block text-kiosk-sm text-gray-600 mb-1">親友姓名 <span className="text-red-500">*</span></label>
+          <input
+            type="text"
+            value={friendName}
+            onChange={e => onFriendNameChange(e.target.value)}
+            placeholder="請輸入親友姓名"
+            className="w-full border-2 border-purple-200 rounded-xl px-4 py-3 text-kiosk-base focus:border-purple-500 focus:outline-none"
+          />
         </div>
-      </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-amber-500">
+          <p className="text-kiosk-xl font-bold text-gray-800">{student?.name} 師兄</p>
+          <p className="text-kiosk-base text-amber-700 font-medium mt-1">{event.name}</p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {classes.map((c, i) => (
+              <span key={i} className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-kiosk-sm">
+                {c.class_name}{c.group_name ? `・${c.group_name}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 場次選擇區 */}
       <div className="bg-white rounded-2xl shadow-md p-5 mb-4">
