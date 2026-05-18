@@ -13,6 +13,38 @@ const FIELD_TYPE_OPTIONS = [
   { value: 'text',    label: 'text（文字輸入）' },
 ]
 
+// 看板角色：標記此欄位在即時看板的特化呈現（同 FieldRow，但場次層不會有 identity）
+const DASHBOARD_ROLES = [
+  { value: '',             label: '不特化（依預設呈現）' },
+  { value: 'lunch_total',  label: '午齋總份數（boolean）' },
+  { value: 'parking_kind', label: '停車車種（radio + 選項標記）' },
+]
+
+// 停車車種：parking_kind 角色時，每個選項對應的車種
+const PARKING_KINDS = [
+  { value: '',           label: '—' },
+  { value: 'motorcycle', label: '機車' },
+  { value: 'car',        label: '汽車' },
+  { value: 'none',       label: '不算' },
+]
+
+// option_meta 工具：增刪改一個 key 並維持 null when empty
+function patchMeta(meta, key, value) {
+  const next = { ...(meta || {}) }
+  if (value === null || value === undefined || value === '') delete next[key]
+  else next[key] = value
+  return Object.keys(next).length === 0 ? null : next
+}
+
+function renameMetaKey(meta, oldKey, newKey) {
+  if (!meta || !(oldKey in meta)) return meta
+  const v = meta[oldKey]
+  const next = { ...meta }
+  delete next[oldKey]
+  if (newKey) next[newKey] = v
+  return Object.keys(next).length === 0 ? null : next
+}
+
 // 把顯示名稱轉成簡單的 key（給 field_key 自動帶入用）
 function slugifyLabel(label) {
   const trimmed = (label || '').trim().toLowerCase()
@@ -30,7 +62,7 @@ const EMPTY_FIELD = () => ({
   field_label: '',
   field_type: 'radio',
   options: [],
-  show_if_period: [],   // 空陣列 = 所有時段都顯示
+  show_if_period: [],
   required: true,
   dashboard_role: null,
   option_meta: null,
@@ -67,18 +99,15 @@ export default function EventSessionFieldsPanel({ eventId }) {
   }, [eventId])
 
   async function doSave(list) {
-    // 寬鬆驗證：有空白 label 就靜默跳過（讓使用者繼續打字）
     if (list.some(f => !f.field_label?.trim())) return
     if (list.some(f => !f.field_key?.trim()))    return
 
-    // 嚴格驗證：radio 必須有選項
     const badRadio = list.find(f => f.field_type === 'radio' && (f.options || []).filter(o => o?.trim()).length === 0)
     if (badRadio) {
       setMsg('⚠️ 「' + badRadio.field_label + '」是單選，請至少設定一個選項')
       return
     }
 
-    // 重複 field_key
     const seen = new Set()
     for (const f of list) {
       if (seen.has(f.field_key)) {
@@ -90,7 +119,6 @@ export default function EventSessionFieldsPanel({ eventId }) {
 
     setSaving(true)
     setMsg('')
-    // 存之前把空字串選項過濾掉
     const cleaned = list.map(f => ({
       ...f,
       options: (f.options || []).map(o => (o || '').trim()).filter(Boolean),
@@ -117,9 +145,7 @@ export default function EventSessionFieldsPanel({ eventId }) {
     doSave(next)
   }
 
-  function handleBlur() {
-    doSave(fieldsRef.current)
-  }
+  function handleBlur() { doSave(fieldsRef.current) }
 
   function addField() {
     const next = [...fields, EMPTY_FIELD()]
@@ -138,26 +164,24 @@ export default function EventSessionFieldsPanel({ eventId }) {
     if (idx === 0) return
     const next = [...fields]
     ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
-    setFields(next)
-    fieldsRef.current = next
-    doSave(next)
+    setFields(next); fieldsRef.current = next; doSave(next)
   }
 
   function moveDown(idx) {
     if (idx === fields.length - 1) return
     const next = [...fields]
     ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
-    setFields(next)
-    fieldsRef.current = next
-    doSave(next)
+    setFields(next); fieldsRef.current = next; doSave(next)
   }
 
   function setOption(key, i, val) {
     const f = fields.find(x => x._key === key)
     if (!f) return
+    const prev = (f.options || [])[i]
     const opts = [...(f.options || [])]
     opts[i] = val
-    updateField(key, { options: opts })
+    const newMeta = prev !== val ? renameMetaKey(f.option_meta, prev, val) : f.option_meta
+    updateField(key, { options: opts, option_meta: newMeta })
   }
 
   function addOption(key) {
@@ -169,8 +193,20 @@ export default function EventSessionFieldsPanel({ eventId }) {
   function removeOption(key, i) {
     const f = fields.find(x => x._key === key)
     if (!f) return
+    const removed = (f.options || [])[i]
     const next = (f.options || []).filter((_, j) => j !== i)
-    updateAndSave(key, { options: next })
+    const newMeta = renameMetaKey(f.option_meta, removed, '')
+    updateAndSave(key, { options: next, option_meta: newMeta })
+  }
+
+  function setOptionKind(key, opt, kind) {
+    const f = fields.find(x => x._key === key)
+    if (!f) return
+    updateAndSave(key, { option_meta: patchMeta(f.option_meta, opt, kind) })
+  }
+
+  function setDashboardRole(key, role) {
+    updateAndSave(key, { dashboard_role: role || null })
   }
 
   function togglePeriod(key, period) {
@@ -223,10 +259,11 @@ export default function EventSessionFieldsPanel({ eventId }) {
           {fields.map((f, idx) => {
             const periods = f.show_if_period || []
             const allPeriods = periods.length === 0
+            const showParkingMeta =
+              f.dashboard_role === 'parking_kind' && f.field_type === 'radio'
             return (
               <div key={f._key} className="bg-white border border-emerald-200 rounded-lg p-3 space-y-2">
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start">
-                  {/* 顯示名稱 */}
                   <div className="sm:col-span-3">
                     <label className="block text-[10px] font-medium text-gray-500 mb-0.5">顯示名稱</label>
                     <input
@@ -234,7 +271,6 @@ export default function EventSessionFieldsPanel({ eventId }) {
                       onChange={e => {
                         const label = e.target.value
                         const patch = { field_label: label }
-                        // 自動帶 field_key（若使用者未自訂過）
                         if (!f.field_id && (!f.field_key || f.field_key === slugifyLabel(f.field_label))) {
                           patch.field_key = slugifyLabel(label)
                         }
@@ -245,7 +281,6 @@ export default function EventSessionFieldsPanel({ eventId }) {
                       className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-400"
                     />
                   </div>
-                  {/* field_key（程式識別碼） */}
                   <div className="sm:col-span-2">
                     <label className="block text-[10px] font-medium text-gray-500 mb-0.5">程式識別碼</label>
                     <input
@@ -256,7 +291,6 @@ export default function EventSessionFieldsPanel({ eventId }) {
                       className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-400"
                     />
                   </div>
-                  {/* 類型 */}
                   <div className="sm:col-span-3">
                     <label className="block text-[10px] font-medium text-gray-500 mb-0.5">類型</label>
                     <select
@@ -269,7 +303,6 @@ export default function EventSessionFieldsPanel({ eventId }) {
                       ))}
                     </select>
                   </div>
-                  {/* 顯示時段 */}
                   <div className="sm:col-span-3">
                     <label className="block text-[10px] font-medium text-gray-500 mb-0.5">
                       顯示時段 <span className="text-gray-400">（不勾＝全部）</span>
@@ -296,7 +329,6 @@ export default function EventSessionFieldsPanel({ eventId }) {
                       })}
                     </div>
                   </div>
-                  {/* 必填 + 排序 + 刪除 */}
                   <div className="sm:col-span-1 flex sm:flex-col items-center sm:items-end gap-1 pt-4 sm:pt-1">
                     <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
                       <input
@@ -318,10 +350,16 @@ export default function EventSessionFieldsPanel({ eventId }) {
                   </div>
                 </div>
 
-                {/* radio 選項 */}
                 {f.field_type === 'radio' && (
                   <div className="pl-2 border-l-2 border-emerald-200">
-                    <div className="text-[10px] font-medium text-gray-500 mb-1">選項</div>
+                    <div className="text-[10px] font-medium text-gray-500 mb-1">
+                      選項
+                      {showParkingMeta && (
+                        <span className="text-emerald-600 font-normal ml-1">
+                          （右側下拉設定車種）
+                        </span>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-1.5 items-center">
                       {(f.options || []).map((opt, i) => (
                         <div key={i} className="flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
@@ -332,6 +370,18 @@ export default function EventSessionFieldsPanel({ eventId }) {
                             placeholder={`選項 ${i + 1}`}
                             className="bg-transparent text-xs w-20 focus:outline-none"
                           />
+                          {showParkingMeta && (
+                            <select
+                              value={f.option_meta?.[opt] || ''}
+                              onChange={e => setOptionKind(f._key, opt, e.target.value)}
+                              className="bg-white border border-emerald-300 text-emerald-800 rounded text-[10px] py-0.5 px-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                              title="此選項代表哪種車輛"
+                            >
+                              {PARKING_KINDS.map(k => (
+                                <option key={k.value} value={k.value}>{k.label}</option>
+                              ))}
+                            </select>
+                          )}
                           <button
                             onClick={() => removeOption(f._key, i)}
                             className="text-gray-300 hover:text-red-400 text-sm leading-none"
@@ -348,6 +398,22 @@ export default function EventSessionFieldsPanel({ eventId }) {
                     </div>
                   </div>
                 )}
+
+                <div className="pt-2 border-t border-emerald-100 flex items-center gap-2 flex-wrap">
+                  <label className="text-[10px] font-medium text-gray-500 shrink-0">
+                    看板角色
+                    <span className="text-gray-400 font-normal ml-1">（不確定就留「不特化」）</span>
+                  </label>
+                  <select
+                    value={f.dashboard_role || ''}
+                    onChange={e => setDashboardRole(f._key, e.target.value)}
+                    className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                  >
+                    {DASHBOARD_ROLES.map(r => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )
           })}

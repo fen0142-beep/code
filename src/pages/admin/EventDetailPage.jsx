@@ -1771,7 +1771,7 @@ export default function EventDetailPage() {
             const dayEntries = Array.from(byDate.entries())  // [[date, sessionList], ...]
 
             // 動態欄位：把 sessionFields 攤平成「表格欄」清單
-            // - radio:   每個 option 一欄
+            // - radio:   每個 option 一欄（parking_kind 角色時帶上車種 meta）
             // - boolean: 一欄（顯示 true 計數）
             // - text:    一欄（顯示有填的人數）
             // 每欄記 applicablePeriods（空陣列 = 所有時段適用）
@@ -1779,8 +1779,14 @@ export default function EventDetailPage() {
             const cols = []
             for (const f of sortedFields) {
               const periods = Array.isArray(f.show_if_period) ? f.show_if_period : []
+              const isParkingKind = f.dashboard_role === 'parking_kind'
+              const meta = f.option_meta || {}
               if (f.field_type === 'radio') {
                 for (const opt of (f.options || [])) {
+                  // 車種優先讀 option_meta；沒設則 fallback 到字串「機車/轎車/汽車」
+                  const kindRaw = isParkingKind
+                    ? (meta[opt] || parkingKindOf(opt, null))
+                    : null
                   cols.push({
                     key: `${f.field_key}::${opt}`,
                     label: opt,
@@ -1788,6 +1794,7 @@ export default function EventDetailPage() {
                     kind: 'option',
                     option: opt,
                     applicablePeriods: periods,
+                    parkingKind: kindRaw,   // 'motorcycle' | 'car' | 'none' | null
                   })
                 }
               } else if (f.field_type === 'boolean') {
@@ -1822,8 +1829,10 @@ export default function EventDetailPage() {
             }
 
             // 合計列：對每欄加總「適用場次」的值；若該欄無任何適用場次顯示「—」
+            // 同時依 option_meta 把 parking_kind 欄位的選項彙總成「機車人次 / 汽車人次」
             let sumCount = 0
             const sumByCol = new Map(cols.map(c => [c.key, { sum: 0, anyApplicable: false }]))
+            const parkingTotals = { motorcycle: 0, car: 0, hasAny: false }
             for (const s of sessions) {
               const b = bySession.get(s.session_id) ?? { count: 0, stats: {} }
               sumCount += b.count
@@ -1831,7 +1840,13 @@ export default function EventDetailPage() {
                 if (!isColApplicable(s, col)) continue
                 const agg = sumByCol.get(col.key)
                 agg.anyApplicable = true
-                agg.sum += cellValueFor(s, col, b) || 0
+                const v = cellValueFor(s, col, b) || 0
+                agg.sum += v
+                if (col.kind === 'option' && col.parkingKind) {
+                  parkingTotals.hasAny = true
+                  if (col.parkingKind === 'motorcycle') parkingTotals.motorcycle += v
+                  else if (col.parkingKind === 'car')   parkingTotals.car        += v
+                }
               }
             }
 
@@ -1862,6 +1877,17 @@ export default function EventDetailPage() {
                     <span className="text-xs text-gray-500">人次</span>
                   </div>
                 </div>
+
+                {/* 車輛人次摘要（schema-driven：依 option_meta 把 parking_kind 欄位彙總） */}
+                {parkingTotals.hasAny && (
+                  <div className="inline-flex items-center gap-2 text-xs bg-white border border-emerald-200 rounded-lg px-3 py-1.5">
+                    <span className="text-gray-500">車輛人次</span>
+                    <span className="text-emerald-700 font-semibold">機車 {parkingTotals.motorcycle}</span>
+                    <span className="text-gray-300">·</span>
+                    <span className="text-emerald-700 font-semibold">汽車 {parkingTotals.car}</span>
+                    <span className="text-gray-400 ml-1">（人次，跨場次同人會重複計）</span>
+                  </div>
+                )}
 
                 {/* 每日卡片橫向排列 */}
                 <div className="flex flex-wrap gap-2">
@@ -1908,6 +1934,15 @@ export default function EventDetailPage() {
                             {cols.map(col => (
                               <th key={col.key} className="text-right px-3 py-1.5 font-medium whitespace-nowrap">
                                 {col.label}
+                                {col.parkingKind === 'motorcycle' && (
+                                  <span className="ml-1 text-[10px] bg-emerald-100 text-emerald-700 border border-emerald-200 rounded px-1 font-normal align-middle">機車</span>
+                                )}
+                                {col.parkingKind === 'car' && (
+                                  <span className="ml-1 text-[10px] bg-emerald-100 text-emerald-700 border border-emerald-200 rounded px-1 font-normal align-middle">汽車</span>
+                                )}
+                                {col.parkingKind === 'none' && (
+                                  <span className="ml-1 text-[10px] bg-gray-100 text-gray-500 border border-gray-200 rounded px-1 font-normal align-middle">不算</span>
+                                )}
                               </th>
                             ))}
                           </tr>
