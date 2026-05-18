@@ -137,6 +137,78 @@ export async function getStudentEventStatuses(studentId, eventIds) {
   return { map, error: null }
 }
 
+/**
+ * 查詢學員在指定活動中已被排入的車輛（依方向分開）
+ * 用於 KioskPage 對外公開排車資訊：學員刷卡後可看到自己上下山的車次
+ *
+ * @param {string[]} eventIds       要查的活動 ID 清單（通常只有 show_transport_to_public=true 的活動）
+ * @param {string[]} registrationIds 該學員的 registration_id 清單
+ * @returns {{ map: { [eventId]: { up?: {car_name,car_type,display}, down?: {car_name,car_type,display} } }, error: string|null }}
+ *   display 為「顯示用字串」：大車用 car_name（例：第 1 車）；小車優先用司機車牌，無車牌則 fallback car_name
+ */
+export async function getStudentCarAssignments(eventIds, registrationIds) {
+  if (!eventIds || !eventIds.length || !registrationIds || !registrationIds.length) {
+    return { map: {}, error: null }
+  }
+
+  // 1. 抓學員所在的 car_members
+  const { data: members, error: mErr } = await supabase
+    .from('car_members')
+    .select('car_id, registration_id')
+    .in('registration_id', registrationIds)
+
+  if (mErr) return { map: {}, error: mErr.message }
+  if (!members || members.length === 0) return { map: {}, error: null }
+
+  const carIds = [...new Set(members.map(m => m.car_id))]
+
+  // 2. 抓對應 car_assignments（過濾活動）
+  const { data: cars, error: cErr } = await supabase
+    .from('car_assignments')
+    .select('car_id, event_id, direction, car_name, car_type, note')
+    .in('car_id', carIds)
+    .in('event_id', eventIds)
+
+  if (cErr) return { map: {}, error: cErr.message }
+  if (!cars || cars.length === 0) return { map: {}, error: null }
+
+  // 3. 小車：抓司機 (note=司機 registration_id) 的 plate_up / plate_down
+  const smallDriverRegIds = [
+    ...new Set(cars.filter(c => c.car_type === 'small' && c.note).map(c => c.note)),
+  ]
+  const plateMap = {}
+  if (smallDriverRegIds.length > 0) {
+    const { data: drivers } = await supabase
+      .from('registrations')
+      .select('registration_id, answers')
+      .in('registration_id', smallDriverRegIds)
+    for (const d of (drivers || [])) {
+      plateMap[d.registration_id] = {
+        up:   d.answers?.plate_up   || '',
+        down: d.answers?.plate_down || '',
+      }
+    }
+  }
+
+  // 4. 組 map
+  const map = {}
+  for (const c of cars) {
+    if (!map[c.event_id]) map[c.event_id] = {}
+    const dir = c.direction || 'down'
+    let display = c.car_name
+    if (c.car_type === 'small') {
+      const plate = plateMap[c.note]?.[dir]
+      if (plate) display = plate
+    }
+    map[c.event_id][dir] = {
+      car_name:  c.car_name,
+      car_type:  c.car_type,
+      display,
+    }
+  }
+  return { map, error: null }
+}
+
 // ─── 學員查詢（前台）────────────────────────────────────────
 
 /**

@@ -228,7 +228,7 @@ export default function RelationshipsPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-gray-800">關係連結</h1>
-            <p className="text-sm text-gray-500 mt-0.5">將有同車或家屬關係的學員分組，排車時優先安排在同一車</p>
+            <p className="text-sm text-gray-500 mt-0.5">將有同車需求或家屬關係的學員分組，排車時優先安排在同一車</p>
           </div>
           <button
             onClick={() => setModal('new')}

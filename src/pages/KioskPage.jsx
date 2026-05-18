@@ -4,6 +4,7 @@ import {
   getActiveEvents,
   getStudentById,
   getStudentEventStatuses,
+  getStudentCarAssignments,
   getFriendRegistrationsByHost,
   submitRegistration,
   updateRegistration,
@@ -219,6 +220,9 @@ export default function KioskPage() {
   const [student, setStudent] = useState(null)
   const [classes, setClasses] = useState([])
   const [statuses, setStatuses] = useState({}) // { eventId: registration|null }
+  // 對外公開排車資訊：{ eventId: { up?: {car_name,car_type,display}, down?: {...} } }
+  // 只有 event.show_transport_to_public=true 且學員已被排入車輛時才會有值
+  const [carAssignments, setCarAssignments] = useState({})
 
   // 填表狀態（選擇某場活動後）
   const [selectedItem, setSelectedItem] = useState(null) // { event, fields }
@@ -329,6 +333,25 @@ export default function KioskPage() {
     setFriendRegistrations(friendRegs || [])
     if (statusErr) setErrorMsg(`報名狀態查詢失敗：${statusErr}`)
     else setErrorMsg('')
+
+    // 排車資訊查詢：只查「對外公開排車資訊」開啟且學員有報名的活動
+    const transportEventIds = []
+    const transportRegIds   = []
+    for (const it of eventItems) {
+      if (!it.event.show_transport_to_public) continue
+      const reg = statusMap[it.event.event_id]
+      if (reg?.registration_id) {
+        transportEventIds.push(it.event.event_id)
+        transportRegIds.push(reg.registration_id)
+      }
+    }
+    if (transportEventIds.length > 0) {
+      const { map: carMap } = await getStudentCarAssignments(transportEventIds, transportRegIds)
+      setCarAssignments(carMap || {})
+    } else {
+      setCarAssignments({})
+    }
+
     setPhase('overview')
     startIdleTimer()
   }
@@ -955,6 +978,7 @@ export default function KioskPage() {
             classes={classes}
             eventItems={eventItems}
             statuses={statuses}
+            carAssignments={carAssignments}
             friendRegistrations={friendRegistrations}
             showSuccess={showSuccess}
             successEventName={successEventName}
@@ -1148,7 +1172,7 @@ function ErrorScreen({ message, onReset }) {
 
 // ── 總覽畫面：所有活動報名狀態 ────────────────────────────
 function OverviewScreen({
-  student, classes, eventItems, statuses, friendRegistrations = [],
+  student, classes, eventItems, statuses, carAssignments = {}, friendRegistrations = [],
   showSuccess, successEventName,
   cancellingEventId, errorMsg, onSelectEvent, onRequestCancel, onConfirmCancel,
   onStartFriendFlow, onDone,
@@ -1371,6 +1395,39 @@ function OverviewScreen({
                   )}
                 </div>
               </div>
+
+              {/* 排車資訊（活動勾選「對外公開排車資訊」且學員已被排入車輛時才顯示） */}
+              {event.show_transport_to_public && registered && (() => {
+                const car = carAssignments[event.event_id]
+                if (!car || (!car.up && !car.down)) return null
+                const renderBadge = (label, info) => {
+                  if (!info) return null
+                  const isLarge = info.car_type === 'large'
+                  const color = isLarge
+                    ? 'bg-blue-50 border-blue-300 text-blue-800'
+                    : 'bg-amber-50 border-amber-300 text-amber-800'
+                  const icon = isLarge ? '🚌' : '🚗'
+                  const typeText = isLarge ? '大車' : '小車'
+                  return (
+                    <div className={`flex items-center gap-3 px-3 py-2 rounded-xl border-2 ${color}`}>
+                      <span className="text-xl leading-none shrink-0">{icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs opacity-75 leading-tight">{label}・{typeText}</div>
+                        <div className="text-kiosk-sm font-bold leading-tight truncate">{info.display}</div>
+                      </div>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <p className="text-xs text-gray-500 mb-2 font-medium">🚐 您的車次</p>
+                    <div className="space-y-2">
+                      {renderBadge('上山', car.up)}
+                      {renderBadge('下山', car.down)}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* 鎖定提示（取代取消報名按鈕） */}
               {event.locked ? (

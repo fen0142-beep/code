@@ -566,6 +566,7 @@ export default function EventDetailPage() {
       event_type: ev.event_type ?? 'mountain',
       is_dharma: !!ev.is_dharma,
       multi_session: !!ev.multi_session,
+      show_transport_to_public: !!ev.show_transport_to_public,
     })
     setFields(f)
     setRegistrations(r)
@@ -673,6 +674,7 @@ export default function EventDetailPage() {
         event_type: form.event_type,
         is_dharma: form.is_dharma,
         multi_session: form.multi_session,
+        show_transport_to_public: form.show_transport_to_public,
       }),
       setEventVolunteers(id, [...eventVolunteerIds]),
     ])
@@ -1530,6 +1532,23 @@ export default function EventDetailPage() {
                 </label>
               </div>
             )}
+            {/* 對外公開排車資訊 — 任何活動皆可開（回山活動最常用，但精舍也可能臨時用） */}
+            <div className="sm:col-span-2">
+              <label className="inline-flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!!form.show_transport_to_public}
+                  onChange={e => setForm(f => ({ ...f, show_transport_to_public: e.target.checked }))}
+                  className="w-4 h-4 accent-blue-600 mt-0.5"
+                />
+                <span>
+                  對外公開排車資訊（勾選後，學員在前台刷卡可看到自己的車次）
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    排車作業中請保持關閉；確認排車定案後再開啟
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
           {/* （原本底部的儲存按鈕已移至頁面頂部 sticky bar） */}
         </form>
@@ -2595,4 +2614,3 @@ export default function EventDetailPage() {
     </AdminLayout>
   )
 }
-                                  
