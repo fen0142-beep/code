@@ -32,6 +32,8 @@ const EMPTY_FIELD = () => ({
   options: [],
   show_if_period: [],   // 空陣列 = 所有時段都顯示
   required: true,
+  dashboard_role: null,
+  option_meta: null,
 })
 
 export default function EventSessionFieldsPanel({ eventId }) {
@@ -55,6 +57,8 @@ export default function EventSessionFieldsPanel({ eventId }) {
         options:        Array.isArray(f.options) ? f.options : [],
         show_if_period: Array.isArray(f.show_if_period) ? f.show_if_period : [],
         required:       f.required ?? true,
+        dashboard_role: f.dashboard_role || null,
+        option_meta:    f.option_meta || null,
       }))
       setFields(mapped)
       fieldsRef.current = mapped

@@ -339,6 +339,8 @@ export async function saveEventFields(eventId, fields) {
     sort_order: i + 1,
     required: f.required ?? true,
     placeholder: f.placeholder || null,
+    dashboard_role: f.dashboard_role || null,
+    option_meta: f.option_meta || null,
   }))
 
   const { error: insertErr } = await supabase
@@ -1767,8 +1769,9 @@ export async function saveEventSessionFields(eventId, fields) {
     show_if_period: f.show_if_period || [],
     sort_order: i + 1,
     required: f.required ?? true,
+    dashboard_role: f.dashboard_role || null,
+    option_meta: f.option_meta || null,
   }))
-
   const { error: insErr } = await supabase
     .from('event_session_fields')
     .insert(rows)

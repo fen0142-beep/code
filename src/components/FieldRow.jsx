@@ -3,11 +3,47 @@
  */
 import { FIELD_TYPES, FIELD_TYPE_LABEL } from '../lib/fieldTypes'
 
+// 看板角色：標記此欄位在即時看板的特化呈現
+const DASHBOARD_ROLES = [
+  { value: '',             label: '不特化（依預設呈現）' },
+  { value: 'identity',     label: '身份統計' },
+  { value: 'lunch_total',  label: '午齋總份數（boolean）' },
+  { value: 'parking_kind', label: '停車車種（radio + 選項標記）' },
+]
+
+// 停車車種：parking_kind 角色時，每個選項對應的車種
+const PARKING_KINDS = [
+  { value: '',           label: '—' },
+  { value: 'motorcycle', label: '機車' },
+  { value: 'car',        label: '汽車' },
+  { value: 'none',       label: '不算' },
+]
+
+// option_meta 工具：增刪改一個 key 並維持 null when empty
+function patchMeta(meta, key, value) {
+  const next = { ...(meta || {}) }
+  if (value === null || value === undefined || value === '') delete next[key]
+  else next[key] = value
+  return Object.keys(next).length === 0 ? null : next
+}
+
+function renameMetaKey(meta, oldKey, newKey) {
+  if (!meta || !(oldKey in meta)) return meta
+  const v = meta[oldKey]
+  const next = { ...meta }
+  delete next[oldKey]
+  if (newKey) next[newKey] = v
+  return Object.keys(next).length === 0 ? null : next
+}
+
 export default function FieldRow({
   field, onChange, onRemove, allFields, index,
   onDragStart, onDragOver, onDrop, isDragOver,
 }) {
   const options = field.options || []
+  const optionMeta = field.option_meta || null
+  const showParkingMeta =
+    field.dashboard_role === 'parking_kind' && field.field_type === 'radio'
 
   function handleLabelChange(label) {
     onChange({ ...field, field_label: label })
@@ -20,9 +56,11 @@ export default function FieldRow({
   }
 
   function setOption(i, val) {
+    const prev = options[i]
     const next = [...options]
     next[i] = val
-    onChange({ ...field, options: next })
+    const newMeta = prev !== val ? renameMetaKey(optionMeta, prev, val) : optionMeta
+    onChange({ ...field, options: next, option_meta: newMeta })
   }
 
   function addOption() {
@@ -30,7 +68,21 @@ export default function FieldRow({
   }
 
   function removeOption(i) {
-    onChange({ ...field, options: options.filter((_, j) => j !== i) })
+    const removed = options[i]
+    const newMeta = renameMetaKey(optionMeta, removed, '')
+    onChange({
+      ...field,
+      options: options.filter((_, j) => j !== i),
+      option_meta: newMeta,
+    })
+  }
+
+  function setOptionKind(opt, kind) {
+    onChange({ ...field, option_meta: patchMeta(optionMeta, opt, kind) })
+  }
+
+  function setDashboardRole(role) {
+    onChange({ ...field, dashboard_role: role || null })
   }
 
   const showIfKey = field.show_if ? Object.keys(field.show_if)[0] ?? '' : ''
@@ -121,7 +173,14 @@ export default function FieldRow({
 
       {(field.field_type === 'radio' || field.field_type === 'checkbox') && (
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-2">選項</label>
+          <label className="block text-xs font-medium text-gray-500 mb-2">
+            選項
+            {showParkingMeta && (
+              <span className="text-emerald-600 font-normal ml-1">
+                （右側下拉設定車種：機車／汽車／不算）
+              </span>
+            )}
+          </label>
           <div className="space-y-2">
             {options.map((opt, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -132,6 +191,18 @@ export default function FieldRow({
                   className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
                   placeholder={`選項 ${i + 1}`}
                 />
+                {showParkingMeta && (
+                  <select
+                    value={optionMeta?.[opt] || ''}
+                    onChange={e => setOptionKind(opt, e.target.value)}
+                    className="border border-emerald-200 bg-emerald-50 text-emerald-800 rounded px-1.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                    title="此選項代表哪種車輛"
+                  >
+                    {PARKING_KINDS.map(k => (
+                      <option key={k.value} value={k.value}>{k.label}</option>
+                    ))}
+                  </select>
+                )}
                 <button
                   onClick={() => removeOption(i)}
                   className="text-gray-300 hover:text-red-400 text-lg leading-none px-1 transition-colors"
@@ -195,6 +266,25 @@ export default function FieldRow({
             </>
           )}
         </div>
+      </div>
+
+      {/* 看板角色（schema-driven dashboard）：通常不用改，內建模板會自動標好 */}
+      <div className="pt-2 border-t border-gray-200">
+        <label className="block text-xs font-medium text-gray-500 mb-1">
+          看板角色
+          <span className="text-gray-400 font-normal ml-1">
+            （即時看板特化呈現用；不確定就留「不特化」）
+          </span>
+        </label>
+        <select
+          value={field.dashboard_role || ''}
+          onChange={e => setDashboardRole(e.target.value)}
+          className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+        >
+          {DASHBOARD_ROLES.map(r => (
+            <option key={r.value} value={r.value}>{r.label}</option>
+          ))}
+        </select>
       </div>
     </div>
   )

@@ -58,7 +58,11 @@ CREATE TABLE IF NOT EXISTS event_fields (
   options     JSONB,
   show_if     JSONB,
   sort_order  INT NOT NULL DEFAULT 0,
-  required    BOOLEAN NOT NULL DEFAULT false
+  required    BOOLEAN NOT NULL DEFAULT false,
+  -- 看板動態化（2026-05-18）：標記此欄位在即時看板的角色與選項 metadata
+  dashboard_role TEXT
+    CHECK (dashboard_role IS NULL OR dashboard_role IN ('identity','lunch_total','parking_kind')),
+  option_meta    JSONB
 );
 
 -- 報名紀錄表

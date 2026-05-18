@@ -29,8 +29,14 @@ import {
   getAllStudents,
   checkDuplicate,
   getEventSessions,
+  getEventSessionFields,
 } from '../../lib/supabase'
-import { getPreceptFlags } from '../../lib/registrationHelpers'
+import {
+  getPreceptFlags,
+  sessionFieldsForPeriod,
+  formatSessionAnswer,
+  computeMultiSessionStats,
+} from '../../lib/registrationHelpers'
 import EventSessionsPanel from '../../components/EventSessionsPanel'
 import EventSessionFieldsPanel from '../../components/EventSessionFieldsPanel'
 
@@ -84,23 +90,25 @@ function formatSessionTabLabel(s) {
   return `${parseInt(mm)}/${parseInt(dd)}${timePeriodShort(s.time_period)}`
 }
 
-// 單一場次 CSV 匯出
-function exportSessionCSV(sessionRegs, session, event) {
+// 單一場次 CSV 匯出（動態欄位：依 event_session_fields × show_if_period）
+function exportSessionCSV(sessionRegs, session, event, sessionFields = []) {
   const sessionLabel = formatSessionTabLabel(session)
-  const isMorning = session.time_period === 'morning'
-  const header = ['學員編號', '姓名']
-  if (isMorning) header.push('午齋')
-  header.push('停車', '更新時間')
+  const fieldsHere = sessionFieldsForPeriod(sessionFields, session.time_period)
+  const header = ['學員編號', '姓名', ...fieldsHere.map(f => f.field_label), '更新時間']
 
   const rows = sessionRegs.map(r => {
     const name = getDisplayName(r)
     const stamp = r.updated_at ?? r.registered_at
     const regAt = stamp ? new Date(stamp).toLocaleString('zh-TW') : ''
     const ssAns = r.answers?.sessions?.find(ss => ss.session_id === session.session_id) ?? {}
-    const row = [r.student_id ?? '訪客', name]
-    if (isMorning) row.push(ssAns.lunch ?? '')
-    row.push(ssAns.parking ?? '', regAt)
-    return row
+    const fieldCells = fieldsHere.map(f => {
+      const v = ssAns[f.field_key]
+      if (v === undefined || v === null || v === '') return ''
+      if (f.field_type === 'boolean') return v === true ? '是' : '否'
+      if (Array.isArray(v)) return v.join('、')
+      return String(v)
+    })
+    return [r.student_id ?? '訪客', name, ...fieldCells, regAt]
   })
 
   const csv = [header, ...rows]
@@ -259,10 +267,29 @@ function normalizePlate(s) {
   return String(s || '').trim().toUpperCase().replace(/[\s\-－—]/g, '')
 }
 
+// 看板特化角色 ↔ 欄位的識別：優先用 dashboard_role；找不到才 fallback 到舊的寫死 field_key
+function pickRoleField(fields, role, fallbackKey) {
+  return (
+    fields.find(f => f.dashboard_role === role) ??
+    fields.find(f => f.field_key === fallbackKey) ??
+    null
+  )
+}
+
+// 停車選項字串 → 車種（motorcycle / car / none / null）
+// 優先讀 option_meta；沒設則 fallback 到字串「機車／轎車／汽車」
+function parkingKindOf(val, optionMeta) {
+  if (val === null || val === undefined || val === '') return null
+  if (optionMeta && optionMeta[val]) return optionMeta[val]
+  if (val === '機車') return 'motorcycle'
+  if (val === '轎車' || val === '汽車') return 'car'
+  return null
+}
+
 function computeTempleStats(regs, fields) {
-  const identityField = fields.find(f => f.field_key === 'identity')
-  const lunchField    = fields.find(f => f.field_key === 'need_lunch')
-  const parkingField  = fields.find(f => f.field_key === 'parking_type')
+  const identityField = pickRoleField(fields, 'identity',     'identity')
+  const lunchField    = pickRoleField(fields, 'lunch_total',  'need_lunch')
+  const parkingField  = pickRoleField(fields, 'parking_kind', 'parking_type')
   const plateFields   = fields.filter(f => f.field_type === 'plate')
 
   const identityCounts = {}
@@ -281,6 +308,8 @@ function computeTempleStats(regs, fields) {
     })
   )
 
+  const parkingMeta = parkingField?.option_meta || null
+
   let lunchCount = 0
   let motorcycle = 0
   let car = 0
@@ -290,8 +319,9 @@ function computeTempleStats(regs, fields) {
     if (lunchField && r.answers?.[lunchField.field_key] === true) lunchCount++
     if (!parkingField) continue
 
-    const val = r.answers?.[parkingField.field_key]
-    if (val !== '機車' && val !== '轎車') continue   // 「跟 OOO 同車」或未填都跳過
+    const val  = r.answers?.[parkingField.field_key]
+    const kind = parkingKindOf(val, parkingMeta)
+    if (kind !== 'motorcycle' && kind !== 'car') continue   // none / 未填 / 跟 OOO 同車 都跳過
 
     if (platesEnabled) {
       // 找第一個非空的車號欄位
@@ -307,8 +337,8 @@ function computeTempleStats(regs, fields) {
       // plate 空（沒填車號）→ 維持「視為一台」的舊行為
     }
 
-    if (val === '機車') motorcycle++
-    else if (val === '轎車') car++
+    if (kind === 'motorcycle') motorcycle++
+    else if (kind === 'car') car++
   }
 
   return {
@@ -316,48 +346,31 @@ function computeTempleStats(regs, fields) {
     hasLunch: !!lunchField, lunchCount,
     hasParking: !!parkingField, motorcycle, car,
     plateDedup: platesEnabled,
+    // 已被特化佔用的 field_key（generic chip 區會跳過這些）
+    specializedKeys: new Set([identityField, lunchField, parkingField].filter(Boolean).map(f => f.field_key)),
   }
 }
 
-// 多場次精舍活動：依場次聚合 報名/午齋/機車/轎車
-//
-// 規則：
-// - 一個 registration = 一個人（人數不重複）
-// - 人次 = 所有 answers.sessions[] 的條數總和
-// - 午齋只在 time_period === 'morning' 場次計（其他場次顯示「—」）
-// - 場次被刪除後 reg 仍引用 → 略過該條
-function computeMultiSessionStats(regs, sessions) {
-  const uniquePeople = regs.length
-
-  // 預建桶子，保證 sessions 順序穩定
-  const bySession = new Map()
-  for (const s of sessions) {
-    bySession.set(s.session_id, { count: 0, lunch: 0, motorcycle: 0, car: 0 })
-  }
-
-  let totalAttendance = 0
-  for (const r of regs) {
-    const arr = Array.isArray(r.answers?.sessions) ? r.answers.sessions : []
-    for (const ss of arr) {
-      const bucket = bySession.get(ss?.session_id)
-      if (!bucket) continue  // 已被刪掉的場次，略過
-      bucket.count++
-      totalAttendance++
-      if (ss.lunch === '需要') bucket.lunch++
-      if (ss.parking === '機車') bucket.motorcycle++
-      else if (ss.parking === '轎車') bucket.car++
+// Generic chip 區：把所有「未被特化佔用、且為 radio / boolean」的欄位做選項計數
+// 用途：即使活動沒標 dashboard_role，至少能看到每個選項的人數分佈
+function computeGenericRadioStats(regs, fields, excludeKeys) {
+  const targets = fields.filter(f =>
+    (f.field_type === 'radio' || f.field_type === 'boolean') &&
+    !excludeKeys.has(f.field_key)
+  )
+  return targets.map(f => {
+    const counts = {}
+    for (const r of regs) {
+      const v = r.answers?.[f.field_key]
+      if (v === undefined || v === null || v === '') continue
+      const key = typeof v === 'boolean' ? (v ? '是' : '否') : String(v)
+      counts[key] = (counts[key] || 0) + 1
     }
-  }
-
-  // 依日期分組（保留 sessions 原排序）
-  const byDate = new Map()
-  for (const s of sessions) {
-    if (!byDate.has(s.date)) byDate.set(s.date, [])
-    byDate.get(s.date).push(s)
-  }
-
-  return { uniquePeople, totalAttendance, bySession, byDate }
+    return { field: f, counts }
+  }).filter(s => Object.keys(s.counts).length > 0)
 }
+
+// computeMultiSessionStats 已搬至 registrationHelpers.js（Phase 5：場次共用欄位動態化）
 
 // ── 主頁面 ─────────────────────────────────────────────────
 export default function EventDetailPage() {
@@ -391,6 +404,7 @@ export default function EventDetailPage() {
 
   // 多場次
   const [sessions, setSessions] = useState([])
+  const [sessionFields, setSessionFields] = useState([])
   const [sessionTab, setSessionTab] = useState('all')
 
   // 多場次即時看板：詳細統計表格摺疊狀態（預設收起）
@@ -527,7 +541,7 @@ export default function EventDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ events }, { fields: f }, { registrations: r }, { changes: c }, { volunteers: v }, { volunteerIds: va }, { templates: tmpl }, { sessions: s }] = await Promise.all([
+    const [{ events }, { fields: f }, { registrations: r }, { changes: c }, { volunteers: v }, { volunteerIds: va }, { templates: tmpl }, { sessions: s }, { fields: sf }] = await Promise.all([
       getAllEvents(),
       getEventFields(id),
       getRegistrationsWithStudents(id),
@@ -536,6 +550,7 @@ export default function EventDetailPage() {
       getEventVolunteers(id),
       getTemplates(),
       getEventSessions(id),
+      getEventSessionFields(id),
     ])
     const ev = events.find(e => e.event_id === id)
     if (!ev) { navigate('/admin/events'); return }
@@ -558,6 +573,7 @@ export default function EventDetailPage() {
     setTemplates(tmpl || [])
     const freshSessions = s || []
     setSessions(freshSessions)
+    setSessionFields(sf || [])
     if (freshSessions.length > 0) setSessionTab(freshSessions[0].session_id)
     setSelectedGuestIds(new Set()) // 重新載入後清除選取
     setLoading(false)
@@ -862,6 +878,8 @@ export default function EventDetailPage() {
       options: [],
       show_if: null,
       required: true,
+      dashboard_role: null,
+      option_meta: null,
     }])
   }
 
@@ -1745,22 +1763,76 @@ export default function EventDetailPage() {
           {/* 即時看板（精舍・多場次版）— 取代單場版 */}
           {registrations.length > 0 && event?.event_type === 'temple' && event?.multi_session && sessions.length > 0 && (() => {
             const { uniquePeople, totalAttendance, bySession, byDate } =
-              computeMultiSessionStats(registrations, sessions)
+              computeMultiSessionStats(registrations, sessions, sessionFields)
 
             // 至少要有人或有場次才顯示
             if (uniquePeople === 0) return null
 
             const dayEntries = Array.from(byDate.entries())  // [[date, sessionList], ...]
 
-            // 詳細表格合計
-            let sumCount = 0, sumLunch = 0, sumMc = 0, sumCar = 0
-            let hasAnyMorning = false
+            // 動態欄位：把 sessionFields 攤平成「表格欄」清單
+            // - radio:   每個 option 一欄
+            // - boolean: 一欄（顯示 true 計數）
+            // - text:    一欄（顯示有填的人數）
+            // 每欄記 applicablePeriods（空陣列 = 所有時段適用）
+            const sortedFields = [...sessionFields].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            const cols = []
+            for (const f of sortedFields) {
+              const periods = Array.isArray(f.show_if_period) ? f.show_if_period : []
+              if (f.field_type === 'radio') {
+                for (const opt of (f.options || [])) {
+                  cols.push({
+                    key: `${f.field_key}::${opt}`,
+                    label: opt,
+                    fieldKey: f.field_key,
+                    kind: 'option',
+                    option: opt,
+                    applicablePeriods: periods,
+                  })
+                }
+              } else if (f.field_type === 'boolean') {
+                cols.push({
+                  key: f.field_key,
+                  label: f.field_label,
+                  fieldKey: f.field_key,
+                  kind: 'boolean',
+                  applicablePeriods: periods,
+                })
+              } else if (f.field_type === 'text') {
+                cols.push({
+                  key: f.field_key,
+                  label: `${f.field_label}（有填）`,
+                  fieldKey: f.field_key,
+                  kind: 'text',
+                  applicablePeriods: periods,
+                })
+              }
+            }
+
+            const isColApplicable = (s, col) =>
+              col.applicablePeriods.length === 0 || col.applicablePeriods.includes(s.time_period)
+
+            const cellValueFor = (s, col, b) => {
+              if (!isColApplicable(s, col)) return null
+              const stat = b?.stats?.[col.fieldKey] || {}
+              if (col.kind === 'option')  return stat[col.option] || 0
+              if (col.kind === 'boolean') return stat.true || 0
+              if (col.kind === 'text')    return stat.filled || 0
+              return 0
+            }
+
+            // 合計列：對每欄加總「適用場次」的值；若該欄無任何適用場次顯示「—」
+            let sumCount = 0
+            const sumByCol = new Map(cols.map(c => [c.key, { sum: 0, anyApplicable: false }]))
             for (const s of sessions) {
-              const b = bySession.get(s.session_id) ?? { count:0, lunch:0, motorcycle:0, car:0 }
+              const b = bySession.get(s.session_id) ?? { count: 0, stats: {} }
               sumCount += b.count
-              sumMc    += b.motorcycle
-              sumCar   += b.car
-              if (s.time_period === 'morning') { sumLunch += b.lunch; hasAnyMorning = true }
+              for (const col of cols) {
+                if (!isColApplicable(s, col)) continue
+                const agg = sumByCol.get(col.key)
+                agg.anyApplicable = true
+                agg.sum += cellValueFor(s, col, b) || 0
+              }
             }
 
             // 日期顯示：5/24
@@ -1816,7 +1888,7 @@ export default function EventDetailPage() {
                   ))}
                 </div>
 
-                {/* 詳細統計表格（可摺疊） */}
+                {/* 詳細統計表格（可摺疊，欄位依 event_session_fields 動態渲染） */}
                 <div className="pt-1">
                   <button
                     type="button"
@@ -1827,44 +1899,51 @@ export default function EventDetailPage() {
                     詳細統計
                   </button>
                   {showSessionStatsDetail && (
-                    <div className="mt-2 bg-white border border-emerald-200 rounded-lg overflow-hidden">
+                    <div className="mt-2 bg-white border border-emerald-200 rounded-lg overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead className="bg-emerald-100/60 text-emerald-900">
                           <tr>
-                            <th className="text-left  px-3 py-1.5 font-medium">場次</th>
-                            <th className="text-right px-3 py-1.5 font-medium">報名</th>
-                            <th className="text-right px-3 py-1.5 font-medium">午齋</th>
-                            <th className="text-right px-3 py-1.5 font-medium">機車</th>
-                            <th className="text-right px-3 py-1.5 font-medium">轎車</th>
+                            <th className="text-left  px-3 py-1.5 font-medium whitespace-nowrap">場次</th>
+                            <th className="text-right px-3 py-1.5 font-medium whitespace-nowrap">報名</th>
+                            {cols.map(col => (
+                              <th key={col.key} className="text-right px-3 py-1.5 font-medium whitespace-nowrap">
+                                {col.label}
+                              </th>
+                            ))}
                           </tr>
                         </thead>
                         <tbody>
                           {sessions.map(s => {
-                            const b = bySession.get(s.session_id) ?? { count:0, lunch:0, motorcycle:0, car:0 }
-                            const isMorning = s.time_period === 'morning'
+                            const b = bySession.get(s.session_id) ?? { count: 0, stats: {} }
                             return (
                               <tr key={s.session_id} className="border-t border-emerald-100">
-                                <td className="px-3 py-1.5 text-gray-700">
+                                <td className="px-3 py-1.5 text-gray-700 whitespace-nowrap">
                                   {fmtMd(s.date)} {timePeriodLabel(s.time_period)}
                                   {s.dharma_name && <span className="text-gray-400 ml-1">· {s.dharma_name}</span>}
                                 </td>
                                 <td className="px-3 py-1.5 text-right font-medium text-emerald-700">{b.count}</td>
-                                <td className="px-3 py-1.5 text-right text-amber-600">
-                                  {isMorning ? b.lunch : <span className="text-gray-300">—</span>}
-                                </td>
-                                <td className="px-3 py-1.5 text-right text-blue-700">{b.motorcycle}</td>
-                                <td className="px-3 py-1.5 text-right text-indigo-700">{b.car}</td>
+                                {cols.map(col => {
+                                  const v = cellValueFor(s, col, b)
+                                  return (
+                                    <td key={col.key} className="px-3 py-1.5 text-right text-gray-700">
+                                      {v === null ? <span className="text-gray-300">—</span> : v}
+                                    </td>
+                                  )
+                                })}
                               </tr>
                             )
                           })}
                           <tr className="border-t-2 border-emerald-300 bg-emerald-50/50 font-semibold">
                             <td className="px-3 py-1.5 text-gray-700">合計</td>
                             <td className="px-3 py-1.5 text-right text-emerald-700">{sumCount}</td>
-                            <td className="px-3 py-1.5 text-right text-amber-700">
-                              {hasAnyMorning ? sumLunch : <span className="text-gray-300">—</span>}
-                            </td>
-                            <td className="px-3 py-1.5 text-right text-blue-700">{sumMc}</td>
-                            <td className="px-3 py-1.5 text-right text-indigo-700">{sumCar}</td>
+                            {cols.map(col => {
+                              const agg = sumByCol.get(col.key)
+                              return (
+                                <td key={col.key} className="px-3 py-1.5 text-right text-gray-700">
+                                  {agg?.anyApplicable ? agg.sum : <span className="text-gray-300">—</span>}
+                                </td>
+                              )
+                            })}
                           </tr>
                         </tbody>
                       </table>
@@ -1877,10 +1956,12 @@ export default function EventDetailPage() {
 
           {/* 即時看板（精舍版・單場） */}
           {registrations.length > 0 && event?.event_type === 'temple' && !event?.multi_session && (() => {
-            const { identityField, identityCounts, hasLunch, lunchCount, hasParking, motorcycle, car } =
+            const { identityField, identityCounts, hasLunch, lunchCount, hasParking, motorcycle, car, specializedKeys } =
               computeTempleStats(registrations, fields)
             const hasIdentity = !!identityField && Object.keys(identityCounts).length > 0
-            if (!hasIdentity && !hasLunch && !hasParking) return null
+            // 未被特化的 radio/boolean 欄位 → generic chip 區
+            const genericStats = computeGenericRadioStats(registrations, fields, specializedKeys)
+            if (!hasIdentity && !hasLunch && !hasParking && genericStats.length === 0) return null
 
             const identityOptions = identityField?.options ?? []
             const sortedIdentities = [
@@ -1938,6 +2019,33 @@ export default function EventDetailPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Generic：其他 radio / boolean 欄位的選項分佈（未被特化的全部自動列出） */}
+                {genericStats.map(({ field: gf, counts }) => {
+                  const ordered = [
+                    ...(gf.options || []).filter(o => counts[o] !== undefined),
+                    ...Object.keys(counts).filter(k => !(gf.options || []).includes(k)),
+                  ]
+                  return (
+                    <div key={gf.field_key} className="flex items-start gap-2 flex-wrap">
+                      <span
+                        className="text-xs text-gray-500 shrink-0 w-14 mt-1.5 truncate"
+                        title={gf.field_label}
+                      >
+                        {gf.field_label}
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {ordered.map(val => (
+                          <span key={val} className="inline-flex items-center gap-1 bg-white border border-emerald-200 rounded-lg px-2.5 py-1 shadow-sm">
+                            <span className="text-xs text-gray-600">{val}</span>
+                            <span className="text-sm font-bold text-emerald-700 leading-none">{counts[val]}</span>
+                            <span className="text-xs text-gray-400">人</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )
           })()}
@@ -2172,7 +2280,7 @@ export default function EventDetailPage() {
                   const curS = sessions.find(s => s.session_id === sessionTab)
                   return (
                     <button
-                      onClick={() => exportSessionCSV(sortedRegistrations, curS, event)}
+                      onClick={() => exportSessionCSV(sortedRegistrations, curS, event, sessionFields)}
                       className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
                     >
                       ⬇️ 匯出本場次 CSV
@@ -2242,11 +2350,14 @@ export default function EventDetailPage() {
                     )}
                     {event?.multi_session && sessionTab !== 'all' && (() => {
                       const curS = sessions.find(s => s.session_id === sessionTab)
+                      if (!curS) return null
+                      const fieldsHere = sessionFieldsForPeriod(sessionFields, curS.time_period)
                       return <>
-                        {curS?.time_period === 'morning' && (
-                          <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">午齋</th>
-                        )}
-                        <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">停車</th>
+                        {fieldsHere.map(f => (
+                          <th key={f.field_key} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
+                            {f.field_label}
+                          </th>
+                        ))}
                       </>
                     })()}
                     {showCheckin && <SortTh label="報到" colKey="checked_in_at" current={sortKey} dir={sortDir} onSort={handleSort} />}
@@ -2337,15 +2448,18 @@ export default function EventDetailPage() {
                             </div>
                           </td>
                         )}
-                        {/* 多場次：場次視圖 → 午齋/停車 */}
+                        {/* 多場次：場次視圖 → 該場次子欄位（依 event_session_fields 動態渲染） */}
                         {event?.multi_session && sessionTab !== 'all' && (() => {
                           const curS = sessions.find(s => s.session_id === sessionTab)
+                          if (!curS) return null
+                          const fieldsHere = sessionFieldsForPeriod(sessionFields, curS.time_period)
                           const ssAns = r.answers?.sessions?.find(ss => ss.session_id === sessionTab) ?? {}
                           return <>
-                            {curS?.time_period === 'morning' && (
-                              <td className="px-3 py-1.5 text-sm text-gray-700">{ssAns.lunch ?? '-'}</td>
-                            )}
-                            <td className="px-3 py-1.5 text-sm text-gray-700">{ssAns.parking ?? '-'}</td>
+                            {fieldsHere.map(f => (
+                              <td key={f.field_key} className="px-3 py-1.5 text-sm text-gray-700">
+                                {formatSessionAnswer(f, ssAns[f.field_key])}
+                              </td>
+                            ))}
                           </>
                         })()}
                         {showCheckin && (
@@ -2371,6 +2485,81 @@ export default function EventDetailPage() {
                                   onClick={() => handleUncheckIn(r.registration_id, getDisplayName(r))}
                                   className="text-xs text-orange-500 hover:text-orange-700 border border-orange-200 hover:border-orange-400 px-2 py-1 rounded transition-colors"
                                 >
+                                  取消報到
+                                </button>
+                              )}
+                              <button
+                                onClick={() => openEditModal(r)}
+                                className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-2 py-1 rounded transition-colors"
+                              >
+                                ✏️ 編輯
+                              </button>
+                              <button
+                                onClick={() => handleDeleteRegistration(r.registration_id, getDisplayName(r))}
+                                className="text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 px-2 py-1 rounded transition-colors"
+                              >
+                                取消報名
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 已取消區塊（永遠顯示，不受匯出基準限制） */}
+          {cancelledChanges.length > 0 && (
+            <div className="mt-4">
+              <button
+                onClick={() => setShowCancelled(v => !v)}
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <span>{showCancelled ? '▼' : '▶'}</span>
+                <span>已取消（共 {cancelledChanges.length} 筆）</span>
+              </button>
+              {showCancelled && (
+                <div className="mt-2 bg-gray-50 rounded-xl border border-gray-200 overflow-auto">
+                  <table className="w-full min-w-max text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-100">
+                        <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">姓名</th>
+                        <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">取消時間</th>
+                        {fields.map(f => (
+                          <th key={f.field_id ?? f.field_key} className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">
+                            {f.field_label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cancelledChanges.map(c => (
+                        <tr key={c.id} className="border-b border-gray-100 text-gray-400">
+                          <td className="px-3 py-1.5 line-through whitespace-nowrap">{c.student_name}</td>
+                          <td className="px-3 py-1.5 text-xs whitespace-nowrap">
+                            {new Date(c.changed_at).toLocaleString('zh-TW', { hour12: false })}
+                          </td>
+                          {fields.map(f => (
+                            <td key={f.field_id ?? f.field_key} className="px-3 py-1.5">
+                              {formatFieldValue(f, c.old_answers?.[f.field_key])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </AdminLayout>
+  )
+}
                                   取消報到
                                 </button>
                               )}
