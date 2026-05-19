@@ -456,6 +456,12 @@ export default function EventDetailPage() {
     [identityKey]
   )
 
+  // 上山／下山相關欄位：依 field_label 字串自動偵測（不依寫死的 field_key）
+  // 例：「上山交通方式」「上山共乘者」「上山車牌」「預計到達山上時間」→ 上山群組
+  //     「下山交通方式」「下山共乘者」「下山車牌」「預計離開山下時間」→ 下山群組
+  const isUpField   = useCallback(f => /(?:上山|山上)/.test(f?.field_label || ''), [])
+  const isDownField = useCallback(f => /(?:下山|山下)/.test(f?.field_label || ''), [])
+
   // 固定永遠顯示的欄位 key（不可關閉）：身分別
   // （學員編號、姓名是 hardcoded 欄位，本來就一定顯示，不放在這裡）
   const pinnedFieldKeys = useMemo(() => {
@@ -473,14 +479,14 @@ export default function EventDetailPage() {
     })
   }
 
-  // 切換「義工相關」群組：全顯示 ↔ 全隱藏
-  function toggleVolunteerGroup() {
-    const volKeys = fields.filter(isVolunteerField).map(f => f.field_key)
+  // 切換一組欄位顯隱：全顯示 ↔ 全隱藏（給「上山交通／下山交通／義工相關」共用）
+  function toggleFieldGroup(keys) {
+    if (!keys || keys.length === 0) return
     setHiddenFieldKeys(prev => {
       const next = new Set(prev)
-      const allHidden = volKeys.every(k => next.has(k))
-      if (allHidden) volKeys.forEach(k => next.delete(k))
-      else           volKeys.forEach(k => next.add(k))
+      const allHidden = keys.every(k => next.has(k))
+      if (allHidden) keys.forEach(k => next.delete(k))
+      else           keys.forEach(k => next.add(k))
       return next
     })
   }
@@ -2369,28 +2375,46 @@ export default function EventDetailPage() {
                 ))}
                 {/* 動態欄位 toggle（多場次模式下表格內容是場次而非 event_fields，不顯示） */}
                 {!event?.multi_session && (() => {
-                  // 動態欄位分類：
+                  // 動態欄位分類（互斥，依序判斷）：
                   //   - pinned：身分別（固定顯示、不在切換清單）
-                  //   - volunteer：show_if 指向身分別=義工（合併成一顆「義工相關」鈕）
+                  //   - volunteer：show_if 指向身分別=義工（合併成「義工相關」鈕）
+                  //   - up：label 含「上山／山上」（合併成「上山交通」鈕）
+                  //   - down：label 含「下山／山下」（合併成「下山交通」鈕）
                   //   - generic：其他（每欄一顆獨立鈕）
-                  const volunteerFields = fields.filter(isVolunteerField)
-                  const genericFields   = fields.filter(f => !pinnedFieldKeys.has(f.field_key) && !isVolunteerField(f))
-                  const volAllHidden    = volunteerFields.length > 0 && volunteerFields.every(f => hiddenFieldKeys.has(f.field_key))
+                  const nonPinned       = fields.filter(f => !pinnedFieldKeys.has(f.field_key))
+                  const volunteerFields = nonPinned.filter(isVolunteerField)
+                  const upFields        = nonPinned.filter(f => !isVolunteerField(f) && isUpField(f))
+                  const downFields      = nonPinned.filter(f => !isVolunteerField(f) && !isUpField(f) && isDownField(f))
+                  const genericFields   = nonPinned.filter(f => !isVolunteerField(f) && !isUpField(f) && !isDownField(f))
+
+                  const renderGroup = (groupFields, label, color) => {
+                    if (groupFields.length === 0) return null
+                    const keys = groupFields.map(f => f.field_key)
+                    const allHidden = keys.every(k => hiddenFieldKeys.has(k))
+                    const palettes = {
+                      purple: ['bg-purple-100 text-purple-800 border-purple-300'],
+                      blue:   ['bg-blue-100 text-blue-800 border-blue-300'],
+                      teal:   ['bg-teal-100 text-teal-800 border-teal-300'],
+                    }
+                    const onCls = palettes[color]?.[0] ?? 'bg-amber-100 text-amber-800 border-amber-300'
+                    return (
+                      <button
+                        onClick={() => toggleFieldGroup(keys)}
+                        title={`${label}：${groupFields.map(f => f.field_label).join('、')}`}
+                        className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                          !allHidden ? onCls : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        {!allHidden ? '✓ ' : ''}{label}
+                      </button>
+                    )
+                  }
+
                   return (
                     <>
-                      {volunteerFields.length > 0 && (
-                        <button
-                          onClick={toggleVolunteerGroup}
-                          title={`義工專屬：${volunteerFields.map(f => f.field_label).join('、')}`}
-                          className={`text-xs px-2 py-0.5 rounded border transition-colors ${
-                            !volAllHidden
-                              ? 'bg-purple-100 text-purple-800 border-purple-300'
-                              : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          {!volAllHidden ? '✓ ' : ''}義工相關
-                        </button>
-                      )}
+                      {renderGroup(volunteerFields, '義工相關', 'purple')}
+                      {renderGroup(upFields,       '上山交通', 'blue')}
+                      {renderGroup(downFields,     '下山交通', 'teal')}
                       {genericFields.map(f => {
                         const hidden = hiddenFieldKeys.has(f.field_key)
                         return (
