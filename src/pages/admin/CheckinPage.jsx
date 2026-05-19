@@ -1,10 +1,26 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import AdminLayout from '../../components/AdminLayout'
-import { getAllEvents, getRegistrationForCheckin, getGuestRegistrationForCheckin, checkIn, uncheckIn, getCheckinStats, getRegistrationsWithStudents, getDonorForRegistration } from '../../lib/supabase'
+import {
+  getAllEvents, getRegistrationForCheckin, getGuestRegistrationForCheckin,
+  checkIn, uncheckIn, getCheckinStats, getRegistrationsWithStudents, getDonorForRegistration,
+  getEventSessions, getSessionCheckinStats, getRegistrationForSessionCheckin,
+  checkInSession, uncheckInSession,
+} from '../../lib/supabase'
 import CameraScanner from '../../components/CameraScanner'
 
 const IDLE_SECONDS = 5 // 成功/失敗畫面停留秒數
+
+// ── 多場次 helper（與 EventDetailPage 同步）─────────────────
+function timePeriodShort(tp)  { return { morning: '上', afternoon: '下', evening: '晚' }[tp] ?? tp }
+function timePeriodLabel(tp)  { return { morning: '上午', afternoon: '下午', evening: '晚上' }[tp] ?? tp }
+function formatSessionLabel(s) {
+  if (!s?.date) return ''
+  const [, mm, dd] = s.date.split('-')
+  return `${parseInt(mm)}/${parseInt(dd)} ${timePeriodLabel(s.time_period)}`
+}
+// 場次選擇 localStorage key（同活動下次自動回到上次選的場次）
+const sessionStorageKey = eventId => `puyi-checkin-session-${eventId}`
 
 // 功德主紫色卡片：空白欄位不顯示
 function DonorCard({ donor }) {
@@ -36,9 +52,12 @@ function DonorCard({ donor }) {
 
 export default function CheckinPage() {
   const { id } = useParams()
-  const [eventName, setEventName] = useState('')
-  const [status, setStatus] = useState('idle') // idle | loading | success | already | not_found | error
-  const [result, setResult] = useState(null) // { name, checkedInAt, registrationId }
+  const [event, setEvent]           = useState(null) // 活動完整資訊（含 multi_session）
+  const [sessions, setSessions]     = useState([])   // 多場次：場次清單
+  const [currentSessionId, setCurrentSessionId] = useState(null) // 多場次：當前報到場次
+  const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
+  const [status, setStatus] = useState('idle') // idle | loading | success | already | not_found | not_in_session | error
+  const [result, setResult] = useState(null) // { name, checkedInAt, registrationId, regId }
   const [donor, setDonor]   = useState(null) // 功德主紀錄（紫色卡片）
   const [countdown, setCountdown] = useState(IDLE_SECONDS)
   const [todayCount, setTodayCount] = useState(0)
@@ -54,24 +73,51 @@ export default function CheckinPage() {
   const inputRef = useRef('')
   const countdownRef = useRef(null)
 
-  // 取得活動名稱
+  const isMulti = !!event?.multi_session
+  const currentSession = useMemo(
+    () => sessions.find(s => s.session_id === currentSessionId) || null,
+    [sessions, currentSessionId]
+  )
+
+  // 取得活動完整資訊 + 多場次場次清單
   useEffect(() => {
     getAllEvents().then(({ events }) => {
       const ev = events.find(e => e.event_id === id)
-      if (ev) setEventName(ev.name)
+      if (ev) setEvent(ev)
+    })
+    // 多場次：載入場次清單（單場次活動取回空陣列也無妨）
+    getEventSessions(id).then(({ sessions: ss }) => {
+      const list = ss || []
+      setSessions(list)
+      // 預設場次：localStorage > 第一筆
+      const saved = localStorage.getItem(sessionStorageKey(id))
+      const valid = saved && list.some(s => s.session_id === saved)
+      if (list.length > 0) {
+        setCurrentSessionId(valid ? saved : list[0].session_id)
+      }
     })
   }, [id])
 
-  // 取得報到統計（並在 id 改變時重新取）
-  async function refreshStats() {
-    const s = await getCheckinStats(id)
-    setStats({ total: s.total, checkedIn: s.checkedIn })
+  // 切換場次時記到 localStorage（下次回到同活動自動帶）
+  useEffect(() => {
+    if (currentSessionId) localStorage.setItem(sessionStorageKey(id), currentSessionId)
+  }, [id, currentSessionId])
+
+  // 取得報到統計（多場次依場次、單場次依活動）
+  const refreshStats = useCallback(async () => {
+    if (isMulti && currentSessionId) {
+      const s = await getSessionCheckinStats(id, currentSessionId)
+      setStats({ total: s.total, checkedIn: s.checkedIn })
+    } else if (!isMulti) {
+      const s = await getCheckinStats(id)
+      setStats({ total: s.total, checkedIn: s.checkedIn })
+    }
     // 同步刷新手動搜尋清單，反映最新報到狀態
     const { registrations } = await getRegistrationsWithStudents(id)
     setAllRegs(registrations || [])
-  }
+  }, [id, isMulti, currentSessionId])
 
-  useEffect(() => { refreshStats() }, [id]) // eslint-disable-line
+  useEffect(() => { refreshStats() }, [refreshStats])
 
   // 載入完整報名清單（給手動搜尋用）
   const loadAllRegs = useCallback(async () => {
@@ -143,6 +189,74 @@ export default function CheckinPage() {
     setStatus('loading')
     clearInterval(countdownRef.current)
 
+    // ── 多場次活動：走 getRegistrationForSessionCheckin（三狀態 + 強制報到）──
+    if (isMulti) {
+      if (!currentSessionId) {
+        setStatus('error')
+        setResult(null)
+        startCountdown()
+        return
+      }
+      const res = await getRegistrationForSessionCheckin(id, scanned, currentSessionId)
+
+      if (res.state === 'error') {
+        setStatus('error')
+        setResult(null)
+        startCountdown()
+        return
+      }
+      if (res.state === 'not_registered') {
+        setStatus('not_found')
+        setResult(null)
+        startCountdown()
+        return
+      }
+
+      // 查功德主紀錄（多場次活動目前不一定有，但保留邏輯）
+      const { donor: donorRec } = await getDonorForRegistration(
+        id,
+        res.isGuest ? null : res.registration.student_id,
+        res.isGuest ? res.name : null,
+      )
+      setDonor(donorRec || null)
+
+      if (res.state === 'already') {
+        setStatus('already')
+        setResult({
+          name: res.name,
+          checkedInAt: res.checkedInAt,
+          regId: res.registration.registration_id,
+        })
+        startCountdown()
+        return
+      }
+      if (res.state === 'not_in_session') {
+        // 紅卡：未報名此場次，提供「強制報到」按鈕
+        setStatus('not_in_session')
+        setResult({
+          name: res.name,
+          regId: res.registration.registration_id,
+        })
+        startCountdown()
+        return
+      }
+      // state === 'success' → 立即寫入 session_checkin
+      const { success } = await checkInSession(res.registration.registration_id, currentSessionId)
+      if (success) {
+        setTodayCount(c => c + 1)
+        refreshStats()
+        setStatus('success')
+        setResult({ name: res.name, regId: res.registration.registration_id })
+        startCountdown()
+      } else {
+        setStatus('error')
+        setResult(null)
+        startCountdown()
+      }
+      return
+    }
+
+    // ── 單場次活動：原邏輯 ──
     // 先用學員編號查
     let { registration, error } = await getRegistrationForCheckin(id, scanned)
     let isGuest = false
@@ -203,9 +317,32 @@ export default function CheckinPage() {
     }
   }
 
+  // 強制報到（多場次：紅卡未報名此場次 → 直接寫一筆 session_checkin）
+  async function handleForceCheckin() {
+    if (!result?.regId || !currentSessionId) return
+    setStatus('loading')
+    const { success } = await checkInSession(result.regId, currentSessionId)
+    if (success) {
+      setTodayCount(c => c + 1)
+      refreshStats()
+      setStatus('success')
+      // result.name 沿用
+      startCountdown()
+    } else {
+      setStatus('error')
+      setResult(null)
+      startCountdown()
+    }
+  }
+
   async function handleUncheck() {
-    if (!result?.registrationId) return
-    await uncheckIn(result.registrationId)
+    if (isMulti) {
+      if (!result?.regId || !currentSessionId) return
+      await uncheckInSession(result.regId, currentSessionId)
+    } else {
+      if (!result?.registrationId) return
+      await uncheckIn(result.registrationId)
+    }
     refreshStats()
     resetToIdle()
   }
@@ -245,7 +382,9 @@ export default function CheckinPage() {
                 className="w-full px-3 py-2.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300"
               />
               <div className="text-xs text-gray-400 mt-2">
-                共 {filteredRegs.length} 筆 / 已報到 {filteredRegs.filter(r => r.checked_in_at).length} 筆
+                共 {filteredRegs.length} 筆
+                {!isMulti && <> / 已報到 {filteredRegs.filter(r => r.checked_in_at).length} 筆</>}
+                {isMulti && <span className="ml-2 text-amber-600">（多場次：請刷卡確認此場次狀態）</span>}
               </div>
             </div>
             <div className="flex-1 overflow-y-auto divide-y">
@@ -262,7 +401,8 @@ export default function CheckinPage() {
                     .map(c => c.class_name + (c.group_name ? ' ' + c.group_name : ''))
                     .join(' / ')
                   const isGuestReg = !r.student_id
-                  const checked = !!r.checked_in_at
+                  // 單場次：依 checked_in_at；多場次：不顯示 badge（需逐場確認，刷卡後自然分流）
+                  const checked = !isMulti && !!r.checked_in_at
                   return (
                     <button
                       key={r.registration_id}
@@ -287,6 +427,45 @@ export default function CheckinPage() {
         </div>
       )}
 
+      {/* 場次選擇 modal（多場次活動才有）*/}
+      {sessionPickerOpen && isMulti && (
+        <div className="fixed inset-0 z-40 bg-black/50 flex items-start sm:items-center justify-center p-3 sm:p-6">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl">
+            <div className="px-5 pt-5 pb-3 border-b flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-800">切換報到場次</h3>
+              <button onClick={() => setSessionPickerOpen(false)} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto divide-y">
+              {sessions.length === 0 ? (
+                <div className="text-center text-gray-400 py-12 text-sm">此活動尚無場次</div>
+              ) : (
+                sessions.map(s => {
+                  const on = s.session_id === currentSessionId
+                  return (
+                    <button
+                      key={s.session_id}
+                      onClick={() => { setCurrentSessionId(s.session_id); setSessionPickerOpen(false); resetToIdle() }}
+                      className={`w-full text-left px-5 py-3 transition-colors ${on ? 'bg-green-50' : 'hover:bg-amber-50 active:bg-amber-100'}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-800">{formatSessionLabel(s)}</span>
+                        {on && <span className="text-xs bg-green-100 text-green-700 border border-green-200 rounded-full px-1.5">目前</span>}
+                      </div>
+                      {s.dharma_name && <p className="text-xs text-gray-500 mt-0.5">{s.dharma_name}</p>}
+                      {s.time_start && s.time_end && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {s.time_start.slice(0,5)}–{s.time_end.slice(0,5)}
+                        </p>
+                      )}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 頂列 */}
       <div className="flex items-center gap-3 mb-6">
         <Link
@@ -296,15 +475,36 @@ export default function CheckinPage() {
           ← 返回活動
         </Link>
         <span className="text-gray-300">|</span>
-        <h2 className="text-lg font-bold text-gray-800">{eventName || '現場報到'}</h2>
+        <h2 className="text-lg font-bold text-gray-800">{event?.name || '現場報到'}</h2>
         <span className="ml-auto text-sm text-gray-500 flex items-center gap-1">
-          已報到
+          {isMulti && currentSessionId ? '本場次 ' : ''}已報到
           <strong className="text-amber-700 text-base">{stats.checkedIn}</strong>
           <span className="text-gray-400">/</span>
           <strong className="text-gray-700 text-base">{stats.total}</strong>
           人
         </span>
       </div>
+
+      {/* 多場次：場次切換 banner */}
+      {isMulti && (
+        <div className="mb-5 px-4 py-3 bg-green-50 border-2 border-green-300 rounded-xl flex items-center gap-3 sticky top-0 z-20 shadow-sm">
+          <span className="text-2xl">🟢</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-green-700 font-medium">目前報到場次</p>
+            <p className="text-base font-bold text-green-900 truncate">
+              {currentSession
+                ? formatSessionLabel(currentSession) + (currentSession.dharma_name ? ` ・ ${currentSession.dharma_name}` : '')
+                : '尚未選擇場次'}
+            </p>
+          </div>
+          <button
+            onClick={() => setSessionPickerOpen(true)}
+            className="text-sm font-medium px-3 py-1.5 bg-white border border-green-400 text-green-700 hover:bg-green-100 rounded-lg shrink-0"
+          >
+            切換場次 ▾
+          </button>
+        </div>
+      )}
 
       {/* 主顯示區 */}
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -387,6 +587,31 @@ export default function CheckinPage() {
             <p className="text-gray-400">此學員尚未報名本活動</p>
             <p className="text-sm text-gray-400 mt-4">{countdown} 秒後自動重置</p>
             <button onClick={resetToIdle} className="mt-2 text-xs text-gray-400 hover:text-gray-600 underline">立即重置</button>
+          </div>
+        )}
+
+        {status === 'not_in_session' && result && (
+          <div className="text-center">
+            <div className="text-8xl mb-6">⛔</div>
+            <p className="text-4xl font-bold text-red-700 mb-2">{result.name}</p>
+            <p className="text-lg text-red-600">⚠️ 該學員未報名此場次</p>
+            <p className="text-sm text-gray-500 mt-1">
+              （目前場次：{currentSession ? formatSessionLabel(currentSession) : '—'}）
+            </p>
+            <div className="flex gap-3 justify-center mt-5 flex-wrap">
+              <button
+                onClick={handleForceCheckin}
+                className="text-sm font-semibold text-white bg-red-600 hover:bg-red-700 px-5 py-2.5 rounded-lg transition-colors shadow-sm"
+              >
+                強制報到此場次
+              </button>
+              <button
+                onClick={resetToIdle}
+                className="text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-4 py-2 rounded-lg transition-colors"
+              >
+                返回（{countdown}s）
+              </button>
+            </div>
           </div>
         )}
 

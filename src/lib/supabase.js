@@ -434,20 +434,22 @@ export async function getTemplates() {
   return { templates: data, error: null }
 }
 
-export async function createTemplate(name, fields) {
+export async function createTemplate(name, fields, sessionFields = []) {
   const { data, error } = await supabase
     .from('event_templates')
-    .insert({ name, fields })
+    .insert({ name, fields, session_fields: sessionFields })
     .select()
     .single()
   if (error) return { template: null, error: error.message }
   return { template: data, error: null }
 }
 
-export async function updateTemplate(templateId, { name, fields }) {
+export async function updateTemplate(templateId, { name, fields, session_fields }) {
+  const patch = { name, fields }
+  if (session_fields !== undefined) patch.session_fields = session_fields
   const { error } = await supabase
     .from('event_templates')
-    .update({ name, fields })
+    .update(patch)
     .eq('template_id', templateId)
   if (error) return { success: false, error: error.message }
   return { success: true, error: null }
@@ -591,6 +593,146 @@ export async function getCheckinStats(eventId) {
   const total = data?.length ?? 0
   const checkedIn = data?.filter(r => r.checked_in_at).length ?? 0
   return { total, checkedIn, error: null }
+}
+
+// ─── Phase 5 Batch 5：多場次報到 ────────────────────────────
+
+/**
+ * 取得某場次的報到統計
+ * - total：該場次的報名人數（answers.sessions[] 含此 session_id 的 registrations）
+ * - checkedIn：該場次已報到人數（registration_session_checkins 命中數）
+ */
+export async function getSessionCheckinStats(eventId, sessionId) {
+  // 1. 抓本活動所有 registrations 的 answers
+  const { data: regs, error: rErr } = await supabase
+    .from('registrations')
+    .select('registration_id, answers')
+    .eq('event_id', eventId)
+  if (rErr) return { total: 0, checkedIn: 0, error: rErr.message }
+
+  const regsInSession = (regs || []).filter(r =>
+    Array.isArray(r.answers?.sessions) &&
+    r.answers.sessions.some(s => s?.session_id === sessionId)
+  )
+  const total = regsInSession.length
+
+  // 2. 抓 registration_session_checkins
+  const { data: chk, error: cErr } = await supabase
+    .from('registration_session_checkins')
+    .select('reg_id')
+    .eq('session_id', sessionId)
+  if (cErr) return { total, checkedIn: 0, error: cErr.message }
+
+  const checkedIds = new Set((chk || []).map(c => c.reg_id))
+  const checkedIn = regsInSession.filter(r => checkedIds.has(r.registration_id)).length
+  return { total, checkedIn, error: null }
+}
+
+/**
+ * 查詢某場次的報名 + 報到狀態（報到頁掃 QR 用）
+ *
+ * 回傳 state：
+ *   'not_registered'  — 學員根本沒報名此活動（紅色：尚未報名）
+ *   'not_in_session'  — 報名了但沒勾此場次（紅色：⚠️ 該學員未報名此場次 → 可強制報到）
+ *   'already'         — 已於 XX:XX 報到此場次（黃卡）
+ *   'success'         — 未報到，可立即報到（綠卡）
+ *
+ * 報到頁掃完叫 checkInSession 才真的寫入 DB。
+ */
+export async function getRegistrationForSessionCheckin(eventId, scanned, sessionId) {
+  // 先用學員編號查 registration
+  let { data: reg, error } = await supabase
+    .from('registrations')
+    .select('registration_id, student_id, answers, students!student_id(name)')
+    .eq('event_id', eventId)
+    .eq('student_id', scanned)
+    .maybeSingle()
+  let isGuest = false
+
+  // 找不到學員報名 → 試訪客 registration_id
+  if (!reg && !error) {
+    const guest = await supabase
+      .from('registrations')
+      .select('registration_id, student_id, answers')
+      .eq('event_id', eventId)
+      .eq('registration_id', scanned)
+      .maybeSingle()
+    reg = guest.data
+    error = guest.error
+    isGuest = true
+  }
+
+  if (error) return { state: 'error', error: error.message }
+  if (!reg)  return { state: 'not_registered', registration: null, error: null }
+
+  // 是否勾選此場次
+  const sessions = Array.isArray(reg.answers?.sessions) ? reg.answers.sessions : []
+  const inSession = sessions.some(s => s?.session_id === sessionId)
+
+  // 查此場次的報到紀錄
+  const { data: chk } = await supabase
+    .from('registration_session_checkins')
+    .select('checked_in_at')
+    .eq('reg_id', reg.registration_id)
+    .eq('session_id', sessionId)
+    .maybeSingle()
+
+  const name = isGuest
+    ? (reg.answers?.host_name
+        ? `${reg.answers?.guest_name ?? '訪客'}（${reg.answers.host_name} 親友）`
+        : (reg.answers?.guest_name ?? '訪客'))
+    : (reg.students?.name ?? scanned)
+
+  if (chk) {
+    return {
+      state: 'already',
+      registration: reg,
+      name,
+      isGuest,
+      checkedInAt: chk.checked_in_at,
+      error: null,
+    }
+  }
+  if (!inSession) {
+    return {
+      state: 'not_in_session',
+      registration: reg,
+      name,
+      isGuest,
+      error: null,
+    }
+  }
+  return {
+    state: 'success',
+    registration: reg,
+    name,
+    isGuest,
+    error: null,
+  }
+}
+
+/**
+ * 場次報到：INSERT registration_session_checkins
+ */
+export async function checkInSession(regId, sessionId) {
+  const { error } = await supabase
+    .from('registration_session_checkins')
+    .insert({ reg_id: regId, session_id: sessionId })
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
+/**
+ * 場次取消報到：DELETE
+ */
+export async function uncheckInSession(regId, sessionId) {
+  const { error } = await supabase
+    .from('registration_session_checkins')
+    .delete()
+    .eq('reg_id', regId)
+    .eq('session_id', sessionId)
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
 }
 
 // ─── 訪客報名（後台）────────────────────────────────────────
