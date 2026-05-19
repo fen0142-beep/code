@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import AdminLayout from '../../components/AdminLayout'
@@ -53,6 +53,14 @@ function formatFieldValue(field, val) {
   }
   if (field.field_type === 'date' && typeof val === 'string') {
     return val.replaceAll('-', '/')
+  }
+  // 純時間欄位：'HH:MM:SS' → 'HH:MM'（去掉秒；不足 5 字元就原樣）
+  if (field.field_type === 'time' && typeof val === 'string') {
+    return val.length >= 5 ? val.slice(0, 5) : val
+  }
+  // 車牌：自動大寫去空白（資料層可能未統一）
+  if (field.field_type === 'plate' && typeof val === 'string') {
+    return val.trim().toUpperCase()
   }
   return val
 }
@@ -146,20 +154,33 @@ function SortTh({ label, colKey, current, dir, onSort, className = '' }) {
 // ── CSV 匯出 ───────────────────────────────────────────────
 function exportCSV(registrations, fields, event) {
   const answerHeaders = fields.map(f => f.field_label)
-  const header = ['學員編號', '姓名', '更新時間', '報到時間', ...answerHeaders]
+  // 補基本欄位：班級、組別、報名時間（首次報名）— 排座位與後續統計常用
+  const header = [
+    '學員編號', '姓名', '班級', '組別',
+    '報名時間', '更新時間', '報到時間',
+    ...answerHeaders,
+  ]
 
   const rows = registrations.map(r => {
     const name = getDisplayName(r)
-    // 名單時間以最後更新為準（INSERT 與後續編輯都會推進 updated_at）
-    const stamp = r.updated_at ?? r.registered_at
-    const regAt = stamp ? new Date(stamp).toLocaleString('zh-TW') : ''
+    // 班級／組別：學員可能屬多班，逐項以 / 串接（訪客為空）
+    const classes = (r.students?.student_classes ?? [])
+    const classCol = classes.map(c => c.class_name ?? '').filter(Boolean).join('/')
+    const groupCol = classes.map(c => c.group_name ?? '').filter(Boolean).join('/')
+    // 報名時間：首次報名（registered_at）；更新時間：最後編輯（updated_at）
+    const regAt     = r.registered_at ? new Date(r.registered_at).toLocaleString('zh-TW') : ''
+    const updatedAt = r.updated_at    ? new Date(r.updated_at).toLocaleString('zh-TW')    : ''
     const checkinAt = r.checked_in_at ? new Date(r.checked_in_at).toLocaleString('zh-TW') : ''
     const answerCols = fields.map(f => {
       const val = r.answers?.[f.field_key]
       const formatted = formatFieldValue(f, val)
       return formatted === '-' ? '' : formatted
     })
-    return [r.student_id ?? '訪客', name, regAt, checkinAt, ...answerCols]
+    return [
+      r.student_id ?? '訪客', name, classCol, groupCol,
+      regAt, updatedAt, checkinAt,
+      ...answerCols,
+    ]
   })
 
   const csv = [header, ...rows]
@@ -418,20 +439,48 @@ export default function EventDetailPage() {
   const [showRegTime, setShowRegTime] = useState(false)
   const [hiddenFieldKeys, setHiddenFieldKeys] = useState(new Set())
 
-  // 交通相關欄位群組
-  const FIELD_GROUPS = [
-    { key: 'time',   label: '時間',    keys: ['arrive_time', 'leave_time'] },
-    { key: 'up',     label: '上山交通', keys: ['transport_up', 'carpool_up', 'plate_up'] },
-    { key: 'down',   label: '下山交通', keys: ['transport_down', 'carpool_down', 'plate_down'] },
-  ]
+  // 身分別欄位（dashboard_role==='identity' 或 field_key==='identity'）
+  // 用來判斷「義工相關」欄位、決定固定永遠顯示的欄位
+  const identityField = useMemo(
+    () =>
+      fields.find(f => f.dashboard_role === 'identity') ??
+      fields.find(f => f.field_key === 'identity') ??
+      null,
+    [fields]
+  )
+  const identityKey = identityField?.field_key ?? null
 
-  function toggleFieldGroup(keys) {
+  // 義工專屬欄位：show_if 條件指向「身分別 = 義工」
+  const isVolunteerField = useCallback(
+    f => !!identityKey && f?.show_if?.[identityKey] === '義工',
+    [identityKey]
+  )
+
+  // 固定永遠顯示的欄位 key（不可關閉）：身分別
+  // （學員編號、姓名是 hardcoded 欄位，本來就一定顯示，不放在這裡）
+  const pinnedFieldKeys = useMemo(() => {
+    const s = new Set()
+    if (identityKey) s.add(identityKey)
+    return s
+  }, [identityKey])
+
+  // 切換單一欄位顯隱
+  function toggleFieldKey(key) {
     setHiddenFieldKeys(prev => {
       const next = new Set(prev)
-      // 若群組內任一欄位已顯示 → 全部隱藏；若全部已隱藏 → 全部顯示
-      const allHidden = keys.every(k => next.has(k))
-      if (allHidden) { keys.forEach(k => next.delete(k)) }
-      else           { keys.forEach(k => next.add(k)) }
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+
+  // 切換「義工相關」群組：全顯示 ↔ 全隱藏
+  function toggleVolunteerGroup() {
+    const volKeys = fields.filter(isVolunteerField).map(f => f.field_key)
+    setHiddenFieldKeys(prev => {
+      const next = new Set(prev)
+      const allHidden = volKeys.every(k => next.has(k))
+      if (allHidden) volKeys.forEach(k => next.delete(k))
+      else           volKeys.forEach(k => next.add(k))
       return next
     })
   }
@@ -1144,10 +1193,44 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            {fields.length > 0 && (
-              <div className="mb-4">
-                <DynamicForm fields={fields} answers={editAnswers} onChange={setEditAnswers} />
+            {/* 多場次活動：依場次渲染子欄位編輯 */}
+            {event?.multi_session && Array.isArray(editAnswers?.sessions) && editAnswers.sessions.length > 0 ? (
+              <div className="mb-4 space-y-3">
+                <p className="text-xs text-gray-500">已參加 {editAnswers.sessions.length} 場（如需新增或移除場次，請取消後重新報名）</p>
+                {editAnswers.sessions.map((ssAns, idx) => {
+                  const s = sessions.find(x => x.session_id === ssAns.session_id)
+                  if (!s) return null
+                  const fieldsHere = sessionFieldsForPeriod(sessionFields, s.time_period)
+                  return (
+                    <div key={ssAns.session_id} className="border border-gray-200 rounded-xl p-3 bg-gray-50/40">
+                      <p className="text-sm font-semibold text-gray-700 mb-2">
+                        {formatSessionTabLabel(s)}
+                        {s.dharma_name && <span className="text-gray-500 font-normal ml-2">{s.dharma_name}</span>}
+                      </p>
+                      {fieldsHere.length === 0 ? (
+                        <p className="text-xs text-gray-400">此場次無可編輯子欄位</p>
+                      ) : (
+                        <DynamicForm
+                          fields={fieldsHere}
+                          answers={ssAns}
+                          onChange={newSsAns => {
+                            const updated = editAnswers.sessions.map((x, i) =>
+                              i === idx ? { ...newSsAns, session_id: ssAns.session_id } : x
+                            )
+                            setEditAnswers({ ...editAnswers, sessions: updated })
+                          }}
+                        />
+                      )}
+                    </div>
+                  )
+                })}
               </div>
+            ) : (
+              fields.length > 0 && (
+                <div className="mb-4">
+                  <DynamicForm fields={fields} answers={editAnswers} onChange={setEditAnswers} />
+                </div>
+              )
             )}
 
             <div className="flex gap-3 pt-2">
@@ -2284,25 +2367,49 @@ export default function EventDetailPage() {
                     {col.val ? '✓ ' : ''}{col.label}
                   </button>
                 ))}
-                {/* 交通欄位群組切換（有對應欄位才顯示） */}
-                {FIELD_GROUPS.map(group => {
-                  const exists = group.keys.some(k => fields.find(f => f.field_key === k))
-                  if (!exists) return null
-                  const allHidden = group.keys.every(k => hiddenFieldKeys.has(k))
+                {/* 動態欄位 toggle（多場次模式下表格內容是場次而非 event_fields，不顯示） */}
+                {!event?.multi_session && (() => {
+                  // 動態欄位分類：
+                  //   - pinned：身分別（固定顯示、不在切換清單）
+                  //   - volunteer：show_if 指向身分別=義工（合併成一顆「義工相關」鈕）
+                  //   - generic：其他（每欄一顆獨立鈕）
+                  const volunteerFields = fields.filter(isVolunteerField)
+                  const genericFields   = fields.filter(f => !pinnedFieldKeys.has(f.field_key) && !isVolunteerField(f))
+                  const volAllHidden    = volunteerFields.length > 0 && volunteerFields.every(f => hiddenFieldKeys.has(f.field_key))
                   return (
-                    <button
-                      key={group.key}
-                      onClick={() => toggleFieldGroup(group.keys)}
-                      className={`text-xs px-2 py-0.5 rounded border transition-colors ${
-                        !allHidden
-                          ? 'bg-amber-100 text-amber-800 border-amber-300'
-                          : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      {!allHidden ? '✓ ' : ''}{group.label}
-                    </button>
+                    <>
+                      {volunteerFields.length > 0 && (
+                        <button
+                          onClick={toggleVolunteerGroup}
+                          title={`義工專屬：${volunteerFields.map(f => f.field_label).join('、')}`}
+                          className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                            !volAllHidden
+                              ? 'bg-purple-100 text-purple-800 border-purple-300'
+                              : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          {!volAllHidden ? '✓ ' : ''}義工相關
+                        </button>
+                      )}
+                      {genericFields.map(f => {
+                        const hidden = hiddenFieldKeys.has(f.field_key)
+                        return (
+                          <button
+                            key={f.field_key}
+                            onClick={() => toggleFieldKey(f.field_key)}
+                            className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                              !hidden
+                                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                            }`}
+                          >
+                            {!hidden ? '✓ ' : ''}{f.field_label}
+                          </button>
+                        )
+                      })}
+                    </>
                   )
-                })}
+                })()}
               </div>
             </div>
             {isAdmin && (
