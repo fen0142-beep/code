@@ -2392,4 +2392,4 @@ export default function EventDetailPage() {
                     <thead>
                       <tr className="border-b border-gray-200 bg-gray-100">
                         <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">姓名</th>
-                        <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">取消時間</t
+                        <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">取消時間</th>
