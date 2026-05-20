@@ -2424,4 +2424,3 @@ export default function EventDetailPage() {
     </AdminLayout>
   )
 }
-}
