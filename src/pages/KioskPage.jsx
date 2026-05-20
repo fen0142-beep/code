@@ -1716,7 +1716,7 @@ function FriendFormScreen({
           inputMode="tel"
           value={friendPhone || ''}
           onChange={e => onChangePhone && onChangePhone(e.target.value)}
-          placeholder="如有需要聯絡親友時填寫"
+          placeholder="方便精舍聯絡親友"
           className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-kiosk-base focus:outline-none focus:border-purple-500"
         />
       </div>
@@ -1798,7 +1798,7 @@ function SessionSelectScreen({
             inputMode="tel"
             value={friendPhone || ''}
             onChange={e => onFriendPhoneChange && onFriendPhoneChange(e.target.value)}
-            placeholder="如有需要聯絡親友時填寫"
+            placeholder="方便精舍聯絡親友"
             className="w-full border-2 border-purple-200 rounded-xl px-4 py-3 text-kiosk-base focus:border-purple-500 focus:outline-none"
           />
         </div>
