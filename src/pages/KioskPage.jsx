@@ -1820,7 +1820,9 @@ function SessionSelectScreen({
       <div className="bg-white rounded-2xl shadow-md p-5 mb-4">
         {/* 標題 + 全選 */}
         <div className="flex items-center justify-between mb-4">
-          <p className="text-kiosk-base font-bold text-gray-800">您將參加哪些場次？</p>
+          <p className="text-kiosk-base font-bold text-gray-800">
+            {isFriendMode ? `${friendName}將參加哪些場次？` : '您將參加哪些場次？'}
+          </p>
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"

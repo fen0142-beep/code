@@ -99,6 +99,26 @@ function formatSessionTabLabel(s) {
   return `${parseInt(mm)}/${parseInt(dd)}${timePeriodShort(s.time_period)}`
 }
 
+// 場次子欄位答案查詢（相容舊版 fallback key：lunch / parking）
+// 舊版在 DB session_fields 未設定時，answers 用 fallback key 寫入；
+// 後來 DB 設了不同 field_key（例如中文或其他命名），導致顯示「-」。
+// 此 helper 先查 DB field_key，找不到時再試 fallback 常見對應。
+const SESSION_LEGACY_KEYS = {
+  lunch:   ['午', '齋'],
+  parking: ['停車', '車位'],
+}
+function resolveSessionAns(field, ssAns) {
+  if (!ssAns) return undefined
+  const direct = ssAns[field.field_key]
+  if (direct !== undefined) return direct
+  for (const [legacyKey, hints] of Object.entries(SESSION_LEGACY_KEYS)) {
+    if (hints.some(h => (field.field_label ?? '').includes(h)) && ssAns[legacyKey] !== undefined) {
+      return ssAns[legacyKey]
+    }
+  }
+  return undefined
+}
+
 // 單一場次 CSV 匯出（動態欄位：依 event_session_fields × show_if_period）
 function exportSessionCSV(sessionRegs, session, event, sessionFields = []) {
   const sessionLabel = formatSessionTabLabel(session)
@@ -111,7 +131,7 @@ function exportSessionCSV(sessionRegs, session, event, sessionFields = []) {
     const regAt = stamp ? new Date(stamp).toLocaleString('zh-TW') : ''
     const ssAns = r.answers?.sessions?.find(ss => ss.session_id === session.session_id) ?? {}
     const fieldCells = fieldsHere.map(f => {
-      const v = ssAns[f.field_key]
+      const v = resolveSessionAns(f, ssAns)
       if (v === undefined || v === null || v === '') return ''
       if (f.field_type === 'boolean') return v === true ? '是' : '否'
       if (Array.isArray(v)) return v.join('、')
@@ -1754,6 +1774,12 @@ export default function EventDetailPage() {
       {/* ── Tab: 動態欄位 ── */}
       {tab === 'fields' && (
         <div className="space-y-4">
+          {event?.multi_session && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-sm text-amber-800">
+              ⚠️ 此活動已啟用「多場次報名」，前台刷卡時會<strong>直接進入場次選擇</strong>，不會顯示這裡的動態欄位。<br />
+              請改在「活動設定」→「場次設定」→「場次共用子欄位」設定午齋、停車等子問題。
+            </div>
+          )}
           {fields.length === 0 && (
             <p className="text-gray-400 text-sm text-center py-6">尚無欄位，點下方按鈕新增</p>
           )}
@@ -1788,7 +1814,7 @@ export default function EventDetailPage() {
                     const warn = hasSessionFields
                       ? `套用「${tmpl.name}」後，目前的欄位將被取代，且場次共用子欄位（${tmplSessionFields.length} 個）將覆蓋。確定要繼續嗎？`
                       : `套用「${tmpl.name}」後，目前設定的欄位將全部被取代。確定要繼續嗎？`
-                    if (fields.length === 0 || window.confirm(warn)) {
+                    if ((fields.length === 0 && sessionFields.length === 0) || window.confirm(warn)) {
                       setFields((tmpl.fields || []).map(f => ({ ...f })))
                       // 若模板有場次共用子欄位，立刻寫入此活動的 event_session_fields
                       if (hasSessionFields) {
@@ -2659,7 +2685,7 @@ export default function EventDetailPage() {
                           return <>
                             {fieldsHere.map(f => (
                               <td key={f.field_key} className="px-3 py-1.5 text-sm text-gray-700">
-                                {formatSessionAnswer(f, ssAns[f.field_key])}
+                                {formatSessionAnswer(f, resolveSessionAns(f, ssAns))}
                               </td>
                             ))}
                           </>
