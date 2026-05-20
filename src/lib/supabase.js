@@ -650,7 +650,12 @@ export async function getRegistrationForSessionCheckin(eventId, scanned, session
   let isGuest = false
 
   // 找不到學員報名 → 試訪客 registration_id
-  if (!reg && !error) {
+  // ⚠️ registration_id 是 uuid 型別；如果 scanned 不是 uuid（例如 9 位數學員編號），
+  // 直接打 .eq('registration_id', scanned) 會被 Postgres 拒於 `invalid input syntax for type uuid`，
+  // 造成原本該回 not_registered / not_in_session 的情境誤判成 error。
+  // 先用 regex 判斷，不像 uuid 就跳過 fallback。
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!reg && !error && UUID_RE.test(String(scanned))) {
     const guest = await supabase
       .from('registrations')
       .select('registration_id, student_id, answers')
