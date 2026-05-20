@@ -6,6 +6,7 @@ import {
   checkIn, uncheckIn, getCheckinStats, getRegistrationsWithStudents, getDonorForRegistration,
   getEventSessions, getSessionCheckinStats, getRegistrationForSessionCheckin,
   checkInSession, uncheckInSession,
+  walkinRegister, walkinAddSession, getStudentById,
 } from '../../lib/supabase'
 import CameraScanner from '../../components/CameraScanner'
 
@@ -63,7 +64,7 @@ export default function CheckinPage() {
   const [todayCount, setTodayCount] = useState(0)
 
   const [cameraOpen, setCameraOpen] = useState(false)
-  const [stats, setStats] = useState({ total: 0, checkedIn: 0 })
+  const [stats, setStats] = useState({ total: 0, checkedIn: 0, walkinCount: 0 })
 
   // 手動搜尋報到
   const [manualOpen, setManualOpen]     = useState(false)
@@ -107,10 +108,10 @@ export default function CheckinPage() {
   const refreshStats = useCallback(async () => {
     if (isMulti && currentSessionId) {
       const s = await getSessionCheckinStats(id, currentSessionId)
-      setStats({ total: s.total, checkedIn: s.checkedIn })
+      setStats({ total: s.total, checkedIn: s.checkedIn, walkinCount: s.walkinCount || 0 })
     } else if (!isMulti) {
       const s = await getCheckinStats(id)
-      setStats({ total: s.total, checkedIn: s.checkedIn })
+      setStats({ total: s.total, checkedIn: s.checkedIn, walkinCount: s.walkinCount || 0 })
     }
     // 同步刷新手動搜尋清單，反映最新報到狀態
     const { registrations } = await getRegistrationsWithStudents(id)
@@ -206,8 +207,13 @@ export default function CheckinPage() {
         return
       }
       if (res.state === 'not_registered') {
+        // 多場活動完全沒報過 → 共用 not_found UI，但補學員資料給「現場報名」按鈕用
         setStatus('not_found')
-        setResult(null)
+        const stu = await getStudentById(scanned).catch(() => null)
+        setResult(stu?.student ? {
+          name: stu.student.name,
+          studentId: scanned,
+        } : null)
         startCountdown()
         return
       }
@@ -231,11 +237,12 @@ export default function CheckinPage() {
         return
       }
       if (res.state === 'not_in_session') {
-        // 紅卡：未報名此場次，提供「強制報到」按鈕
+        // 紅卡：已報活動但未勾此場次，提供「現場補報此場次」按鈕（補報名 + 自動打卡）
         setStatus('not_in_session')
         setResult({
           name: res.name,
           regId: res.registration.registration_id,
+          currentAnswers: res.registration.answers || {},
         })
         startCountdown()
         return
@@ -270,8 +277,13 @@ export default function CheckinPage() {
     }
 
     if (error === 'NOT_REGISTERED') {
+      // 單場活動沒報過 → 補學員資料給「現場報名」按鈕用
       setStatus('not_found')
-      setResult(null)
+      const stu = await getStudentById(scanned).catch(() => null)
+      setResult(stu?.student ? {
+        name: stu.student.name,
+        studentId: scanned,
+      } : null)
       startCountdown()
       return
     }
@@ -317,11 +329,16 @@ export default function CheckinPage() {
     }
   }
 
-  // 強制報到（多場次：紅卡未報名此場次 → 直接寫一筆 session_checkin）
-  async function handleForceCheckin() {
+  // 現場補報此場次（多場次紅卡 not_in_session）：
+  // 把 sessionId push 進 answers.sessions + 同時打卡，一步完成。取代舊「強制報到」按鈕。
+  async function handleWalkinAddSession() {
     if (!result?.regId || !currentSessionId) return
     setStatus('loading')
-    const { success } = await checkInSession(result.regId, currentSessionId)
+    const { success, error } = await walkinAddSession(
+      result.regId,
+      currentSessionId,
+      result.currentAnswers || {}
+    )
     if (success) {
       setTodayCount(c => c + 1)
       refreshStats()
@@ -329,6 +346,30 @@ export default function CheckinPage() {
       // result.name 沿用
       startCountdown()
     } else {
+      console.error('[walkinAddSession]', error)
+      setStatus('error')
+      setResult(null)
+      startCountdown()
+    }
+  }
+
+  // 現場報名（單場 not_found / 多場 not_registered 紅卡）：
+  // 寫新 registration（source='walkin'）+ 自動打卡
+  async function handleWalkinRegister() {
+    if (!result?.studentId) return
+    setStatus('loading')
+    const { success, error } = await walkinRegister(id, result.studentId, {
+      isMulti,
+      sessionId: isMulti ? currentSessionId : undefined,
+    })
+    if (success) {
+      setTodayCount(c => c + 1)
+      refreshStats()
+      setStatus('success')
+      // result.name 沿用
+      startCountdown()
+    } else {
+      console.error('[walkinRegister]', error)
       setStatus('error')
       setResult(null)
       startCountdown()
@@ -476,12 +517,22 @@ export default function CheckinPage() {
         </Link>
         <span className="text-gray-300">|</span>
         <h2 className="text-lg font-bold text-gray-800">{event?.name || '現場報到'}</h2>
-        <span className="ml-auto text-sm text-gray-500 flex items-center gap-1">
-          {isMulti && currentSessionId ? '本場次 ' : ''}已報到
-          <strong className="text-amber-700 text-base">{stats.checkedIn}</strong>
-          <span className="text-gray-400">/</span>
-          <strong className="text-gray-700 text-base">{stats.total}</strong>
-          人
+        <span className="ml-auto text-sm text-gray-500 flex items-center gap-2 flex-wrap justify-end">
+          <span className="flex items-center gap-1">
+            {isMulti && currentSessionId ? '本場次 ' : ''}已報到
+            <strong className="text-amber-700 text-base">{stats.checkedIn}</strong>
+            <span className="text-gray-400">/</span>
+            <strong className="text-gray-700 text-base">{stats.total}</strong>
+            人
+          </span>
+          {stats.walkinCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700"
+              title="刷卡時不在名單上、現場補報名的人數"
+            >
+              現場 <strong>{stats.walkinCount}</strong>
+            </span>
+          )}
         </span>
       </div>
 
@@ -582,11 +633,42 @@ export default function CheckinPage() {
 
         {status === 'not_found' && (
           <div className="text-center">
-            <div className="text-8xl mb-6">❓</div>
-            <p className="text-2xl font-bold text-gray-500 mb-2">找不到此學員</p>
-            <p className="text-gray-400">此學員尚未報名本活動</p>
-            <p className="text-sm text-gray-400 mt-4">{countdown} 秒後自動重置</p>
-            <button onClick={resetToIdle} className="mt-2 text-xs text-gray-400 hover:text-gray-600 underline">立即重置</button>
+            {result?.studentId ? (
+              <>
+                {/* 找到學員，但尚未報名本活動 → 提供「現場報名」按鈕 */}
+                <div className="text-8xl mb-6">📝</div>
+                <p className="text-4xl font-bold text-rose-700 mb-2">{result.name}</p>
+                <p className="text-lg text-rose-600">尚未報名本活動</p>
+                {isMulti && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    （將補報此場次：{currentSession ? formatSessionLabel(currentSession) : '—'}）
+                  </p>
+                )}
+                <div className="flex gap-3 justify-center mt-5 flex-wrap">
+                  <button
+                    onClick={handleWalkinRegister}
+                    className="text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 px-5 py-2.5 rounded-lg transition-colors shadow-sm"
+                  >
+                    📝 現場報名{isMulti ? '此場次' : ''}（自動報到）
+                  </button>
+                  <button
+                    onClick={resetToIdle}
+                    className="text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-4 py-2 rounded-lg transition-colors"
+                  >
+                    返回（{countdown}s）
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* 完全找不到學員（編號不存在 / 不在籍）→ 維持原本警示，避免亂掃外人卡也能補報 */}
+                <div className="text-8xl mb-6">❓</div>
+                <p className="text-2xl font-bold text-gray-500 mb-2">找不到此學員</p>
+                <p className="text-gray-400">此學員編號未在學員資料庫</p>
+                <p className="text-sm text-gray-400 mt-4">{countdown} 秒後自動重置</p>
+                <button onClick={resetToIdle} className="mt-2 text-xs text-gray-400 hover:text-gray-600 underline">立即重置</button>
+              </>
+            )}
           </div>
         )}
 
@@ -600,10 +682,10 @@ export default function CheckinPage() {
             </p>
             <div className="flex gap-3 justify-center mt-5 flex-wrap">
               <button
-                onClick={handleForceCheckin}
-                className="text-sm font-semibold text-white bg-red-600 hover:bg-red-700 px-5 py-2.5 rounded-lg transition-colors shadow-sm"
+                onClick={handleWalkinAddSession}
+                className="text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 px-5 py-2.5 rounded-lg transition-colors shadow-sm"
               >
-                強制報到此場次
+                📝 現場補報此場次（自動報到）
               </button>
               <button
                 onClick={resetToIdle}

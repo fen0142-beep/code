@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS registrations (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),                       -- INSERT/UPDATE 都會推進；名單顯示用
   checked_in_at   TIMESTAMPTZ,
   terminal        TEXT,
+  source          TEXT NOT NULL DEFAULT 'kiosk',                              -- kiosk=前台刷卡 / walkin=報到頁現場補報 / manual=後台手動
   UNIQUE (event_id, student_id)  -- 同一學員同一活動只能報名一次（訪客不受此限）
 );
 

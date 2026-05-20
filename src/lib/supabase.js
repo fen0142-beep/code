@@ -586,13 +586,14 @@ export async function uncheckIn(registrationId) {
 export async function getCheckinStats(eventId) {
   const { data, error } = await supabase
     .from('registrations')
-    .select('registration_id, checked_in_at')
+    .select('registration_id, checked_in_at, source')
     .eq('event_id', eventId)
 
-  if (error) return { total: 0, checkedIn: 0, error: error.message }
+  if (error) return { total: 0, checkedIn: 0, walkinCount: 0, error: error.message }
   const total = data?.length ?? 0
   const checkedIn = data?.filter(r => r.checked_in_at).length ?? 0
-  return { total, checkedIn, error: null }
+  const walkinCount = data?.filter(r => r.source === 'walkin').length ?? 0
+  return { total, checkedIn, walkinCount, error: null }
 }
 
 // ─── Phase 5 Batch 5：多場次報到 ────────────────────────────
@@ -603,29 +604,30 @@ export async function getCheckinStats(eventId) {
  * - checkedIn：該場次已報到人數（registration_session_checkins 命中數）
  */
 export async function getSessionCheckinStats(eventId, sessionId) {
-  // 1. 抓本活動所有 registrations 的 answers
+  // 1. 抓本活動所有 registrations 的 answers + source
   const { data: regs, error: rErr } = await supabase
     .from('registrations')
-    .select('registration_id, answers')
+    .select('registration_id, answers, source')
     .eq('event_id', eventId)
-  if (rErr) return { total: 0, checkedIn: 0, error: rErr.message }
+  if (rErr) return { total: 0, checkedIn: 0, walkinCount: 0, error: rErr.message }
 
   const regsInSession = (regs || []).filter(r =>
     Array.isArray(r.answers?.sessions) &&
     r.answers.sessions.some(s => s?.session_id === sessionId)
   )
   const total = regsInSession.length
+  const walkinCount = regsInSession.filter(r => r.source === 'walkin').length
 
   // 2. 抓 registration_session_checkins
   const { data: chk, error: cErr } = await supabase
     .from('registration_session_checkins')
     .select('reg_id')
     .eq('session_id', sessionId)
-  if (cErr) return { total, checkedIn: 0, error: cErr.message }
+  if (cErr) return { total, checkedIn: 0, walkinCount, error: cErr.message }
 
   const checkedIds = new Set((chk || []).map(c => c.reg_id))
   const checkedIn = regsInSession.filter(r => checkedIds.has(r.registration_id)).length
-  return { total, checkedIn, error: null }
+  return { total, checkedIn, walkinCount, error: null }
 }
 
 /**
@@ -737,6 +739,87 @@ export async function uncheckInSession(regId, sessionId) {
     .eq('reg_id', regId)
     .eq('session_id', sessionId)
   if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
+// ─── 現場補報（報到頁紅卡）─────────────────────────────────
+
+/**
+ * 現場補報：報到頁紅卡按「現場報名」時呼叫
+ * 寫一筆 registration（source='walkin'）+ 自動報到
+ *
+ * 單場活動：直接寫 checked_in_at
+ * 多場活動：把 sessionId push 進 answers.sessions，並另寫一筆 registration_session_checkins
+ *
+ * @param {string}  eventId
+ * @param {string}  studentId   學員編號（必填，只支援已建檔學員）
+ * @param {object}  opts
+ * @param {boolean} [opts.isMulti=false]  多場次活動旗標
+ * @param {string}  [opts.sessionId]      多場次活動 - 補報此場次
+ * @param {string}  [opts.terminal='walkin-checkin']  裝置識別
+ */
+export async function walkinRegister(eventId, studentId, opts = {}) {
+  const { isMulti = false, sessionId, terminal = 'walkin-checkin' } = opts
+  if (isMulti && !sessionId) {
+    return { success: false, registration: null, error: 'sessionId required for multi-session event' }
+  }
+  const row = {
+    event_id: eventId,
+    student_id: studentId,
+    answers: isMulti ? { sessions: [{ session_id: sessionId }] } : {},
+    source: 'walkin',
+    terminal,
+  }
+  // 單場活動：直接打卡
+  if (!isMulti) {
+    row.checked_in_at = new Date().toISOString()
+  }
+  const { data: reg, error } = await supabase
+    .from('registrations')
+    .insert(row)
+    .select('registration_id')
+    .single()
+  if (error) return { success: false, registration: null, error: error.message }
+
+  // 多場活動：另寫 session_checkin
+  if (isMulti) {
+    const { error: chkErr } = await supabase
+      .from('registration_session_checkins')
+      .insert({ reg_id: reg.registration_id, session_id: sessionId })
+    if (chkErr) {
+      return { success: false, registration: reg, error: chkErr.message }
+    }
+  }
+  return { success: true, registration: reg, error: null }
+}
+
+/**
+ * 多場次 not_in_session 紅卡按「現場補報此場次」：
+ * - 把 sessionId push 進現有 registration 的 answers.sessions（保留其他欄位）
+ * - 同時寫 registration_session_checkins（自動打卡）
+ *
+ * 用於：學員報過此活動但沒勾這場、人卻來了的情境。
+ */
+export async function walkinAddSession(regId, sessionId, currentAnswers = {}) {
+  const sessions = Array.isArray(currentAnswers?.sessions) ? [...currentAnswers.sessions] : []
+  if (!sessions.some(s => s?.session_id === sessionId)) {
+    sessions.push({ session_id: sessionId })
+  }
+  const nextAnswers = { ...currentAnswers, sessions }
+
+  const { error: uErr } = await supabase
+    .from('registrations')
+    .update({ answers: nextAnswers })
+    .eq('registration_id', regId)
+  if (uErr) return { success: false, error: uErr.message }
+
+  const { error: chkErr } = await supabase
+    .from('registration_session_checkins')
+    .insert({ reg_id: regId, session_id: sessionId })
+  // duplicate（已經報到過）不視為錯誤
+  if (chkErr && !String(chkErr.message).toLowerCase().includes('duplicate')) {
+    return { success: false, error: chkErr.message }
+  }
   return { success: true, error: null }
 }
 
