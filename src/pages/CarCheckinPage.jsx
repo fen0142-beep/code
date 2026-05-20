@@ -122,6 +122,20 @@ function markAutoChecked(token, regIds) {
   }
 }
 
+// 小車「同車繼承」preArrive：member 自己沒 preArrive，但同小車有人提前 → 整車視為提前
+// 適用：小車（司機載一車人，司機提前=全車提前）；大車不適用（當天接送）
+function getEffectivePreArrive(member, car, eventDateStart) {
+  const own = getPreArriveInfo(member?.registrations?.answers, eventDateStart)
+  if (own) return own
+  if (car?.car_type !== 'small' || !car.car_members) return null
+  for (const other of car.car_members) {
+    if (other?.registration_id === member?.registration_id) continue
+    const info = getPreArriveInfo(other?.registrations?.answers, eventDateStart)
+    if (info) return info
+  }
+  return null
+}
+
 // 判斷是否提前上山（任一答案日期早於活動起始日）
 // 回傳 "X月X日已上山" 字串，或 null
 function getPreArriveInfo(answers, eventDateStart) {
@@ -227,7 +241,7 @@ export default function CarCheckinPage() {
       const toAutoCheck = carInfo.linkedCars.flatMap(c =>
         (c.car_members ?? []).filter(m =>
           !m.registrations?.checked_in_at &&
-          getPreArriveInfo(m.registrations?.answers, dateStart) &&
+          getEffectivePreArrive(m, c, dateStart) &&
           !autoChecked.has(m.registration_id)
         )
       )
@@ -258,10 +272,12 @@ export default function CarCheckinPage() {
       // 注意：用 sessionStorage 過濾「本 session 已自動勾過」的人，避免取消後 F5 又被勾回
       const dateStart = hlRes.headLeader.events?.date_start
       const autoChecked = getAutoCheckedSet(token)
-      const toAutoCheck = (cars ?? []).flatMap(c => c.car_members ?? []).filter(m =>
-        !m.registrations?.checked_in_at &&
-        getPreArriveInfo(m.registrations?.answers, dateStart) &&
-        !autoChecked.has(m.registration_id)
+      const toAutoCheck = (cars ?? []).flatMap(c =>
+        (c.car_members ?? []).filter(m =>
+          !m.registrations?.checked_in_at &&
+          getEffectivePreArrive(m, c, dateStart) &&
+          !autoChecked.has(m.registration_id)
+        )
       )
       if (toAutoCheck.length > 0) {
         await Promise.all(toAutoCheck.map(m => checkIn(m.registration_id)))
@@ -582,9 +598,9 @@ export default function CarCheckinPage() {
                         訪客
                       </span>
                     )}
-                    {getPreArriveInfo(member.registrations?.answers, dateStart) && (
+                    {getEffectivePreArrive(member, car, dateStart) && (
                       <span className="text-xs bg-teal-100 text-teal-700 border border-teal-200 rounded-full px-1.5 shrink-0">
-                        {getPreArriveInfo(member.registrations?.answers, dateStart)}
+                        {getEffectivePreArrive(member, car, dateStart)}
                       </span>
                     )}
                   </div>
@@ -713,7 +729,7 @@ export default function CarCheckinPage() {
                     const name   = getMemberName(member)
                     const guest  = isGuest(member)
                     const chk    = isCheckedIn(member)
-                    const preArr = getPreArriveInfo(member.registrations?.answers, dateStart)
+                    const preArr = getEffectivePreArrive(member, c, dateStart)
                     const isLeader = (c.car_leaders ?? []).some(l => l.registration_id === member.registration_id)
                     const cls    = formatMemberClasses(member)
                     return (
@@ -778,8 +794,9 @@ export default function CarCheckinPage() {
     const monkCheckedAll = carsInDir.reduce((s, c) => s + (c.car_monks?.filter(m => !!m.checked_in_at).length ?? 0), 0)
 
     // 應到 = 當天搭車出發的人（排除提前上山），法師一律算
-    const isPreArrived = (m) => !!getPreArriveInfo(m.registrations?.answers, dateStart)
-    const todayMembers  = carsInDir.flatMap(c => c.car_members ?? []).filter(m => !isPreArrived(m))
+    // 小車：同車有人提前 → 全車視為提前（用 getEffectivePreArrive）
+    const isPreArrived = (m, c) => !!getEffectivePreArrive(m, c, dateStart)
+    const todayMembers  = carsInDir.flatMap(c => (c.car_members ?? []).filter(m => !isPreArrived(m, c)))
 
     // 「其他交通」：本方向不歸大車也不歸小車的人，排除提前上山
     // 用 car_members 已存在的 registration_id 排除，避免重複計算（保險作法）
@@ -896,7 +913,7 @@ export default function CarCheckinPage() {
 
           {/* ── 大車（各台獨立） ── */}
           {largeCars.map(c => {
-            const carToday  = (c.car_members ?? []).filter(m => !isPreArrived(m))
+            const carToday  = (c.car_members ?? []).filter(m => !isPreArrived(m, c))
             const total     = carToday.length + (c.car_monks?.length ?? 0)
             const checked   = carToday.filter(isCheckedIn).length + (c.car_monks ?? []).filter(m => !!m.checked_in_at).length
             const unchecked = total - checked
@@ -970,9 +987,9 @@ export default function CarCheckinPage() {
                               <span className={`text-sm truncate ${chk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>{name}</span>
                               {isLeader && <span className="text-xs bg-amber-100 text-amber-700 rounded-full px-1.5 shrink-0">領隊</span>}
                               {guest    && <span className="text-xs bg-blue-100  text-blue-600  rounded-full px-1.5 shrink-0">訪客</span>}
-                              {getPreArriveInfo(member.registrations?.answers, dateStart) && (
+                              {getEffectivePreArrive(member, c, dateStart) && (
                                 <span className="text-xs bg-teal-100 text-teal-700 border border-teal-200 rounded-full px-1.5 shrink-0">
-                                  {getPreArriveInfo(member.registrations?.answers, dateStart)}
+                                  {getEffectivePreArrive(member, c, dateStart)}
                                 </span>
                               )}
                             </div>
@@ -1033,7 +1050,7 @@ export default function CarCheckinPage() {
                     const sorted = sortCheckinMembers(c.car_members ?? [], innerLeaderRegIds)
 
                     return (
-                      <div key={c.car_id} className="bg-gray-50">
+                      <div key={c.car_id} className={innerExp ? 'bg-emerald-50 border-l-4 border-emerald-500' : 'bg-gray-50'}>
                         <button
                           onClick={() => setExpandedSmallCarId(innerExp ? null : c.car_id)}
                           className="w-full px-5 py-2.5 flex items-center gap-3 text-left hover:bg-gray-100 transition-colors"
@@ -1057,7 +1074,7 @@ export default function CarCheckinPage() {
                               const name  = getMemberName(member)
                               const guest = isGuest(member)
                               const chk   = isCheckedIn(member)
-                              const preArr = getPreArriveInfo(member.registrations?.answers, dateStart)
+                              const preArr = getEffectivePreArrive(member, c, dateStart)
                               const isLeader = innerLeaderRegIds.includes(member.registration_id)
                               const cls   = formatMemberClasses(member)
                               return (
