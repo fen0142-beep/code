@@ -1484,6 +1484,23 @@ export async function getAllCarsProgress(eventId) {
 }
 
 /**
+ * 取得活動所有 registrations（總領隊看板「其他交通」用）
+ * 撈該活動全部報名，前端再依方向 + 交通方式過濾
+ * 「其他交通」= 不歸大車（精舍）也不歸小車（自行開車/搭學員）的人
+ */
+export async function getEventRegistrations(eventId) {
+  const { data, error } = await supabase
+    .from('registrations')
+    .select(`
+      registration_id, answers, checked_in_at, student_id,
+      students!student_id ( name, student_classes ( class_name, group_name ) )
+    `)
+    .eq('event_id', eventId)
+  if (error) return { regs: [], error: error.message }
+  return { regs: data || [], error: null }
+}
+
+/**
  * 取得活動所有小車的報到進度（小車領隊看板用）
  */
 export async function getAllSmallCarsProgress(eventId) {

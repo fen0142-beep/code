@@ -1452,7 +1452,39 @@ export default function CarrangementDetailPage() {
       return data.length > 0 ? XLSX.utils.aoa_to_sheet([headers, ...data]) : null
     }
 
-    // ── 主流程：建 workbook，每大車一個 sheet + 小車一個 sheet ──
+    // ── 其他交通 sheet：不歸大車也不歸小車的人 ────────
+    // 過濾條件：上山或下山其中一方不是大車也不是小車 → 進「其他」
+    // 同一人雙向都是其他，也只列一次
+    function buildOtherTransportSheet() {
+      const transportUpKey   = fieldKeysFor('up').transport
+      const transportDownKey = fieldKeysFor('down').transport
+      const otherRegs = regs.filter(r => {
+        const upOther   = !isLargeCar(r, 'up')   && !isSmallCar(r.answers, 'up')
+        const downOther = !isLargeCar(r, 'down') && !isSmallCar(r.answers, 'down')
+        return upOther || downOther
+      })
+      if (otherRegs.length === 0) return null
+
+      const sortedRegs = [...otherRegs].sort(sortByClassGroup)
+      const headers = ['序號', '姓名', '班級', '組別', '身份別', '電話', '上山方式', '下山方式', '備註']
+      const data = []
+      let seq = 1
+      for (const r of sortedRegs) {
+        const origNote = getGuestNote(r)
+        const pTxt = preceptText(r)
+        const parts = []
+        if (pTxt) parts.push(pTxt)
+        if (origNote) parts.push(origNote)
+        // 訪客電話：guest_phone（活動結束 7 天後 cron 自動清除）
+        const phone = r.student_id ? '' : (r.answers?.guest_phone ?? '')
+        const upT   = r.answers?.[transportUpKey]   ?? ''
+        const downT = r.answers?.[transportDownKey] ?? ''
+        data.push([seq++, getName(r), clsOf(r), grpOf(r), idOf(r), phone, upT, downT, parts.join('/')])
+      }
+      return XLSX.utils.aoa_to_sheet([headers, ...data])
+    }
+
+    // ── 主流程：建 workbook，每大車一個 sheet + 小車一個 sheet + 其他交通 sheet ──
     const wb = XLSX.utils.book_new()
 
     // 大車：依 car_name 合併 up/down；保留 up 順序在前，down 獨有的補在後
@@ -1475,6 +1507,10 @@ export default function CarrangementDetailPage() {
     // 小車
     const smallWs = buildSmallCarSheet()
     if (smallWs) XLSX.utils.book_append_sheet(wb, smallWs, '小車')
+
+    // 其他交通（無大車無小車的人，避免領隊點名漏掉、總人數誤算）
+    const otherWs = buildOtherTransportSheet()
+    if (otherWs) XLSX.utils.book_append_sheet(wb, otherWs, '其他交通')
 
     if (wb.SheetNames.length === 0) {
       alert('沒有任何車輛可匯出')

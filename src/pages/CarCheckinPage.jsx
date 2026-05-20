@@ -7,6 +7,7 @@ import {
   getHeadLeaderByToken,
   getAllCarsProgress,
   getAllSmallCarsProgress,
+  getEventRegistrations,
   checkIn,
   checkInAllCar,
   uncheckIn,
@@ -24,6 +25,27 @@ const getMemberName = (member) =>
 const isGuest = (member) => !member?.registrations?.student_id
 
 const isCheckedIn = (member) => !!member?.registrations?.checked_in_at
+
+// 「其他交通」判定：transport 不歸大車也不歸小車
+// 沿用 CarrangementDetailPage 的分類邏輯：大車=含「精舍」，小車=含「自行開車」或「搭學員」
+// 訪客空白 → 視為大車（舊資料相容）；學員空白 → 視為其他
+const BIG_CAR_KEYS_OTHER = ['精舍']
+const SMALL_CAR_KEYS_OTHER = ['自行開車', '搭學員']
+function isOtherTransport(reg, dir) {
+  const key = dir === 'up' ? 'transport_up' : 'transport_down'
+  const t = reg.answers?.[key] ?? ''
+  if (!t && !reg.student_id) return false   // 訪客空白 → 大車
+  if (BIG_CAR_KEYS_OTHER.some(k => t.includes(k))) return false
+  if (SMALL_CAR_KEYS_OTHER.some(k => t.includes(k))) return false
+  return true
+}
+// 把 reg 包成 car_members 格式，沿用既有 getMemberName / formatMemberClasses / handleToggleCheckin
+function regAsMember(reg) {
+  return {
+    registration_id: reg.registration_id,
+    registrations: reg,
+  }
+}
 
 // 取得班級／組別清單（一個學員可能跨班）
 const getMemberClasses = (member) =>
@@ -152,6 +174,7 @@ export default function CarCheckinPage() {
   // head mode
   const [headLeader, setHeadLeader] = useState(null)
   const [allCars, setAllCars]     = useState([])
+  const [allEventRegs, setAllEventRegs] = useState([])   // 用於計算「其他交通」名單
   const [expandedCarId, setExpandedCarId] = useState(null)
   const [expandedSmallCarId, setExpandedSmallCarId] = useState(null)
   // 總領隊看板：上山/下山 Tab（'up' / 'down'）
@@ -223,9 +246,14 @@ export default function CarCheckinPage() {
       setMode(leaderType === 'small_car' ? 'small_car' : 'head')
       setHeadLeader(hlRes.headLeader)
       const eventId = hlRes.headLeader.events?.event_id ?? hlRes.headLeader.event_id
-      const { cars } = leaderType === 'small_car'
-        ? await getAllSmallCarsProgress(eventId)
-        : await getAllCarsProgress(eventId)
+      const [carsRes, regsRes] = await Promise.all([
+        leaderType === 'small_car'
+          ? getAllSmallCarsProgress(eventId)
+          : getAllCarsProgress(eventId),
+        leaderType === 'small_car' ? Promise.resolve({ regs: [] }) : getEventRegistrations(eventId),
+      ])
+      const { cars } = carsRes
+      setAllEventRegs(regsRes.regs ?? [])
       // 提前上山者自動標記為已報到（靜默執行）
       // 注意：用 sessionStorage 過濾「本 session 已自動勾過」的人，避免取消後 F5 又被勾回
       const dateStart = hlRes.headLeader.events?.date_start
@@ -265,8 +293,12 @@ export default function CarCheckinPage() {
       }
     } else if (mode === 'head') {
       const eventId = headLeader?.events?.event_id ?? headLeader?.event_id
-      const { cars } = await getAllCarsProgress(eventId)
+      const [{ cars }, { regs }] = await Promise.all([
+        getAllCarsProgress(eventId),
+        getEventRegistrations(eventId),
+      ])
       setAllCars(cars)
+      setAllEventRegs(regs ?? [])
     } else if (mode === 'small_car') {
       const eventId = headLeader?.events?.event_id ?? headLeader?.event_id
       const { cars } = await getAllSmallCarsProgress(eventId)
@@ -748,8 +780,20 @@ export default function CarCheckinPage() {
     // 應到 = 當天搭車出發的人（排除提前上山），法師一律算
     const isPreArrived = (m) => !!getPreArriveInfo(m.registrations?.answers, dateStart)
     const todayMembers  = carsInDir.flatMap(c => c.car_members ?? []).filter(m => !isPreArrived(m))
-    const totalAll      = todayMembers.length + monkTotalAll
-    const checkedAll    = todayMembers.filter(isCheckedIn).length + monkCheckedAll
+
+    // 「其他交通」：本方向不歸大車也不歸小車的人，排除提前上山
+    // 用 car_members 已存在的 registration_id 排除，避免重複計算（保險作法）
+    const carMemberRegIds = new Set(carsInDir.flatMap(c => (c.car_members ?? []).map(m => m.registration_id)))
+    const otherRegsInDir = allEventRegs.filter(r =>
+      isOtherTransport(r, headDirection) &&
+      !getPreArriveInfo(r.answers, dateStart) &&
+      !carMemberRegIds.has(r.registration_id)
+    )
+    const otherTotal   = otherRegsInDir.length
+    const otherChecked = otherRegsInDir.filter(r => !!r.checked_in_at).length
+
+    const totalAll      = todayMembers.length + monkTotalAll + otherTotal
+    const checkedAll    = todayMembers.filter(isCheckedIn).length + monkCheckedAll + otherChecked
     const uncheckedAll  = totalAll - checkedAll
 
     const smallTotal   = smallCars.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
@@ -771,6 +815,15 @@ export default function CarCheckinPage() {
       }
       for (const cm of (c.car_monks ?? [])) {
         if (cm.checked_in_at) reportCounts.法師 += 1
+      }
+    }
+    // 其他交通也納入義工/信眾計數
+    for (const r of otherRegsInDir) {
+      const id = r.answers?.identity
+      if (id === '義工') {
+        reportCounts.義工 += 1
+      } else if (id === '信眾' && r.checked_in_at) {
+        reportCounts.信眾 += 1
       }
     }
 
@@ -1039,10 +1092,73 @@ export default function CarCheckinPage() {
             </div>
           )}
 
-          {allCars.length === 0 && (
+          {/* ── 其他交通（不歸大車也不歸小車，手動點選報到） ── */}
+          {otherTotal > 0 && (() => {
+            const otherMembers = otherRegsInDir.map(regAsMember)
+            const otherSorted  = sortCheckinMembers(otherMembers, [])
+            const otherDone    = otherChecked === otherTotal && otherTotal > 0
+            const expanded     = expandedCarId === '__other__'
+            return (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <button
+                  onClick={() => setExpandedCarId(expanded ? null : '__other__')}
+                  className="w-full px-4 py-3.5 flex items-center gap-3 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-gray-800">🚶 其他交通（{otherTotal} 人）</span>
+                      {otherDone && (
+                        <span className="text-xs bg-green-100 text-green-700 border border-green-200 rounded-full px-1.5">全員報到 ✓</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      應到 {otherTotal}　已到 {otherChecked}　未到 {otherTotal - otherChecked}
+                    </div>
+                    <div className="text-[11px] text-gray-400 mt-0.5">未排到大車／小車的人；請手動點選報到</div>
+                  </div>
+                  <span className="text-gray-300 text-xs shrink-0">{expanded ? '▲' : '▼'}</span>
+                </button>
+
+                {expanded && (
+                  <div className="border-t divide-y">
+                    {otherSorted.map(member => {
+                      const name   = getMemberName(member)
+                      const guest  = isGuest(member)
+                      const chk    = isCheckedIn(member)
+                      const cls    = formatMemberClasses(member)
+                      const dirKey = headDirection === 'up' ? 'transport_up' : 'transport_down'
+                      const t      = member.registrations?.answers?.[dirKey] ?? '（未填）'
+                      return (
+                        <div key={member.registration_id} className={`flex items-center gap-3 px-4 py-2.5 ${chk ? 'opacity-55' : ''}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`text-sm truncate ${chk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>{name}</span>
+                              {guest && <span className="text-xs bg-blue-100 text-blue-600 rounded-full px-1.5 shrink-0">訪客</span>}
+                              <span className="text-xs bg-gray-100 text-gray-600 rounded-full px-1.5 shrink-0">{t}</span>
+                            </div>
+                            {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
+                          </div>
+                          <button
+                            onClick={() => handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                            className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                              chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
+                            }`}
+                          >
+                            {chk ? '已到' : '報到'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {allCars.length === 0 && otherTotal === 0 && (
             <div className="text-center text-gray-400 py-12 text-sm">尚無排車資料，請師父先完成排車並儲存</div>
           )}
-          {allCars.length > 0 && carsInDir.length === 0 && (
+          {allCars.length > 0 && carsInDir.length === 0 && otherTotal === 0 && (
             <div className="text-center text-gray-400 py-12 text-sm">
               {headDirection === 'up' ? '上山' : '下山'}尚無排車資料
             </div>
