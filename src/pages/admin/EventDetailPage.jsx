@@ -2392,4 +2392,36 @@ export default function EventDetailPage() {
                     <thead>
                       <tr className="border-b border-gray-200 bg-gray-100">
                         <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">姓名</th>
-                        <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">取消時間</th>
+                        <th className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">取消時間</th>                        {fields.map(f => (
+                          <th key={f.field_id ?? f.field_key} className="px-3 py-2 text-left text-gray-500 font-medium whitespace-nowrap">
+                            {f.field_label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cancelledChanges.map(c => (
+                        <tr key={c.id} className="border-b border-gray-100 text-gray-400">
+                          <td className="px-3 py-1.5 line-through whitespace-nowrap">{c.student_name}</td>
+                          <td className="px-3 py-1.5 text-xs whitespace-nowrap">
+                            {new Date(c.changed_at).toLocaleString('zh-TW', { hour12: false })}
+                          </td>
+                          {fields.map(f => (
+                            <td key={f.field_id ?? f.field_key} className="px-3 py-1.5">
+                              {formatFieldValue(f, c.old_answers?.[f.field_key])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </AdminLayout>
+  )
+}
+}
