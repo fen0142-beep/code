@@ -5,4 +5,4 @@ dist.tmp*
 .env.local
 .env
 *.local
-vite.config.js.timestamp-*
+vite.config.js.timestamp-*.mjs
