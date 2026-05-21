@@ -124,12 +124,15 @@ function markAutoChecked(token, regIds) {
 
 // 小車「同車繼承」preArrive：member 自己沒 preArrive，但同小車有人提前 → 整車視為提前
 // 適用：小車（司機載一車人，司機提前=全車提前）；大車不適用（當天接送）
+// 優先序：個人 override > 個人 answers 早於 dateStart > 同車有人 override > 同車有人 answers 早於 dateStart
 function getEffectivePreArrive(member, car, eventDateStart) {
+  if (member?.registrations?.pre_depart_override) return '已標記提前出發'
   const own = getPreArriveInfo(member?.registrations?.answers, eventDateStart)
   if (own) return own
   if (car?.car_type !== 'small' || !car.car_members) return null
   for (const other of car.car_members) {
     if (other?.registration_id === member?.registration_id) continue
+    if (other?.registrations?.pre_depart_override) return '同車已提前出發'
     const info = getPreArriveInfo(other?.registrations?.answers, eventDateStart)
     if (info) return info
   }
@@ -152,6 +155,40 @@ function getPreArriveInfo(answers, eventDateStart) {
   }
   return null
 }
+
+// 小車「同車繼承」lateReturn：member 自己沒延後，但同小車有人延後 → 整車視為延後
+// 對稱 getEffectivePreArrive（下山方向用）
+function getEffectiveLateReturn(member, car, eventDateEnd) {
+  if (member?.registrations?.late_return_override) return '已標記延後回程'
+  const own = getLateReturnInfo(member?.registrations?.answers, eventDateEnd)
+  if (own) return own
+  if (car?.car_type !== 'small' || !car.car_members) return null
+  for (const other of car.car_members) {
+    if (other?.registration_id === member?.registration_id) continue
+    if (other?.registrations?.late_return_override) return '同車已延後回程'
+    const info = getLateReturnInfo(other?.registrations?.answers, eventDateEnd)
+    if (info) return info
+  }
+  return null
+}
+
+// 判斷是否延後回程（任一答案日期晚於活動結束日）
+// 回傳 "X月X日才回程" 字串，或 null
+function getLateReturnInfo(answers, eventDateEnd) {
+  if (!answers || !eventDateEnd) return null
+  const eventDate = eventDateEnd.slice(0, 10)
+  for (const val of Object.values(answers)) {
+    if (typeof val !== 'string') continue
+    const m = val.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (!m) continue
+    if (m[1] > eventDate) {
+      const d = new Date(m[1] + 'T00:00:00')
+      return `${d.getMonth() + 1}月${d.getDate()}日才回程`
+    }
+  }
+  return null
+}
+
 
 // ─── 共用：掃描訊息 ──────────────────────────────────────────
 
@@ -238,13 +275,15 @@ export default function CarCheckinPage() {
       // 注意：用 sessionStorage 過濾「本 session 已自動勾過」的人，避免取消後 F5 又被勾回
       const dateStart = carInfo.car.events?.date_start
       const autoChecked = getAutoCheckedSet(token)
-      const toAutoCheck = carInfo.linkedCars.flatMap(c =>
-        (c.car_members ?? []).filter(m =>
+      // 提前上山自動勾：只對「上山」方向適用（下山不該被自動勾，延後者另計）
+      const toAutoCheck = carInfo.linkedCars.flatMap(c => {
+        if ((c.direction ?? 'down') !== 'up') return []
+        return (c.car_members ?? []).filter(m =>
           !m.registrations?.checked_in_at &&
           getEffectivePreArrive(m, c, dateStart) &&
           !autoChecked.has(m.registration_id)
         )
-      )
+      })
       if (toAutoCheck.length > 0) {
         await Promise.all(toAutoCheck.map(m => checkIn(m.registration_id)))
         markAutoChecked(token, toAutoCheck.map(m => m.registration_id))
@@ -272,13 +311,15 @@ export default function CarCheckinPage() {
       // 注意：用 sessionStorage 過濾「本 session 已自動勾過」的人，避免取消後 F5 又被勾回
       const dateStart = hlRes.headLeader.events?.date_start
       const autoChecked = getAutoCheckedSet(token)
-      const toAutoCheck = (cars ?? []).flatMap(c =>
-        (c.car_members ?? []).filter(m =>
+      // 提前上山自動勾：只對「上山」方向適用
+      const toAutoCheck = (cars ?? []).flatMap(c => {
+        if ((c.direction ?? 'down') !== 'up') return []
+        return (c.car_members ?? []).filter(m =>
           !m.registrations?.checked_in_at &&
           getEffectivePreArrive(m, c, dateStart) &&
           !autoChecked.has(m.registration_id)
         )
-      )
+      })
       if (toAutoCheck.length > 0) {
         await Promise.all(toAutoCheck.map(m => checkIn(m.registration_id)))
         markAutoChecked(token, toAutoCheck.map(m => m.registration_id))
@@ -448,6 +489,7 @@ export default function CarCheckinPage() {
     const members       = car.car_members ?? []
     const monks         = car.car_monks ?? []
     const dateStart     = car.events?.date_start
+    const dateEnd       = car.events?.date_end
     const memberCheckedIn = members.filter(isCheckedIn).length
     const monkCheckedIn   = monks.filter(m => !!m.checked_in_at).length
     const checkedIn     = memberCheckedIn + monkCheckedIn
@@ -598,11 +640,17 @@ export default function CarCheckinPage() {
                         訪客
                       </span>
                     )}
-                    {getEffectivePreArrive(member, car, dateStart) && (
-                      <span className="text-xs bg-teal-100 text-teal-700 border border-teal-200 rounded-full px-1.5 shrink-0">
-                        {getEffectivePreArrive(member, car, dateStart)}
-                      </span>
-                    )}
+                    {(() => {
+                      const dir = car.direction ?? 'down'
+                      const ex  = dir === 'down'
+                        ? getEffectiveLateReturn(member, car, dateEnd)
+                        : getEffectivePreArrive(member, car, dateStart)
+                      if (!ex) return null
+                      const cls = dir === 'down'
+                        ? 'bg-amber-100 text-amber-700 border-amber-200'
+                        : 'bg-teal-100 text-teal-700 border-teal-200'
+                      return <span className={`text-xs ${cls} border rounded-full px-1.5 shrink-0`}>{ex}</span>
+                    })()}
                   </div>
                   {formatMemberClasses(member) && (
                     <div className="text-xs text-gray-500 mt-0.5 truncate">
@@ -657,6 +705,7 @@ export default function CarCheckinPage() {
   if (mode === 'small_car') {
     const eventName  = headLeader?.events?.name ?? ''
     const dateStart  = headLeader?.events?.date_start
+    const dateEnd    = headLeader?.events?.date_end
     const eventDate  = formatDate(dateStart)
     const totalAll   = allCars.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
     const checkedAll = allCars.reduce(
@@ -729,7 +778,13 @@ export default function CarCheckinPage() {
                     const name   = getMemberName(member)
                     const guest  = isGuest(member)
                     const chk    = isCheckedIn(member)
-                    const preArr = getEffectivePreArrive(member, c, dateStart)
+                    const dir    = c.direction ?? 'down'
+                    const preArr = dir === 'down'
+                      ? getEffectiveLateReturn(member, c, dateEnd)
+                      : getEffectivePreArrive(member, c, dateStart)
+                    const preArrCls = dir === 'down'
+                      ? 'bg-amber-100 text-amber-700 border-amber-200'
+                      : 'bg-teal-100 text-teal-700 border-teal-200'
                     const isLeader = (c.car_leaders ?? []).some(l => l.registration_id === member.registration_id)
                     const cls    = formatMemberClasses(member)
                     return (
@@ -739,7 +794,7 @@ export default function CarCheckinPage() {
                             <span className={`text-sm ${chk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>{name}</span>
                             {isLeader && <span className="text-xs bg-amber-100 text-amber-700 rounded-full px-1.5 shrink-0">領隊</span>}
                             {guest  && <span className="text-xs bg-blue-100 text-blue-600 rounded-full px-1.5 shrink-0">訪客</span>}
-                            {preArr && <span className="text-xs bg-teal-100 text-teal-700 border border-teal-200 rounded-full px-1.5 shrink-0">{preArr}</span>}
+                            {preArr && <span className={`text-xs ${preArrCls} border rounded-full px-1.5 shrink-0`}>{preArr}</span>}
                           </div>
                           {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                         </div>
@@ -794,25 +849,35 @@ export default function CarCheckinPage() {
     const monkTotalAll   = carsInDir.reduce((s, c) => s + (c.car_monks?.length ?? 0), 0)
     const monkCheckedAll = carsInDir.reduce((s, c) => s + (c.car_monks?.filter(m => !!m.checked_in_at).length ?? 0), 0)
 
-    // 應到 = 當天搭車出發的人（排除提前出發），法師一律算
-    // 上山：比 date_start 早算提前；下山：比 date_end 早算提前
-    // 小車：同車有人提前 → 全車視為提前（用 getEffectivePreArrive）
-    // 小車勾選 pre_depart → 整車排除應到
-    // 上山：個人提前抵達 or 整車 pre_depart；下山：只看整車 pre_depart（已提前回山）
-    const isPreArrived = (m, c) =>
-      headDirection === 'down'
-        ? c.pre_depart
-        : (c.pre_depart || !!getEffectivePreArrive(m, c, dateStart))
-    const todayMembers  = carsInDir.flatMap(c => (c.car_members ?? []).filter(m => !isPreArrived(m, c)))
+    // 應到 = 當天搭車出發/回程的人（排除提前/延後），法師一律算
+    // 上山方向：c.pre_depart（整車提前）OR 個人/同車 getEffectivePreArrive
+    // 下山方向：c.late_return（整車延後）OR 個人/同車 getEffectiveLateReturn
+    const isExcludedFromExpected = (m, c) => {
+      if (headDirection === 'down') {
+        return !!c.late_return || !!getEffectiveLateReturn(m, c, dateEnd)
+      }
+      return !!c.pre_depart || !!getEffectivePreArrive(m, c, dateStart)
+    }
+    const todayMembers  = carsInDir.flatMap(c => (c.car_members ?? []).filter(m => !isExcludedFromExpected(m, c)))
 
-    // 「其他交通」：本方向不歸大車也不歸小車的人，排除提前出發
-    // 用 car_members 已存在的 registration_id 排除，避免重複計算（保險作法）
+    // 「其他交通」：本方向不歸大車也不歸小車的人
+    // 應到（otherRegsInDir）= 排除提前/延後（個人 override + 自動判別）
+    // 已排除的人（otherExcluded）：UI 仍顯示但加 badge，不算入應到
     const carMemberRegIds = new Set(carsInDir.flatMap(c => (c.car_members ?? []).map(m => m.registration_id)))
-    const otherRegsInDir = allEventRegs.filter(r =>
+    const isOtherExcluded = (r) => {
+      if (headDirection === 'down') {
+        if (r.late_return_override) return true
+        return !!getLateReturnInfo(r.answers, dateEnd)
+      }
+      if (r.pre_depart_override) return true
+      return !!getPreArriveInfo(r.answers, dateStart)
+    }
+    const otherAllInDir = allEventRegs.filter(r =>
       isOtherTransport(r, headDirection) &&
-      (headDirection === 'down' || !getPreArriveInfo(r.answers, dateStart)) &&
       !carMemberRegIds.has(r.registration_id)
     )
+    const otherRegsInDir = otherAllInDir.filter(r => !isOtherExcluded(r))
+    const otherExcluded  = otherAllInDir.filter(isOtherExcluded)
     const otherTotal   = otherRegsInDir.length
     // 義工：預設已報到（不需刷卡），信眾：需實際 checked_in_at
     const otherChecked = otherRegsInDir.filter(r =>
@@ -823,24 +888,34 @@ export default function CarCheckinPage() {
     const checkedAll    = todayMembers.filter(isCheckedIn).length + monkCheckedAll + otherChecked
     const uncheckedAll  = totalAll - checkedAll
 
-    // 小車計數：排除 pre_depart 的車（已提前出發，不算今天應到）
-    const smallCarsToday = smallCars.filter(c => !c.pre_depart)
-    const smallTotal   = smallCarsToday.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
-    const smallChecked = smallCarsToday.reduce((s, c) => s + (c.car_members?.filter(isCheckedIn).length ?? 0), 0)
+    // 小車計數：排除整車提前（上山 pre_depart）/ 延後（下山 late_return）
+    //         + 個人/同車 effective 提前/延後
+    const smallCarsToday = smallCars.filter(c =>
+      headDirection === 'down' ? !c.late_return : !c.pre_depart
+    )
+    const smallTotal   = smallCarsToday.reduce((s, c) =>
+      s + (c.car_members?.filter(m => !isExcludedFromExpected(m, c)).length ?? 0), 0
+    )
+    const smallChecked = smallCarsToday.reduce((s, c) =>
+      s + (c.car_members?.filter(m => !isExcludedFromExpected(m, c) && isCheckedIn(m)).length ?? 0), 0
+    )
 
     // 「回報聯絡組資訊」統計（上下山皆顯示）
     // 法師：已點報到的法師（= monkCheckedAll，當日方向）
-    // 義工/信眾：提前出發（整車 pre_depart / 上山個人 preArrive）OR 當日已報到
+    // 義工/信眾：提前/延後（整車 + 個人/同車 effective + 其他交通 override）OR 當日已報到
     const confirmedRegIds = new Set()
     for (const c of carsInDir) {
-      if (c.pre_depart) {
+      const carWideExcluded = headDirection === 'down' ? c.late_return : c.pre_depart
+      if (carWideExcluded) {
         for (const m of (c.car_members ?? [])) confirmedRegIds.add(m.registration_id)
-      } else if (headDirection === 'up') {
+      } else {
         for (const m of (c.car_members ?? [])) {
-          if (getEffectivePreArrive(m, c, dateStart)) confirmedRegIds.add(m.registration_id)
+          if (isExcludedFromExpected(m, c)) confirmedRegIds.add(m.registration_id)
         }
       }
     }
+    // 其他交通的提前/延後也算「已確認」（不來當天）
+    for (const r of otherExcluded) confirmedRegIds.add(r.registration_id)
     const reportCounts = { 法師: monkCheckedAll, 義工: 0, 信眾: 0 }
     for (const r of allEventRegs) {
       const id = r.answers?.identity
@@ -920,7 +995,7 @@ export default function CarCheckinPage() {
 
           {/* ── 大車（各台獨立） ── */}
           {largeCars.map(c => {
-            const carToday  = (c.car_members ?? []).filter(m => !isPreArrived(m, c))
+            const carToday  = (c.car_members ?? []).filter(m => !isExcludedFromExpected(m, c))
             const total     = carToday.length + (c.car_monks?.length ?? 0)
             const checked   = carToday.filter(isCheckedIn).length + (c.car_monks ?? []).filter(m => !!m.checked_in_at).length
             const unchecked = total - checked
@@ -994,11 +1069,16 @@ export default function CarCheckinPage() {
                               <span className={`text-sm truncate ${chk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>{name}</span>
                               {isLeader && <span className="text-xs bg-amber-100 text-amber-700 rounded-full px-1.5 shrink-0">領隊</span>}
                               {guest    && <span className="text-xs bg-blue-100  text-blue-600  rounded-full px-1.5 shrink-0">訪客</span>}
-                              {headDirection === 'up' && getEffectivePreArrive(member, c, dateStart) && (
-                                <span className="text-xs bg-teal-100 text-teal-700 border border-teal-200 rounded-full px-1.5 shrink-0">
-                                  {getEffectivePreArrive(member, c, dateStart)}
-                                </span>
-                              )}
+                              {(() => {
+                                const ex = headDirection === 'down'
+                                  ? getEffectiveLateReturn(member, c, dateEnd)
+                                  : getEffectivePreArrive(member, c, dateStart)
+                                if (!ex) return null
+                                const cls = headDirection === 'down'
+                                  ? 'bg-amber-100 text-amber-700 border-amber-200'
+                                  : 'bg-teal-100 text-teal-700 border-teal-200'
+                                return <span className={`text-xs ${cls} border rounded-full px-1.5 shrink-0`}>{ex}</span>
+                              })()}
                             </div>
                             {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                           </div>
@@ -1066,11 +1146,20 @@ export default function CarCheckinPage() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium text-sm text-gray-700">{c.car_name}</span>
                               <DirectionBadge direction={c.direction} />
-                              {c.pre_depart && <span className="text-xs bg-teal-100 text-teal-700 border border-teal-200 rounded-full px-1.5 shrink-0">🚀 提前出發</span>}
-                              {done && !c.pre_depart && <span className="text-xs bg-green-100 text-green-700 border border-green-200 rounded-full px-1.5">全員出發 ✓</span>}
+                              {headDirection === 'up' && c.pre_depart && (
+                                <span className="text-xs bg-teal-100 text-teal-700 border border-teal-200 rounded-full px-1.5 shrink-0">🚀 提前出發</span>
+                              )}
+                              {headDirection === 'down' && c.late_return && (
+                                <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-1.5 shrink-0">🕓 延後回程</span>
+                              )}
+                              {done && !c.pre_depart && !c.late_return && (
+                                <span className="text-xs bg-green-100 text-green-700 border border-green-200 rounded-full px-1.5">全員出發 ✓</span>
+                              )}
                             </div>
                             <div className="text-xs text-gray-400 mt-0.5">
-                              {c.pre_depart ? '（已提前出發，不列入今日應到）' : `應到 ${total}　已到 ${checked}　未到 ${unchecked}`}
+                              {c.pre_depart ? '（已提前出發，不列入今日應到）'
+                                : c.late_return ? '（已延後回程，不列入今日應到）'
+                                : `應到 ${total}　已到 ${checked}　未到 ${unchecked}`}
                             </div>
                           </div>
                           <span className="text-gray-300 text-xs shrink-0">{innerExp ? '▲' : '▼'}</span>
@@ -1082,7 +1171,12 @@ export default function CarCheckinPage() {
                               const name  = getMemberName(member)
                               const guest = isGuest(member)
                               const chk   = isCheckedIn(member)
-                              const preArr = headDirection === 'up' ? getEffectivePreArrive(member, c, dateStart) : null
+                              const preArr = headDirection === 'down'
+                                ? getEffectiveLateReturn(member, c, dateEnd)
+                                : getEffectivePreArrive(member, c, dateStart)
+                              const preArrCls = headDirection === 'down'
+                                ? 'bg-amber-100 text-amber-700 border-amber-200'
+                                : 'bg-teal-100 text-teal-700 border-teal-200'
                               const isLeader = innerLeaderRegIds.includes(member.registration_id)
                               const cls   = formatMemberClasses(member)
                               return (
@@ -1092,7 +1186,7 @@ export default function CarCheckinPage() {
                                       <span className={`text-sm truncate ${chk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>{name}</span>
                                       {isLeader && <span className="text-xs bg-amber-100 text-amber-700 rounded-full px-1.5 shrink-0">領隊</span>}
                                       {guest  && <span className="text-xs bg-blue-100 text-blue-600 rounded-full px-1.5 shrink-0">訪客</span>}
-                                      {preArr && <span className="text-xs bg-teal-100 text-teal-700 border border-teal-200 rounded-full px-1.5 shrink-0">{preArr}</span>}
+                                      {preArr && <span className={`text-xs ${preArrCls} border rounded-full px-1.5 shrink-0`}>{preArr}</span>}
                                     </div>
                                     {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                                   </div>

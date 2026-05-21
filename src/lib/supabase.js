@@ -1126,6 +1126,8 @@ export async function getEventRegistrationsDetail(eventId) {
       is_driver,
       registered_at,
       updated_at,
+      pre_depart_override,
+      late_return_override,
       students!student_id ( name, student_classes(class_name, group_name) )
     `)
     .eq('event_id', eventId)
@@ -1144,7 +1146,7 @@ export async function getCarArrangement(eventId, direction = null) {
   let query = supabase
     .from('car_assignments')
     .select(`
-      car_id, car_name, seats, car_type, note, access_token, sort_order, direction, pre_depart,
+      car_id, car_name, seats, car_type, note, access_token, sort_order, direction, pre_depart, late_return,
       car_members ( registration_id ),
       car_leaders ( registration_id ),
       car_monks ( id, monk_id, checked_in_at )
@@ -1167,8 +1169,9 @@ export async function getCarArrangement(eventId, direction = null) {
  * @param {'up'|'down'} direction 預設 'down'
  * @param {{ [groupKey]: string[] }} smallCarMonks  小車法師：{ groupKey → [monkId, ...] }
  * @param {{ [groupKey]: boolean }}  smallPreDeparts 小車提前出發：{ groupKey → true }
+ * @param {{ [groupKey]: boolean }}  smallLateReturns 小車延後回程：{ groupKey → true }
  */
-export async function saveCarArrangement(eventId, largeCars, smallGroups = [], direction = 'down', smallCarMonks = {}, smallPreDeparts = {}) {
+export async function saveCarArrangement(eventId, largeCars, smallGroups = [], direction = 'down', smallCarMonks = {}, smallPreDeparts = {}, smallLateReturns = {}) {
   // 只刪除此活動「指定方向」的車輛（CASCADE 刪 car_members、car_leaders、car_monks）
   // 注意：另一個方向的排車不能動
   const { error: delErr } = await supabase
@@ -1190,6 +1193,7 @@ export async function saveCarArrangement(eventId, largeCars, smallGroups = [], d
       direction,
       note:       c.note || null,
       pre_depart: c.preDepart || false,
+      late_return: false,  // 大車不適用延後回程（當天接送）
       sort_order: i,
     })),
     ...smallGroups.map((g, i) => ({
@@ -1200,6 +1204,7 @@ export async function saveCarArrangement(eventId, largeCars, smallGroups = [], d
       direction,
       note:       g.key,   // 司機的 registration_id，重載時用來重建孤兒指派
       pre_depart: smallPreDeparts[g.key] || false,
+      late_return: smallLateReturns[g.key] || false,
       sort_order: i,
     })),
   ]
@@ -1587,12 +1592,12 @@ export async function getAllCarsProgress(eventId) {
   const { data, error } = await supabase
     .from('car_assignments')
     .select(`
-      car_id, car_name, seats, sort_order, car_type, direction, pre_depart,
+      car_id, car_name, seats, sort_order, car_type, direction, pre_depart, late_return,
       car_leaders ( registration_id ),
       car_members (
         registration_id,
         registrations (
-          registration_id, answers, checked_in_at, student_id,
+          registration_id, answers, checked_in_at, student_id, pre_depart_override, late_return_override,
           students!student_id ( name, student_classes ( class_name, group_name ) )
         )
       ),
@@ -1615,12 +1620,30 @@ export async function getEventRegistrations(eventId) {
   const { data, error } = await supabase
     .from('registrations')
     .select(`
-      registration_id, answers, checked_in_at, student_id,
+      registration_id, answers, checked_in_at, student_id, pre_depart_override, late_return_override,
       students!student_id ( name, student_classes ( class_name, group_name ) )
     `)
     .eq('event_id', eventId)
   if (error) return { regs: [], error: error.message }
   return { regs: data || [], error: null }
+}
+
+/**
+ * 更新個人提前/延後 override（主要供「其他交通」的人勾選用）
+ * @param {string} regId
+ * @param {'pre_depart_override'|'late_return_override'} field
+ * @param {boolean} value
+ */
+export async function setTransportOverride(regId, field, value) {
+  if (field !== 'pre_depart_override' && field !== 'late_return_override') {
+    return { success: false, error: 'invalid field' }
+  }
+  const { error } = await supabase
+    .from('registrations')
+    .update({ [field]: !!value })
+    .eq('registration_id', regId)
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
 }
 
 /**
@@ -1630,12 +1653,12 @@ export async function getAllSmallCarsProgress(eventId) {
   const { data, error } = await supabase
     .from('car_assignments')
     .select(`
-      car_id, car_name, seats, sort_order, car_type, direction,
+      car_id, car_name, seats, sort_order, car_type, direction, pre_depart, late_return,
       car_leaders ( registration_id ),
       car_members (
         registration_id,
         registrations (
-          registration_id, answers, checked_in_at, student_id,
+          registration_id, answers, checked_in_at, student_id, pre_depart_override, late_return_override,
           students!student_id ( name, student_classes ( class_name, group_name ) )
         )
       )

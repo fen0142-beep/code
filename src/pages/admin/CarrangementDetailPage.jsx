@@ -15,6 +15,7 @@ import {
   setSmallCarLeaders as saveSmallCarLeaders,
   getMonks,
   setRegistrationIsDriver,
+  setTransportOverride,
 } from '../../lib/supabase'
 import {
   getPreceptLevel,
@@ -97,6 +98,13 @@ const isLargeCar = (r, dir) => {
   if (r.student_id) return t.includes('精舍')
   // 訪客：有填值 → 須含「精舍」才算大車；完全沒填（舊資料）→ 預設大車
   if (t) return t.includes('精舍')
+  return true
+}
+
+// 其他交通：不歸大車也不歸小車（每方向獨立判斷）
+const isOtherTransport = (r, dir) => {
+  if (isLargeCar(r, dir)) return false
+  if (isSmallCar(r.answers, dir)) return false
   return true
 }
 
@@ -774,6 +782,8 @@ export default function CarrangementDetailPage() {
   const [smallCarMonksByDir, setSmallCarMonksByDir] = useState({ up: {}, down: {} })
   // 小車提前出發：{ up: { [groupKey]: true }, down: ... }
   const [smallPreDepartByDir, setSmallPreDepartByDir] = useState({ up: {}, down: {} })
+  // 小車延後回程：{ up: { [groupKey]: true }, down: ... }（下山方向用，上山不會勾）
+  const [smallLateReturnByDir, setSmallLateReturnByDir] = useState({ up: {}, down: {} })
 
   // 自動排車警示（每次按 ✨ 自動排車後產出，依方向各一份；手動關閉或重排會清空）
   const [autoArrangeWarningsByDir, setAutoArrangeWarningsByDir] = useState({ up: [], down: [] })
@@ -876,6 +886,11 @@ export default function CarrangementDetailPage() {
     largePeople.filter(r => !r.student_id && !guestInfoMap[r.registration_id]?.matchedName),
   [largePeople, guestInfoMap])
 
+  // 其他交通（本方向不歸大車也不歸小車的人）
+  const otherTransportRegs = useMemo(() =>
+    regs.filter(r => isOtherTransport(r, direction)),
+  [regs, direction])
+
   // ── 載入 ──
   useEffect(() => { load() }, [eventId])
 
@@ -916,6 +931,7 @@ export default function CarrangementDetailPage() {
     setGuestSmallByDir({ up: up.guests,     down: down.guests           })
     setSmallCarMonksByDir({ up: up.smallCarMonks, down: down.smallCarMonks })
     setSmallPreDepartByDir({ up: up.smallPreDeparts, down: down.smallPreDeparts })
+    setSmallLateReturnByDir({ up: up.smallLateReturns, down: down.smallLateReturns })
 
     if (headLeader) {
       setHeadLeaderRegId(headLeader.registration_id ?? '')
@@ -953,7 +969,7 @@ export default function CarrangementDetailPage() {
 
   // 還原單一方向的排車結果（從 DB savedCars + registrations）
   function restoreDirection(savedCars, registrations, dir) {
-    const out = { cars: [], carCount: 2, seats: 20, orphans: {}, guests: {}, smallCarMonks: {}, smallPreDeparts: {} }
+    const out = { cars: [], carCount: 2, seats: 20, orphans: {}, guests: {}, smallCarMonks: {}, smallPreDeparts: {}, smallLateReturns: {} }
     if (!savedCars || savedCars.length === 0) return out
 
     const largeSaved = savedCars.filter(c => c.car_type === 'large')
@@ -992,6 +1008,8 @@ export default function CarrangementDetailPage() {
         if (savedMonks.length > 0) out.smallCarMonks[groupKey] = savedMonks
         // 小車提前出發
         if (savedCar.pre_depart) out.smallPreDeparts[groupKey] = true
+        // 小車延後回程
+        if (savedCar.late_return) out.smallLateReturns[groupKey] = true
       }
     }
     return out
@@ -1150,6 +1168,34 @@ export default function CarrangementDetailPage() {
     })
   }
 
+  // 切換小車延後回程旗標（下山方向用）
+  function toggleSmallLateReturn(groupKey) {
+    setSmallLateReturnByDir(prev => {
+      const d = { ...prev[direction] }
+      if (d[groupKey]) delete d[groupKey]
+      else d[groupKey] = true
+      return { ...prev, [direction]: d }
+    })
+  }
+
+  // 「其他交通」個人提前/延後 override（即存 DB，不等 handleSave）
+  async function handleToggleOverride(reg, field) {
+    const current = !!reg[field]
+    const next = !current
+    // 樂觀更新
+    setRegs(prev => prev.map(r =>
+      r.registration_id === reg.registration_id ? { ...r, [field]: next } : r
+    ))
+    const { success, error } = await setTransportOverride(reg.registration_id, field, next)
+    if (!success) {
+      alert(`設定失敗：${error}`)
+      // 回滾
+      setRegs(prev => prev.map(r =>
+        r.registration_id === reg.registration_id ? { ...r, [field]: current } : r
+      ))
+    }
+  }
+
 
   function updateCarName(carIdx, name) {
     setCars(prev => prev.map((c, i) => i === carIdx ? { ...c, car_name: name } : c))
@@ -1209,8 +1255,8 @@ export default function CarrangementDetailPage() {
 
     const smallCarLeaderRegIds = smallCarLeaders.map(l => l.registration_id).filter(Boolean)
     const [upRes, downRes, hlRes, sclRes] = await Promise.all([
-      saveCarArrangement(eventId, carsByDir.up,   upSmall,   'up',   smallCarMonksByDir.up,   smallPreDepartByDir.up),
-      saveCarArrangement(eventId, carsByDir.down, downSmall, 'down', smallCarMonksByDir.down, smallPreDepartByDir.down),
+      saveCarArrangement(eventId, carsByDir.up,   upSmall,   'up',   smallCarMonksByDir.up,   smallPreDepartByDir.up,   smallLateReturnByDir.up),
+      saveCarArrangement(eventId, carsByDir.down, downSmall, 'down', smallCarMonksByDir.down, smallPreDepartByDir.down, smallLateReturnByDir.down),
       headLeaderRegId
         ? saveHeadLeader(eventId, headLeaderRegId)
         : Promise.resolve({ success: true }),
@@ -2154,18 +2200,32 @@ export default function CarrangementDetailPage() {
                         })}
                       </div>
                     )}
-                    {/* 提前出發 */}
-                    <label className="flex items-center gap-1 cursor-pointer ml-auto">
-                      <input
-                        type="checkbox"
-                        checked={!!smallPreDepartByDir[direction][g.key]}
-                        onChange={() => toggleSmallPreDepart(g.key)}
-                        className="accent-teal-600 w-3.5 h-3.5"
-                      />
-                      <span className={`text-xs ${smallPreDepartByDir[direction][g.key] ? 'text-teal-700 font-semibold' : 'text-gray-400'}`}>
-                        提前出發
-                      </span>
-                    </label>
+                    {/* 上山方向：提前出發；下山方向：延後回程 */}
+                    {direction === 'up' ? (
+                      <label className="flex items-center gap-1 cursor-pointer ml-auto" title="勾選後整車視為提前出發，看板應到不計入">
+                        <input
+                          type="checkbox"
+                          checked={!!smallPreDepartByDir[direction][g.key]}
+                          onChange={() => toggleSmallPreDepart(g.key)}
+                          className="accent-teal-600 w-3.5 h-3.5"
+                        />
+                        <span className={`text-xs ${smallPreDepartByDir[direction][g.key] ? 'text-teal-700 font-semibold' : 'text-gray-400'}`}>
+                          🚀 提前出發
+                        </span>
+                      </label>
+                    ) : (
+                      <label className="flex items-center gap-1 cursor-pointer ml-auto" title="勾選後整車視為延後回程，看板應到不計入">
+                        <input
+                          type="checkbox"
+                          checked={!!smallLateReturnByDir[direction][g.key]}
+                          onChange={() => toggleSmallLateReturn(g.key)}
+                          className="accent-amber-600 w-3.5 h-3.5"
+                        />
+                        <span className={`text-xs ${smallLateReturnByDir[direction][g.key] ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>
+                          🕓 延後回程
+                        </span>
+                      </label>
+                    )}
                   </div>
                 </div>
               ))}
@@ -2217,6 +2277,54 @@ export default function CarrangementDetailPage() {
               {finalSmallGroups.length === 0 && unassignedOrphans.length === 0 && (
                 <div className="text-sm text-gray-400 py-6 text-center border rounded-xl">沒有小車報名資料</div>
               )}
+            </div>
+          </section>
+        )}
+
+        {/* ── 其他交通（本方向不歸大車也不歸小車） ── */}
+        {otherTransportRegs.length > 0 && (
+          <section>
+            <h2 className="text-base font-bold text-gray-700 mb-3 flex items-center gap-2">
+              🚶 其他交通
+              <span className="text-xs font-normal text-gray-400">
+                （{direction === 'up' ? '上山' : '下山'}方向不搭精舍車、自行開車、搭學員的人，{otherTransportRegs.length} 人）
+              </span>
+            </h2>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+              <div className="divide-y divide-slate-200">
+                {otherTransportRegs.map(r => {
+                  const cls = (r.students?.student_classes ?? []).map(c => c.class_name).join('/')
+                  const transport = r.answers?.[fieldKeysFor(direction).transport] ?? '（未填）'
+                  const badges = preceptBadgeProps(r)
+                  const overrideField = direction === 'up' ? 'pre_depart_override' : 'late_return_override'
+                  const overrideLabel = direction === 'up' ? '🚀 提前出發' : '🕓 延後回程'
+                  const isUp = direction === 'up'
+                  const checked = !!r[overrideField]
+                  return (
+                    <div key={r.registration_id} className="flex items-center gap-2 px-4 py-2 text-sm">
+                      <span className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                        <span className="font-medium">{getName(r)}</span>
+                        {badges.map((b, i) => (
+                          <span key={i} className={b.className} title={b.title}>{b.children}</span>
+                        ))}
+                        {cls && <span className="text-xs text-gray-400">{cls}</span>}
+                        <span className="text-xs text-slate-500">{transport}</span>
+                      </span>
+                      <label className="flex items-center gap-1 cursor-pointer" title="勾選後此人計入提前/延後，看板應到不計入">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => handleToggleOverride(r, overrideField)}
+                          className={`w-3.5 h-3.5 ${isUp ? 'accent-teal-600' : 'accent-amber-600'}`}
+                        />
+                        <span className={`text-xs ${checked ? (isUp ? 'text-teal-700 font-semibold' : 'text-amber-700 font-semibold') : 'text-gray-400'}`}>
+                          {overrideLabel}
+                        </span>
+                      </label>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </section>
         )}
