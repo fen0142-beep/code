@@ -769,6 +769,11 @@ export default function CarrangementDetailPage() {
   const [orphanByDir, setOrphanByDir]         = useState({ up: {}, down: {} })
   const [guestSmallByDir, setGuestSmallByDir] = useState({ up: {}, down: {} })
 
+  // 小車法師指派：{ up: { [groupKey]: monkId[] }, down: ... }
+  const [smallCarMonksByDir, setSmallCarMonksByDir] = useState({ up: {}, down: {} })
+  // 小車提前出發：{ up: { [groupKey]: true }, down: ... }
+  const [smallPreDepartByDir, setSmallPreDepartByDir] = useState({ up: {}, down: {} })
+
   // 自動排車警示（每次按 ✨ 自動排車後產出，依方向各一份；手動關閉或重排會清空）
   const [autoArrangeWarningsByDir, setAutoArrangeWarningsByDir] = useState({ up: [], down: [] })
 
@@ -908,6 +913,8 @@ export default function CarrangementDetailPage() {
     setSeatsPerCarByDir({ up: up.seats,     down: down.seats            })
     setOrphanByDir({ up: up.orphans,        down: down.orphans          })
     setGuestSmallByDir({ up: up.guests,     down: down.guests           })
+    setSmallCarMonksByDir({ up: up.smallCarMonks, down: down.smallCarMonks })
+    setSmallPreDepartByDir({ up: up.smallPreDeparts, down: down.smallPreDeparts })
 
     if (headLeader) {
       setHeadLeaderRegId(headLeader.registration_id ?? '')
@@ -945,7 +952,7 @@ export default function CarrangementDetailPage() {
 
   // 還原單一方向的排車結果（從 DB savedCars + registrations）
   function restoreDirection(savedCars, registrations, dir) {
-    const out = { cars: [], carCount: 2, seats: 20, orphans: {}, guests: {} }
+    const out = { cars: [], carCount: 2, seats: 20, orphans: {}, guests: {}, smallCarMonks: {}, smallPreDeparts: {} }
     if (!savedCars || savedCars.length === 0) return out
 
     const largeSaved = savedCars.filter(c => c.car_type === 'large')
@@ -958,6 +965,7 @@ export default function CarrangementDetailPage() {
         leaders:      (c.car_leaders ?? []).map(l => l.registration_id),
         access_token: c.access_token ?? '',
         monks:        (c.car_monks ?? []).map(m => m.monk_id),
+        preDepart:    c.pre_depart || false,
       }))
       out.carCount = out.cars.length
       out.seats    = out.cars[0]?.seats ?? 20
@@ -978,6 +986,11 @@ export default function CarrangementDetailPage() {
             else                        out.orphans[member.registration_id] = groupKey
           }
         }
+        // 小車法師
+        const savedMonks = (savedCar.car_monks ?? []).map(m => m.monk_id)
+        if (savedMonks.length > 0) out.smallCarMonks[groupKey] = savedMonks
+        // 小車提前出發
+        if (savedCar.pre_depart) out.smallPreDeparts[groupKey] = true
       }
     }
     return out
@@ -1108,6 +1121,41 @@ export default function CarrangementDetailPage() {
     })
   }
 
+  // 切換小車法師指派（同方向一位法師只能在一個群組）
+  function toggleSmallCarMonk(groupKey, monkId) {
+    setSmallCarMonksByDir(prev => {
+      const dirMonks = { ...prev[direction] }
+      // 從所有群組移除這個法師
+      for (const k of Object.keys(dirMonks)) {
+        dirMonks[k] = dirMonks[k].filter(id => id !== monkId)
+        if (dirMonks[k].length === 0) delete dirMonks[k]
+      }
+      // 若原本就在這個群組 → 取消（已移除）；否則 → 加入
+      const wasHere = (prev[direction][groupKey] ?? []).includes(monkId)
+      if (!wasHere) {
+        dirMonks[groupKey] = [...(dirMonks[groupKey] ?? []), monkId]
+      }
+      return { ...prev, [direction]: dirMonks }
+    })
+  }
+
+  // 切換小車提前出發旗標
+  function toggleSmallPreDepart(groupKey) {
+    setSmallPreDepartByDir(prev => {
+      const d = { ...prev[direction] }
+      if (d[groupKey]) delete d[groupKey]
+      else d[groupKey] = true
+      return { ...prev, [direction]: d }
+    })
+  }
+
+  // 切換大車提前出發旗標
+  function toggleLargePreDepart(carIdx) {
+    setCars(prev => prev.map((c, i) =>
+      i === carIdx ? { ...c, preDepart: !c.preDepart } : c
+    ))
+  }
+
   function updateCarName(carIdx, name) {
     setCars(prev => prev.map((c, i) => i === carIdx ? { ...c, car_name: name } : c))
   }
@@ -1134,7 +1182,9 @@ export default function CarrangementDetailPage() {
     // 2. 法師：整場活動都沒指派任何法師，提醒一次（可繞過）
     const totalMonks =
       carsByDir.up.flatMap(c => c.monks ?? []).length +
-      carsByDir.down.flatMap(c => c.monks ?? []).length
+      carsByDir.down.flatMap(c => c.monks ?? []).length +
+      Object.values(smallCarMonksByDir.up).flat().length +
+      Object.values(smallCarMonksByDir.down).flat().length
     const hasAnyCar = carsByDir.up.length > 0 || carsByDir.down.length > 0
     if (hasAnyCar && totalMonks === 0) {
       const proceed = window.confirm('法師尚未排入車次，仍要儲存？')
@@ -1164,8 +1214,8 @@ export default function CarrangementDetailPage() {
 
     const smallCarLeaderRegIds = smallCarLeaders.map(l => l.registration_id).filter(Boolean)
     const [upRes, downRes, hlRes, sclRes] = await Promise.all([
-      saveCarArrangement(eventId, carsByDir.up,   upSmall,   'up'),
-      saveCarArrangement(eventId, carsByDir.down, downSmall, 'down'),
+      saveCarArrangement(eventId, carsByDir.up,   upSmall,   'up',   smallCarMonksByDir.up,   smallPreDepartByDir.up),
+      saveCarArrangement(eventId, carsByDir.down, downSmall, 'down', smallCarMonksByDir.down, smallPreDepartByDir.down),
       headLeaderRegId
         ? saveHeadLeader(eventId, headLeaderRegId)
         : Promise.resolve({ success: true }),
@@ -1738,8 +1788,23 @@ export default function CarrangementDetailPage() {
               const total = car.members.length + (car.monks ?? []).length
               return { idx, name: car.car_name, total, seats: car.seats, over: total - car.seats, tempId: car.tempId }
             }).filter(x => x.over > 0)
+            const totalPeople = cars.reduce((s, c) => s + c.members.length + (c.monks ?? []).length, 0)
+            const totalMonks  = cars.reduce((s, c) => s + (c.monks ?? []).length, 0)
+            const totalSeats  = cars.reduce((s, c) => s + c.seats, 0)
             return (
               <div className="sticky top-0 z-20 -mx-4 px-4 py-2 mb-3 bg-white/95 backdrop-blur border-b border-gray-200 shadow-sm">
+                {/* 合計列 */}
+                <div className="text-xs text-gray-500 mb-1.5 flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-gray-700">
+                    本方向已排 <strong className="text-blue-700">{totalPeople}</strong> 人
+                    <span className="text-gray-400">／{totalSeats} 座</span>
+                  </span>
+                  {totalMonks > 0 && (
+                    <span className="bg-purple-50 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5">
+                      含法師 {totalMonks} 人
+                    </span>
+                  )}
+                </div>
                 {/* 超額警示橫條 */}
                 {overflows.length > 0 && (
                   <div className="mb-2 bg-red-100 border-2 border-red-500 rounded-lg px-3 py-2 text-sm flex items-center gap-2 animate-pulse">
@@ -1856,6 +1921,16 @@ export default function CarrangementDetailPage() {
                         法師：{(car.monks ?? []).map(mid => allMonks.find(m => m.id === mid)?.name ?? '').filter(Boolean).join('、')}
                       </span>
                     )}
+                    {/* 大車提前出發 */}
+                    <label className="flex items-center gap-1 cursor-pointer ml-1">
+                      <input
+                        type="checkbox"
+                        checked={car.preDepart || false}
+                        onChange={() => toggleLargePreDepart(ci)}
+                        className="accent-teal-600 w-3.5 h-3.5"
+                      />
+                      <span className={`text-xs ${car.preDepart ? 'text-teal-700 font-semibold' : 'text-gray-400'}`}>提前出發</span>
+                    </label>
                     <div className="ml-auto shrink-0">
                       {car.access_token ? (
                         <button
@@ -2048,6 +2123,54 @@ export default function CarrangementDetailPage() {
                         </div>
                       )
                     })}
+                  </div>
+
+                  {/* 小車法師選擇 + 提前出發 */}
+                  <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center gap-3 flex-wrap">
+                    {/* 法師 */}
+                    {allMonks.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs text-purple-600 font-medium shrink-0">🏯 法師：</span>
+                        {allMonks.map(monk => {
+                          const isHere = (smallCarMonksByDir[direction][g.key] ?? []).includes(monk.id)
+                          const assignedGroupKey = Object.keys(smallCarMonksByDir[direction]).find(
+                            k => (smallCarMonksByDir[direction][k] ?? []).includes(monk.id)
+                          )
+                          const assignedElsewhere = !!assignedGroupKey && assignedGroupKey !== g.key
+                          const assignedGroup = assignedElsewhere
+                            ? finalSmallGroups.findIndex(fg => fg.key === assignedGroupKey)
+                            : -1
+                          return (
+                            <button
+                              key={monk.id}
+                              onClick={() => toggleSmallCarMonk(g.key, monk.id)}
+                              title={assignedElsewhere ? `目前在小車 ${assignedGroup + 1}，點選搬過來` : ''}
+                              className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                                isHere
+                                  ? 'bg-purple-600 text-white border-purple-600'
+                                  : assignedElsewhere
+                                  ? 'bg-gray-100 text-gray-400 border-gray-200 line-through hover:bg-purple-50 hover:text-purple-500 hover:border-purple-300 hover:no-underline'
+                                  : 'bg-white text-gray-600 border-gray-300 hover:border-purple-400 hover:text-purple-600'
+                              }`}
+                            >
+                              {isHere && '✓ '}{monk.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {/* 提前出發 */}
+                    <label className="flex items-center gap-1 cursor-pointer ml-auto">
+                      <input
+                        type="checkbox"
+                        checked={!!smallPreDepartByDir[direction][g.key]}
+                        onChange={() => toggleSmallPreDepart(g.key)}
+                        className="accent-teal-600 w-3.5 h-3.5"
+                      />
+                      <span className={`text-xs ${smallPreDepartByDir[direction][g.key] ? 'text-teal-700 font-semibold' : 'text-gray-400'}`}>
+                        提前出發
+                      </span>
+                    </label>
                   </div>
                 </div>
               ))}

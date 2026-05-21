@@ -783,6 +783,7 @@ export default function CarCheckinPage() {
   if (mode === 'head') {
     const eventName  = headLeader?.events?.name ?? ''
     const dateStart  = headLeader?.events?.date_start
+    const dateEnd    = headLeader?.events?.date_end
     const eventDate  = formatDate(dateStart)
 
     // 依方向過濾（總領隊看板分上下山 Tab，上下山資訊不再混在一起）
@@ -793,54 +794,52 @@ export default function CarCheckinPage() {
     const monkTotalAll   = carsInDir.reduce((s, c) => s + (c.car_monks?.length ?? 0), 0)
     const monkCheckedAll = carsInDir.reduce((s, c) => s + (c.car_monks?.filter(m => !!m.checked_in_at).length ?? 0), 0)
 
-    // 應到 = 當天搭車出發的人（排除提前上山），法師一律算
+    // 應到 = 當天搭車出發的人（排除提前出發），法師一律算
+    // 上山：比 date_start 早算提前；下山：比 date_end 早算提前
     // 小車：同車有人提前 → 全車視為提前（用 getEffectivePreArrive）
-    const isPreArrived = (m, c) => !!getEffectivePreArrive(m, c, dateStart)
+    // 小車勾選 pre_depart → 整車排除應到
+    const dateRef    = headDirection === 'down' ? (dateEnd ?? dateStart) : dateStart
+    const isPreArrived = (m, c) =>
+      c.pre_depart || !!getEffectivePreArrive(m, c, dateRef)
     const todayMembers  = carsInDir.flatMap(c => (c.car_members ?? []).filter(m => !isPreArrived(m, c)))
 
-    // 「其他交通」：本方向不歸大車也不歸小車的人，排除提前上山
+    // 「其他交通」：本方向不歸大車也不歸小車的人，排除提前出發
     // 用 car_members 已存在的 registration_id 排除，避免重複計算（保險作法）
     const carMemberRegIds = new Set(carsInDir.flatMap(c => (c.car_members ?? []).map(m => m.registration_id)))
     const otherRegsInDir = allEventRegs.filter(r =>
       isOtherTransport(r, headDirection) &&
-      !getPreArriveInfo(r.answers, dateStart) &&
+      !getPreArriveInfo(r.answers, dateRef) &&
       !carMemberRegIds.has(r.registration_id)
     )
     const otherTotal   = otherRegsInDir.length
-    const otherChecked = otherRegsInDir.filter(r => !!r.checked_in_at).length
+    // 義工：預設已報到（不需刷卡），信眾：需實際 checked_in_at
+    const otherChecked = otherRegsInDir.filter(r =>
+      r.answers?.identity === '義工' || !!r.checked_in_at
+    ).length
 
     const totalAll      = todayMembers.length + monkTotalAll + otherTotal
     const checkedAll    = todayMembers.filter(isCheckedIn).length + monkCheckedAll + otherChecked
     const uncheckedAll  = totalAll - checkedAll
 
-    const smallTotal   = smallCars.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
-    const smallChecked = smallCars.reduce((s, c) => s + (c.car_members?.filter(isCheckedIn).length ?? 0), 0)
+    // 小車計數：排除 pre_depart 的車（已提前出發，不算今天應到）
+    const smallCarsToday = smallCars.filter(c => !c.pre_depart)
+    const smallTotal   = smallCarsToday.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
+    const smallChecked = smallCarsToday.reduce((s, c) => s + (c.car_members?.filter(isCheckedIn).length ?? 0), 0)
 
     // 「回報聯絡組資訊」統計（僅上山 Tab 顯示）
-    // 法師：已點報到才算
-    // 義工：預設已報到，全部納入（不需刷卡）
-    // 信眾：已刷卡報到才算
+    // 設計：義工+信眾 合計 = 系統報名人數（allEventRegs 全量）
+    // 法師：已點報到才算（手動確認到場）
+    // 義工：全部算（不論是否刷卡，預設已到）
+    // 信眾：全部算（告知聯絡組預計人數）
     const reportCounts = { 法師: 0, 義工: 0, 信眾: 0 }
-    for (const c of carsInDir) {
-      for (const m of (c.car_members ?? [])) {
-        const id = m.registrations?.answers?.identity
-        if (id === '義工') {
-          reportCounts.義工 += 1
-        } else if (id === '信眾' && isCheckedIn(m)) {
-          reportCounts.信眾 += 1
-        }
-      }
+    for (const r of allEventRegs) {
+      const id = r.answers?.identity
+      if (id === '義工')  reportCounts.義工 += 1
+      else if (id === '信眾') reportCounts.信眾 += 1
+    }
+    for (const c of allCars) {
       for (const cm of (c.car_monks ?? [])) {
         if (cm.checked_in_at) reportCounts.法師 += 1
-      }
-    }
-    // 其他交通也納入義工/信眾計數
-    for (const r of otherRegsInDir) {
-      const id = r.answers?.identity
-      if (id === '義工') {
-        reportCounts.義工 += 1
-      } else if (id === '信眾' && r.checked_in_at) {
-        reportCounts.信眾 += 1
       }
     }
 
@@ -1059,10 +1058,11 @@ export default function CarCheckinPage() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium text-sm text-gray-700">{c.car_name}</span>
                               <DirectionBadge direction={c.direction} />
-                              {done && <span className="text-xs bg-green-100 text-green-700 border border-green-200 rounded-full px-1.5">全員出發 ✓</span>}
+                              {c.pre_depart && <span className="text-xs bg-teal-100 text-teal-700 border border-teal-200 rounded-full px-1.5 shrink-0">🚀 提前出發</span>}
+                              {done && !c.pre_depart && <span className="text-xs bg-green-100 text-green-700 border border-green-200 rounded-full px-1.5">全員出發 ✓</span>}
                             </div>
                             <div className="text-xs text-gray-400 mt-0.5">
-                              應到 {total}　已到 {checked}　未到 {unchecked}
+                              {c.pre_depart ? '（已提前出發，不列入今日應到）' : `應到 ${total}　已到 ${checked}　未到 ${unchecked}`}
                             </div>
                           </div>
                           <span className="text-gray-300 text-xs shrink-0">{innerExp ? '▲' : '▼'}</span>
