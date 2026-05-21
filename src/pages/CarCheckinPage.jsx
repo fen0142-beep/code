@@ -189,6 +189,16 @@ function getLateReturnInfo(answers, eventDateEnd) {
   return null
 }
 
+// 判斷某成員是否從應到排除（依方向分流，跨 mode 共用）
+// 上山：c.pre_depart 整車提前 OR 個人/同車 effective 提前
+// 下山：c.late_return 整車延後 OR 個人/同車 effective 延後
+function isMemberExcludedFromExpected(m, c, eventDateStart, eventDateEnd) {
+  if ((c.direction ?? 'down') === 'down') {
+    return !!c.late_return || !!getEffectiveLateReturn(m, c, eventDateEnd)
+  }
+  return !!c.pre_depart || !!getEffectivePreArrive(m, c, eventDateStart)
+}
+
 
 // ─── 共用：掃描訊息 ──────────────────────────────────────────
 
@@ -709,9 +719,17 @@ export default function CarCheckinPage() {
     const dateStart  = headLeader?.events?.date_start
     const dateEnd    = headLeader?.events?.date_end
     const eventDate  = formatDate(dateStart)
-    const totalAll   = allCars.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
-    const checkedAll = allCars.reduce(
-      (s, c) => s + (c.car_members?.filter(isCheckedIn).length ?? 0), 0
+    // 排除延後/提前者（與大車模式 isExcludedFromExpected 邏輯一致）
+    const isExcludedHere = (m, c) => isMemberExcludedFromExpected(m, c, dateStart, dateEnd)
+    // 整車提前/延後直接整車排除
+    const activeCars = allCars.filter(c =>
+      (c.direction ?? 'down') === 'down' ? !c.late_return : !c.pre_depart
+    )
+    const totalAll   = activeCars.reduce((s, c) =>
+      s + (c.car_members?.filter(m => !isExcludedHere(m, c)).length ?? 0), 0
+    )
+    const checkedAll = activeCars.reduce((s, c) =>
+      s + (c.car_members?.filter(m => !isExcludedHere(m, c) && isCheckedIn(m)).length ?? 0), 0
     )
     const uncheckedAll = totalAll - checkedAll
 
@@ -745,8 +763,10 @@ export default function CarCheckinPage() {
         <div className="px-4 pt-3 max-w-lg mx-auto space-y-3">
           {allCars.map(c => {
             const members  = c.car_members ?? []
-            const total    = members.length
-            const checked  = members.filter(isCheckedIn).length
+            // 排除延後/提前者
+            const todayMembers = members.filter(m => !isExcludedHere(m, c))
+            const total    = todayMembers.length
+            const checked  = todayMembers.filter(isCheckedIn).length
             const unchecked = total - checked
             const done     = checked === total && total > 0
 
@@ -858,12 +878,9 @@ export default function CarCheckinPage() {
     // 應到 = 當天搭車出發/回程的人（排除提前/延後），法師一律算
     // 上山方向：c.pre_depart（整車提前）OR 個人/同車 getEffectivePreArrive
     // 下山方向：c.late_return（整車延後）OR 個人/同車 getEffectiveLateReturn
-    const isExcludedFromExpected = (m, c) => {
-      if (headDirection === 'down') {
-        return !!c.late_return || !!getEffectiveLateReturn(m, c, dateEnd)
-      }
-      return !!c.pre_depart || !!getEffectivePreArrive(m, c, dateStart)
-    }
+    // 注意：總領隊看板用 headDirection（跨 carsInDir 已過濾過方向）；
+    //       mode='small_car' 沒過濾、要用 c.direction，所以共用 helper 內看 c.direction
+    const isExcludedFromExpected = (m, c) => isMemberExcludedFromExpected(m, c, dateStart, dateEnd)
     const todayMembers  = carsInDir.flatMap(c => (c.car_members ?? []).filter(m => !isExcludedFromExpected(m, c)))
 
     // 「其他交通」：本方向不歸大車也不歸小車的人
@@ -1135,8 +1152,10 @@ export default function CarCheckinPage() {
               {expandedCarId === '__small__' && (
                 <div className="border-t divide-y">
                   {smallCars.map(c => {
-                    const total     = c.car_members?.length ?? 0
-                    const checked   = (c.car_members ?? []).filter(isCheckedIn).length
+                    // 排除延後/提前者（與外層摘要一致）
+                    const todayMembers = (c.car_members ?? []).filter(m => !isExcludedFromExpected(m, c))
+                    const total     = todayMembers.length
+                    const checked   = todayMembers.filter(isCheckedIn).length
                     const unchecked = total - checked
                     const done      = checked === total && total > 0
                     const innerExp  = expandedSmallCarId === c.car_id
