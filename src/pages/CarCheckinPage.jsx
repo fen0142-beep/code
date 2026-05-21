@@ -617,6 +617,14 @@ export default function CarCheckinPage() {
             const isLeader   = (car.car_leaders ?? []).some(
               l => l.registration_id === member.registration_id
             )
+            const dir = car.direction ?? 'down'
+            const ex  = dir === 'down'
+              ? getEffectiveLateReturn(member, car, dateEnd)
+              : getEffectivePreArrive(member, car, dateStart)
+            const exCls = dir === 'down'
+              ? 'bg-amber-100 text-amber-700 border-amber-200'
+              : 'bg-teal-100 text-teal-700 border-teal-200'
+            const exLabel = dir === 'down' ? '延後回程' : '提前出發'
 
             return (
               <div
@@ -640,17 +648,7 @@ export default function CarCheckinPage() {
                         訪客
                       </span>
                     )}
-                    {(() => {
-                      const dir = car.direction ?? 'down'
-                      const ex  = dir === 'down'
-                        ? getEffectiveLateReturn(member, car, dateEnd)
-                        : getEffectivePreArrive(member, car, dateStart)
-                      if (!ex) return null
-                      const cls = dir === 'down'
-                        ? 'bg-amber-100 text-amber-700 border-amber-200'
-                        : 'bg-teal-100 text-teal-700 border-teal-200'
-                      return <span className={`text-xs ${cls} border rounded-full px-1.5 shrink-0`}>{ex}</span>
-                    })()}
+                    {ex && <span className={`text-xs ${exCls} border rounded-full px-1.5 shrink-0`}>{ex}</span>}
                   </div>
                   {formatMemberClasses(member) && (
                     <div className="text-xs text-gray-500 mt-0.5 truncate">
@@ -659,14 +657,18 @@ export default function CarCheckinPage() {
                   )}
                 </div>
                 <button
-                  onClick={() => handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                  onClick={() => !ex && handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                  disabled={!!ex}
+                  title={ex ? `已標記為${exLabel}，從應到排除（如需手動處理，請至排車頁取消標記）` : ''}
                   className={`shrink-0 px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-                    checked
-                      ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500'
-                      : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                    ex
+                      ? 'bg-gray-50 text-gray-300 cursor-not-allowed border border-gray-200'
+                      : checked
+                        ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500'
+                        : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
                   }`}
                 >
-                  {checked ? '已到' : '報到'}
+                  {ex ? exLabel : checked ? '已到' : '報到'}
                 </button>
               </div>
             )
@@ -799,12 +801,16 @@ export default function CarCheckinPage() {
                           {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                         </div>
                         <button
-                          onClick={() => handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                          onClick={() => !preArr && handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                          disabled={!!preArr}
+                          title={preArr ? `已標記為${dir === 'down' ? '延後回程' : '提前出發'}，從應到排除` : ''}
                           className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                            chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-100 text-green-700 hover:bg-green-200'
+                            preArr
+                              ? 'bg-gray-50 text-gray-300 cursor-not-allowed border border-gray-200'
+                              : chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-100 text-green-700 hover:bg-green-200'
                           }`}
                         >
-                          {chk ? '已到' : '報到'}
+                          {preArr ? (dir === 'down' ? '延後' : '提前') : chk ? '已到' : '報到'}
                         </button>
                       </div>
                     )
@@ -1062,6 +1068,13 @@ export default function CarCheckinPage() {
                       const chk      = isCheckedIn(member)
                       const isLeader = (c.car_leaders ?? []).some(l => l.registration_id === member.registration_id)
                       const cls      = formatMemberClasses(member)
+                      const ex = headDirection === 'down'
+                        ? getEffectiveLateReturn(member, c, dateEnd)
+                        : getEffectivePreArrive(member, c, dateStart)
+                      const exCls = headDirection === 'down'
+                        ? 'bg-amber-100 text-amber-700 border-amber-200'
+                        : 'bg-teal-100 text-teal-700 border-teal-200'
+                      const exLabel = headDirection === 'down' ? '延後回程' : '提前出發'
                       return (
                         <div key={member.registration_id} className={`flex items-center gap-3 px-4 py-2.5 ${chk ? 'opacity-55' : ''}`}>
                           <div className="flex-1 min-w-0">
@@ -1069,26 +1082,21 @@ export default function CarCheckinPage() {
                               <span className={`text-sm truncate ${chk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>{name}</span>
                               {isLeader && <span className="text-xs bg-amber-100 text-amber-700 rounded-full px-1.5 shrink-0">領隊</span>}
                               {guest    && <span className="text-xs bg-blue-100  text-blue-600  rounded-full px-1.5 shrink-0">訪客</span>}
-                              {(() => {
-                                const ex = headDirection === 'down'
-                                  ? getEffectiveLateReturn(member, c, dateEnd)
-                                  : getEffectivePreArrive(member, c, dateStart)
-                                if (!ex) return null
-                                const cls = headDirection === 'down'
-                                  ? 'bg-amber-100 text-amber-700 border-amber-200'
-                                  : 'bg-teal-100 text-teal-700 border-teal-200'
-                                return <span className={`text-xs ${cls} border rounded-full px-1.5 shrink-0`}>{ex}</span>
-                              })()}
+                              {ex && <span className={`text-xs ${exCls} border rounded-full px-1.5 shrink-0`}>{ex}</span>}
                             </div>
                             {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                           </div>
                           <button
-                            onClick={() => handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                            onClick={() => !ex && handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                            disabled={!!ex}
+                            title={ex ? `已標記為${exLabel}，從應到排除` : ''}
                             className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                              chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
+                              ex
+                                ? 'bg-gray-50 text-gray-300 cursor-not-allowed border border-gray-200'
+                                : chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
                             }`}
                           >
-                            {chk ? '已到' : '報到'}
+                            {ex ? exLabel : chk ? '已到' : '報到'}
                           </button>
                         </div>
                       )
@@ -1191,12 +1199,16 @@ export default function CarCheckinPage() {
                                     {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                                   </div>
                                   <button
-                                    onClick={() => handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                                    onClick={() => !preArr && handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                                    disabled={!!preArr}
+                                    title={preArr ? `已標記為${headDirection === 'down' ? '延後回程' : '提前出發'}，從應到排除` : ''}
                                     className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                                      chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
+                                      preArr
+                                        ? 'bg-gray-50 text-gray-300 cursor-not-allowed border border-gray-200'
+                                        : chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
                                     }`}
                                   >
-                                    {chk ? '已到' : '報到'}
+                                    {preArr ? (headDirection === 'down' ? '延後' : '提前') : chk ? '已到' : '報到'}
                                   </button>
                                 </div>
                               )

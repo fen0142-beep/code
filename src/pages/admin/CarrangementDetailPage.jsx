@@ -1158,6 +1158,58 @@ export default function CarrangementDetailPage() {
     })
   }
 
+  // ─── 跨大小車法師指派（同方向唯一性） ─────────────────────
+  // 從所有大車 + 所有小車移除這位法師
+  function unassignMonkAllCars(monkId) {
+    setCars(prev => prev.map(c => ({ ...c, monks: (c.monks ?? []).filter(id => id !== monkId) })))
+    setSmallCarMonksByDir(prev => {
+      const d = { ...prev[direction] }
+      for (const k of Object.keys(d)) {
+        d[k] = d[k].filter(id => id !== monkId)
+        if (d[k].length === 0) delete d[k]
+      }
+      return { ...prev, [direction]: d }
+    })
+  }
+
+  // 指派到大車 ci（自動從其他大車與所有小車移除）
+  function assignMonkToLargeCar(ci, monkId) {
+    setCars(prev => prev.map((c, i) => {
+      const filtered = (c.monks ?? []).filter(id => id !== monkId)
+      return { ...c, monks: i === ci ? [...filtered, monkId] : filtered }
+    }))
+    setSmallCarMonksByDir(prev => {
+      const d = { ...prev[direction] }
+      let changed = false
+      for (const k of Object.keys(d)) {
+        const next = d[k].filter(id => id !== monkId)
+        if (next.length !== d[k].length) { d[k] = next; changed = true }
+        if (d[k].length === 0) delete d[k]
+      }
+      return changed ? { ...prev, [direction]: d } : prev
+    })
+  }
+
+  // 指派到小車 groupKey（自動從所有大車與其他小車移除）
+  function assignMonkToSmallCar(groupKey, monkId) {
+    setCars(prev => {
+      const idx = prev.findIndex(c => (c.monks ?? []).includes(monkId))
+      if (idx < 0) return prev
+      return prev.map((c, i) => i === idx
+        ? { ...c, monks: (c.monks ?? []).filter(id => id !== monkId) }
+        : c)
+    })
+    setSmallCarMonksByDir(prev => {
+      const d = { ...prev[direction] }
+      for (const k of Object.keys(d)) {
+        d[k] = d[k].filter(id => id !== monkId)
+        if (d[k].length === 0) delete d[k]
+      }
+      d[groupKey] = [...(d[groupKey] ?? []), monkId]
+      return { ...prev, [direction]: d }
+    })
+  }
+
   // 切換小車提前出發旗標
   function toggleSmallPreDepart(groupKey) {
     setSmallPreDepartByDir(prev => {
@@ -1694,16 +1746,24 @@ export default function CarrangementDetailPage() {
 
         {/* 統計卡片（依目前方向） */}
         {(() => {
-          const statMonkCount = (carsByDir[direction] ?? []).reduce((s, c) => s + (c.car_monks?.length ?? 0), 0)
+          // 大車法師：直接從 cars 的 monks 陣列計算（不是 c.car_monks，那是 DB 結構）
+          const statMonkCount = (carsByDir[direction] ?? []).reduce((s, c) => s + (c.monks?.length ?? 0), 0)
+          // 小車法師：smallCarMonksByDir[direction] 所有 group 的法師總數
+          const smallMonkCount = Object.values(smallCarMonksByDir[direction] ?? {}).flat().length
           return (
         <div className="grid grid-cols-3 gap-3">
           <StatCard
             label={`搭精舍車（大車）— ${dirLabel(direction)}`}
-            value={largePeople.length}
+            value={largePeople.length + statMonkCount}
             color="bg-blue-50 border-blue-200 text-blue-700"
             sub={statMonkCount > 0 ? `含法師 ${statMonkCount} 人` : null}
           />
-          <StatCard label={`小車（自行/共乘）— ${dirLabel(direction)}`} value={smallPeople.length} color="bg-green-50 border-green-200 text-green-700" />
+          <StatCard
+            label={`小車（自行/共乘）— ${dirLabel(direction)}`}
+            value={smallPeople.length + smallMonkCount}
+            color="bg-green-50 border-green-200 text-green-700"
+            sub={smallMonkCount > 0 ? `含法師 ${smallMonkCount} 人` : null}
+          />
           <StatCard
             label="其他/未填"
             value={regs.length - largePeople.length - smallPeople.length}
@@ -2006,20 +2066,34 @@ export default function CarrangementDetailPage() {
                     )}
                   </div>
 
-                  {/* 法師指派（可選，不強制；一位法師同方向只能在一台車） */}
+                  {/* 法師指派（可選，不強制；一位法師同方向只能在一台車 / 一台小車） */}
                   {allMonks.length > 0 && (
                     <div className="px-4 py-3 bg-purple-50 border-t border-purple-100">
                       <div className="text-xs font-medium text-purple-600 mb-2">🏯 搭乘法師（可選）</div>
                       <div className="flex flex-wrap gap-2">
                         {allMonks.map(monk => {
-                          const assignedCarIdx    = cars.findIndex(c => (c.monks ?? []).includes(monk.id))
-                          const assignedHere      = assignedCarIdx === ci
-                          const assignedElsewhere = assignedCarIdx >= 0 && assignedCarIdx !== ci
+                          // 先查大車
+                          const largeIdx       = cars.findIndex(c => (c.monks ?? []).includes(monk.id))
+                          // 再查小車（同方向）
+                          const smallKey       = Object.keys(smallCarMonksByDir[direction] ?? {}).find(
+                            k => (smallCarMonksByDir[direction][k] ?? []).includes(monk.id)
+                          )
+                          const smallIdx       = smallKey ? finalSmallGroups.findIndex(fg => fg.key === smallKey) : -1
+                          const assignedHere   = largeIdx === ci
+                          const inOtherLarge   = largeIdx >= 0 && largeIdx !== ci
+                          const inSmall        = !!smallKey
+                          const elsewhereLabel = inOtherLarge
+                            ? cars[largeIdx].car_name
+                            : (smallIdx >= 0 ? `小車 ${smallIdx + 1}` : '')
+                          const assignedElsewhere = inOtherLarge || inSmall
                           return (
                             <button
                               key={monk.id}
-                              onClick={() => toggleMonk(ci, monk.id)}
-                              title={assignedElsewhere ? `目前在 ${cars[assignedCarIdx].car_name}，點選會搬過來` : ''}
+                              onClick={() => {
+                                if (assignedHere) unassignMonkAllCars(monk.id)
+                                else assignMonkToLargeCar(ci, monk.id)
+                              }}
+                              title={assignedElsewhere ? `目前在 ${elsewhereLabel}，點選會搬過來` : ''}
                               className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
                                 assignedHere
                                   ? 'bg-purple-600 text-white border-purple-600'
@@ -2029,7 +2103,7 @@ export default function CarrangementDetailPage() {
                               }`}
                             >
                               {assignedHere && '✓ '}
-                              {assignedElsewhere && `（${cars[assignedCarIdx].car_name}）`}
+                              {assignedElsewhere && `（${elsewhereLabel}）`}
                               {monk.name}
                             </button>
                           )
@@ -2081,7 +2155,13 @@ export default function CarrangementDetailPage() {
             <div className="space-y-2">
               {/* 有配對的小車群組 */}
               {finalSmallGroups.map((g, idx) => (
-                <div key={g.key} className="bg-white border rounded-xl shadow-sm overflow-hidden">
+                <div key={g.key} className={`bg-white rounded-xl shadow-sm overflow-hidden border ${g.needsDriverChoice ? 'border-2 border-red-400 ring-2 ring-red-100' : ''}`}>
+                  {g.needsDriverChoice && (
+                    <div className="px-4 py-2 bg-red-50 text-red-700 text-xs font-medium border-b border-red-200 flex items-center gap-2">
+                      <span className="animate-pulse">⚠️</span>
+                      <span>同車號有多位填了車號的「自行開車」乘客，請從下方下拉選單指定誰是主司機</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 px-4 py-3 border-b bg-gray-50 text-sm font-semibold text-gray-700">
                     <span className="text-green-700 bg-green-100 rounded-full px-2 py-0.5 text-xs">
                       小車 {idx + 1}
@@ -2168,24 +2248,33 @@ export default function CarrangementDetailPage() {
 
                   {/* 小車法師選擇 + 提前出發 */}
                   <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center gap-3 flex-wrap">
-                    {/* 法師 */}
+                    {/* 法師（跨大小車唯一性） */}
                     {allMonks.length > 0 && (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-xs text-purple-600 font-medium shrink-0">🏯 法師：</span>
                         {allMonks.map(monk => {
                           const isHere = (smallCarMonksByDir[direction][g.key] ?? []).includes(monk.id)
-                          const assignedGroupKey = Object.keys(smallCarMonksByDir[direction]).find(
+                          // 先查小車
+                          const smallKey = Object.keys(smallCarMonksByDir[direction] ?? {}).find(
                             k => (smallCarMonksByDir[direction][k] ?? []).includes(monk.id)
                           )
-                          const assignedElsewhere = !!assignedGroupKey && assignedGroupKey !== g.key
-                          const assignedGroup = assignedElsewhere
-                            ? finalSmallGroups.findIndex(fg => fg.key === assignedGroupKey)
-                            : -1
+                          const smallIdx = smallKey ? finalSmallGroups.findIndex(fg => fg.key === smallKey) : -1
+                          const inOtherSmall = !!smallKey && smallKey !== g.key
+                          // 再查大車
+                          const largeIdx = cars.findIndex(c => (c.monks ?? []).includes(monk.id))
+                          const inLarge = largeIdx >= 0
+                          const assignedElsewhere = inOtherSmall || inLarge
+                          const elsewhereLabel = inOtherSmall
+                            ? `小車 ${smallIdx + 1}`
+                            : (inLarge ? cars[largeIdx].car_name : '')
                           return (
                             <button
                               key={monk.id}
-                              onClick={() => toggleSmallCarMonk(g.key, monk.id)}
-                              title={assignedElsewhere ? `目前在小車 ${assignedGroup + 1}，點選搬過來` : ''}
+                              onClick={() => {
+                                if (isHere) unassignMonkAllCars(monk.id)
+                                else assignMonkToSmallCar(g.key, monk.id)
+                              }}
+                              title={assignedElsewhere ? `目前在 ${elsewhereLabel}，點選搬過來` : ''}
                               className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
                                 isHere
                                   ? 'bg-purple-600 text-white border-purple-600'
@@ -2194,7 +2283,9 @@ export default function CarrangementDetailPage() {
                                   : 'bg-white text-gray-600 border-gray-300 hover:border-purple-400 hover:text-purple-600'
                               }`}
                             >
-                              {isHere && '✓ '}{monk.name}
+                              {isHere && '✓ '}
+                              {assignedElsewhere && `（${elsewhereLabel}）`}
+                              {monk.name}
                             </button>
                           )
                         })}
