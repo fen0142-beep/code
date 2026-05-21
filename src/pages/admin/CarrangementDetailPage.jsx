@@ -735,11 +735,12 @@ function PersonRow({ reg, carIdx, cars, smallGroups, onMove, onToggleLeader, gue
 
 // ─── StatCard 元件 ────────────────────────────────────────────
 
-function StatCard({ label, value, color }) {
+function StatCard({ label, value, color, sub }) {
   return (
     <div className={`border rounded-xl p-4 ${color}`}>
       <div className="text-3xl font-bold">{value}</div>
       <div className="text-xs mt-1">{label}</div>
+      {sub && <div className="text-xs mt-0.5 text-purple-600">{sub}</div>}
     </div>
   )
 }
@@ -1646,8 +1647,16 @@ export default function CarrangementDetailPage() {
         </div>
 
         {/* 統計卡片（依目前方向） */}
+        {(() => {
+          const statMonkCount = (carsByDir[direction] ?? []).reduce((s, c) => s + (c.car_monks?.length ?? 0), 0)
+          return (
         <div className="grid grid-cols-3 gap-3">
-          <StatCard label={`搭精舍車（大車）— ${dirLabel(direction)}`} value={largePeople.length} color="bg-blue-50 border-blue-200 text-blue-700" />
+          <StatCard
+            label={`搭精舍車（大車）— ${dirLabel(direction)}`}
+            value={largePeople.length}
+            color="bg-blue-50 border-blue-200 text-blue-700"
+            sub={statMonkCount > 0 ? `含法師 ${statMonkCount} 人` : null}
+          />
           <StatCard label={`小車（自行/共乘）— ${dirLabel(direction)}`} value={smallPeople.length} color="bg-green-50 border-green-200 text-green-700" />
           <StatCard
             label="其他/未填"
@@ -1655,6 +1664,8 @@ export default function CarrangementDetailPage() {
             color="bg-gray-50 border-gray-200 text-gray-600"
           />
         </div>
+          )
+        })()}
 
         {/* ── 大車排車 ── */}
         <section>
@@ -1793,6 +1804,11 @@ export default function CarrangementDetailPage() {
                     本方向已排 <strong className="text-blue-700">{totalPeople}</strong> 人
                     <span className="text-gray-400">／{totalSeats} 座</span>
                   </span>
+                  {totalMonks > 0 && (
+                    <span className="bg-purple-50 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5">
+                      含法師 {totalMonks} 人
+                    </span>
+                  )}
                 </div>
                 {/* 超額警示橫條 */}
                 {overflows.length > 0 && (
@@ -1846,6 +1862,9 @@ export default function CarrangementDetailPage() {
                         <div className="text-gray-700 mt-1 text-xs">
                           已排 <strong className={overflow > 0 ? 'text-red-600' : ''}>{totalInCar}</strong> 人
                           <span className="text-gray-400">／{car.seats}</span>
+                          {monkCount > 0 && (
+                            <span className="text-purple-600 ml-2">含法師 {monkCount} 人</span>
+                          )}
                         </div>
                         <div className="bg-white/80 rounded h-1.5 mt-1.5 overflow-hidden">
                           <div
@@ -1885,6 +1904,9 @@ export default function CarrangementDetailPage() {
                       座位數：<strong>{car.seats}</strong>
                       <span className="mx-2 text-amber-400">|</span>
                       已排入：<strong className={overflow > 0 ? 'text-red-600' : ''}>{totalInCar}</strong>
+                      {monkCount > 0 && (
+                        <span className="ml-1 text-purple-700">（含法師 {monkCount}）</span>
+                      )}
                     </span>
                     {overflow > 0 && (
                       <span className="text-xs font-bold text-white bg-red-600 rounded-full px-2.5 py-0.5 animate-pulse">

@@ -828,21 +828,26 @@ export default function CarCheckinPage() {
     const smallTotal   = smallCarsToday.reduce((s, c) => s + (c.car_members?.length ?? 0), 0)
     const smallChecked = smallCarsToday.reduce((s, c) => s + (c.car_members?.filter(isCheckedIn).length ?? 0), 0)
 
-    // 「回報聯絡組資訊」統計（僅上山 Tab 顯示）
-    // 設計：義工+信眾 合計 = 系統報名人數（allEventRegs 全量）
-    // 法師：已點報到才算（手動確認到場）
-    // 義工：全部算（不論是否刷卡，預設已到）
-    // 信眾：全部算（告知聯絡組預計人數）
-    const reportCounts = { 法師: 0, 義工: 0, 信眾: 0 }
+    // 「回報聯絡組資訊」統計（上下山皆顯示）
+    // 法師：已點報到的法師（= monkCheckedAll，當日方向）
+    // 義工/信眾：提前出發（整車 pre_depart / 上山個人 preArrive）OR 當日已報到
+    const confirmedRegIds = new Set()
+    for (const c of carsInDir) {
+      if (c.pre_depart) {
+        for (const m of (c.car_members ?? [])) confirmedRegIds.add(m.registration_id)
+      } else if (headDirection === 'up') {
+        for (const m of (c.car_members ?? [])) {
+          if (getEffectivePreArrive(m, c, dateStart)) confirmedRegIds.add(m.registration_id)
+        }
+      }
+    }
+    const reportCounts = { 法師: monkCheckedAll, 義工: 0, 信眾: 0 }
     for (const r of allEventRegs) {
       const id = r.answers?.identity
-      if (id === '義工')  reportCounts.義工 += 1
-      else if (id === '信眾') reportCounts.信眾 += 1
-    }
-    for (const c of allCars) {
-      for (const cm of (c.car_monks ?? [])) {
-        if (cm.checked_in_at) reportCounts.法師 += 1
-      }
+      if (id !== '義工' && id !== '信眾') continue
+      if (!r.checked_in_at && !confirmedRegIds.has(r.registration_id)) continue
+      if (id === '義工') reportCounts.義工 += 1
+      else reportCounts.信眾 += 1
     }
 
     // Tab 標籤上顯示車數（兩方向）
@@ -891,14 +896,12 @@ export default function CarCheckinPage() {
             {monkTotalAll > 0 && (
               <div className="mt-1 text-xs opacity-80">含法師 {monkTotalAll} 人（已到 {monkCheckedAll}）</div>
             )}
-            {headDirection === 'up' && (
-              <div className="flex gap-4 mt-1.5 text-sm flex-wrap opacity-90">
+            <div className="flex gap-4 mt-1.5 text-sm flex-wrap opacity-90">
                 <span>法師 <strong>{reportCounts.法師}</strong></span>
                 <span>義工 <strong>{reportCounts.義工}</strong></span>
                 <span>信眾 <strong>{reportCounts.信眾}</strong></span>
                 <span className="text-xs opacity-60 self-center">（回報聯絡組資訊）</span>
-              </div>
-            )}
+            </div>
           </div>
         </div>
 
