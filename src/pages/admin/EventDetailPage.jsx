@@ -17,7 +17,6 @@ import {
   deleteRegistration,
   createGuestRegistration,
   submitRegistration,
-  updateRegistration,
   uncheckIn,
   uncheckInSession,
   logRegistrationChange,
@@ -42,6 +41,7 @@ import {
 import EventSessionsPanel from '../../components/EventSessionsPanel'
 import EventSessionFieldsPanel from '../../components/EventSessionFieldsPanel'
 import DiffDetailModal from '../../components/DiffDetailModal'
+import EditRegistrationModal from '../../components/EditRegistrationModal'
 
 import {
   STATUS_LABEL, formatFieldValue, formatEventDate, getDisplayName,
@@ -194,56 +194,8 @@ export default function EventDetailPage() {
   const [allStudents, setAllStudents]                 = useState([])
   const [studentsLoading, setStudentsLoading]         = useState(false)
 
-  // 編輯報名 modal
-  const [editModal, setEditModal] = useState(null) // null | { registration, isGuest }
-  const [editAnswers, setEditAnswers] = useState({})
-  const [editGuestName, setEditGuestName] = useState('')
-  const [editSaving, setEditSaving] = useState(false)
-
-  function openEditModal(r) {
-    setEditModal({ registration: r, isGuest: !r.student_id })
-    setEditAnswers(r.answers ? { ...r.answers } : {})
-    setEditGuestName(r.answers?.guest_name ?? '')
-  }
-
-  function closeEditModal() {
-    setEditModal(null)
-    setEditSaving(false)
-  }
-
-  async function handleEditSave() {
-    if (!editModal) return
-    setEditSaving(true)
-    const { registration, isGuest } = editModal
-    const oldAnswers = { ...registration.answers }
-    const newAnswers = isGuest
-      ? { ...editAnswers, guest_name: editGuestName.trim() }
-      : { ...editAnswers }
-
-    // 記錄異動（不阻斷主流程）
-    await logRegistrationChange({
-      registrationId: registration.registration_id,
-      eventId: id,
-      eventName: event.name,
-      studentName: getDisplayName(registration),
-      changeType: 'modified',
-      oldAnswers,
-      newAnswers,
-    })
-
-    const { success, error } = await updateRegistration(registration.registration_id, newAnswers)
-    setEditSaving(false)
-    if (!success) { alert(`儲存失敗：${error}`); return }
-    setRegistrations(prev => prev.map(r =>
-      r.registration_id === registration.registration_id
-        ? { ...r, answers: newAnswers }
-        : r
-    ))
-    // 重新載入異動紀錄，更新視覺標示
-    const { changes: newChanges } = await getEventChanges(id)
-    setChanges(newChanges)
-    closeEditModal()
-  }
+  // 編輯報名 modal（state + 邏輯都搬到 EditRegistrationModal 元件）
+  const [editingReg, setEditingReg] = useState(null) // null | registration
 
   // 異動明細 modal
   const [diffModal, setDiffModal] = useState(null) // null | registration_changes row
@@ -784,91 +736,21 @@ export default function EventDetailPage() {
       />
 
       {/* ── 編輯報名 Modal ── */}
-      {editModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-1">編輯報名內容</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              {editModal.isGuest
-                ? `訪客：${editModal.registration.answers?.guest_name ?? '-'}`
-                : `學員：${editModal.registration.students?.name ?? '-'}（${editModal.registration.student_id}）`}
-            </p>
-
-            {/* 訪客才顯示姓名欄 */}
-            {editModal.isGuest && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  姓名 <span className="text-red-500">*</span>
-                </label>
-                <input
-                  required
-                  value={editGuestName}
-                  onChange={e => setEditGuestName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                />
-              </div>
-            )}
-
-            {/* 多場次活動：依場次渲染子欄位編輯 */}
-            {event?.multi_session && Array.isArray(editAnswers?.sessions) && editAnswers.sessions.length > 0 ? (
-              <div className="mb-4 space-y-3">
-                <p className="text-xs text-gray-500">已參加 {editAnswers.sessions.length} 場（如需新增或移除場次，請取消後重新報名）</p>
-                {editAnswers.sessions.map((ssAns, idx) => {
-                  const s = sessions.find(x => x.session_id === ssAns.session_id)
-                  if (!s) return null
-                  const fieldsHere = sessionFieldsForPeriod(sessionFields, s.time_period)
-                  return (
-                    <div key={ssAns.session_id} className="border border-gray-200 rounded-xl p-3 bg-gray-50/40">
-                      <p className="text-sm font-semibold text-gray-700 mb-2">
-                        {formatSessionTabLabel(s)}
-                        {s.dharma_name && <span className="text-gray-500 font-normal ml-2">{s.dharma_name}</span>}
-                      </p>
-                      {fieldsHere.length === 0 ? (
-                        <p className="text-xs text-gray-400">此場次無可編輯子欄位</p>
-                      ) : (
-                        <DynamicForm
-                          fields={fieldsHere}
-                          answers={ssAns}
-                          onChange={newSsAns => {
-                            const updated = editAnswers.sessions.map((x, i) =>
-                              i === idx ? { ...newSsAns, session_id: ssAns.session_id } : x
-                            )
-                            setEditAnswers({ ...editAnswers, sessions: updated })
-                          }}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              fields.length > 0 && (
-                <div className="mb-4">
-                  <DynamicForm fields={fields} answers={editAnswers} onChange={setEditAnswers} />
-                </div>
-              )
-            )}
-
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={closeEditModal}
-                className="flex-1 border border-gray-300 text-gray-600 hover:bg-gray-50 font-medium py-2.5 rounded-xl transition-colors"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={editSaving || (editModal.isGuest && !editGuestName.trim())}
-                onClick={handleEditSave}
-                className="flex-1 bg-amber-700 hover:bg-amber-800 text-white font-medium py-2.5 rounded-xl transition-colors disabled:opacity-50"
-              >
-                {editSaving ? '儲存中…' : '儲存'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <EditRegistrationModal
+        registration={editingReg}
+        event={event}
+        eventId={id}
+        fields={fields}
+        sessions={sessions}
+        sessionFields={sessionFields}
+        onClose={() => setEditingReg(null)}
+        onSaved={({ registrationId, newAnswers, newChanges }) => {
+          setRegistrations(prev => prev.map(r =>
+            r.registration_id === registrationId ? { ...r, answers: newAnswers } : r
+          ))
+          setChanges(newChanges)
+        }}
+      />
 
       {/* ── 補看 QR code Modal（單張）── */}
       {qrModal && (
@@ -2318,7 +2200,7 @@ export default function EventDetailPage() {
                                 </button>
                               )}
                               <button
-                                onClick={() => openEditModal(r)}
+                                onClick={() => setEditingReg(r)}
                                 className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-2 py-1 rounded transition-colors"
                               >
                                 ✏️ 編輯
