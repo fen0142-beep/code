@@ -482,6 +482,7 @@ export async function getRegistrationsWithStudents(eventId) {
       updated_at,
       checked_in_at,
       terminal,
+      source,
       students!student_id ( name, student_classes ( class_name, group_name ) )
     `)
     .eq('event_id', eventId)
@@ -727,6 +728,28 @@ export async function checkInSession(regId, sessionId) {
     .insert({ reg_id: regId, session_id: sessionId })
   if (error) return { success: false, error: error.message }
   return { success: true, error: null }
+}
+
+/**
+ * 撈整個活動的場次報到紀錄（多場次活動名單頁用）
+ * 回傳：[{ reg_id, session_id, checked_in_at }, ...]
+ * 呼叫端可用 reg_id 分組掛到每筆 registration 上
+ */
+export async function getEventSessionCheckins(eventId) {
+  // 先撈本活動的 session_id 清單
+  const { data: ss } = await supabase
+    .from('event_sessions')
+    .select('session_id')
+    .eq('event_id', eventId)
+  const sids = (ss || []).map(s => s.session_id)
+  if (sids.length === 0) return { checkins: [], error: null }
+
+  const { data, error } = await supabase
+    .from('registration_session_checkins')
+    .select('reg_id, session_id, checked_in_at')
+    .in('session_id', sids)
+  if (error) return { checkins: [], error: error.message }
+  return { checkins: data || [], error: null }
 }
 
 /**

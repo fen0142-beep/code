@@ -19,6 +19,7 @@ import {
   submitRegistration,
   updateRegistration,
   uncheckIn,
+  uncheckInSession,
   logRegistrationChange,
   getEventChanges,
   recordExportTime,
@@ -30,6 +31,7 @@ import {
   checkDuplicate,
   getEventSessions,
   getEventSessionFields,
+  getEventSessionCheckins,
   saveEventSessionFields,
 } from '../../lib/supabase'
 import {
@@ -255,7 +257,7 @@ export default function EventDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ events }, { fields: f }, { registrations: r }, { changes: c }, { volunteers: v }, { volunteerIds: va }, { templates: tmpl }, { sessions: s }, { fields: sf }] = await Promise.all([
+    const [{ events }, { fields: f }, { registrations: r }, { changes: c }, { volunteers: v }, { volunteerIds: va }, { templates: tmpl }, { sessions: s }, { fields: sf }, { checkins: sck }] = await Promise.all([
       getAllEvents(),
       getEventFields(id),
       getRegistrationsWithStudents(id),
@@ -265,6 +267,7 @@ export default function EventDetailPage() {
       getTemplates(),
       getEventSessions(id),
       getEventSessionFields(id),
+      getEventSessionCheckins(id),
     ])
     const ev = events.find(e => e.event_id === id)
     if (!ev) { navigate('/admin/events'); return }
@@ -283,7 +286,17 @@ export default function EventDetailPage() {
       show_transport_to_public: !!ev.show_transport_to_public,
     })
     setFields(f)
-    setRegistrations(r)
+    // 多場次：把 session_checkins 用 reg_id 分組掛到每筆 registration
+    const ckByReg = new Map()
+    for (const c of (sck || [])) {
+      if (!ckByReg.has(c.reg_id)) ckByReg.set(c.reg_id, [])
+      ckByReg.get(c.reg_id).push({ session_id: c.session_id, checked_in_at: c.checked_in_at })
+    }
+    const regsWithSck = (r || []).map(row => ({
+      ...row,
+      session_checkins: ckByReg.get(row.registration_id) || [],
+    }))
+    setRegistrations(regsWithSck)
     setChanges(c)
     setTemplates(tmpl || [])
     const freshSessions = s || []
@@ -320,6 +333,15 @@ export default function EventDetailPage() {
       r.answers?.sessions?.some(ss => ss.session_id === sessionTab)
     )
   })()
+
+  // 有效報到時間：多場次「場次視圖」讀該場次的 session_checkins；其他情況讀 registrations.checked_in_at
+  // （多場次活動的 registrations.checked_in_at 永遠 null，要從 session_checkins 取才正確）
+  const effectiveCheckinAt = (r) => {
+    if (event?.multi_session && sessionTab !== 'all') {
+      return r.session_checkins?.find(c => c.session_id === sessionTab)?.checked_in_at || null
+    }
+    return r.checked_in_at || null
+  }
 
   // 排序後的報名名單
   const sortedRegistrations = [...sessionFilteredRegistrations].sort((a, b) => {
@@ -548,7 +570,22 @@ export default function EventDetailPage() {
   }
 
   async function handleUncheckIn(registrationId, studentName) {
-    if (!window.confirm(`確定要取消「${studentName}」的報到嗎？`)) return
+    // 多場次「場次視圖」→ 取消該場次的 session_checkin；其他 → 取消 registrations.checked_in_at
+    const isSessionView = event?.multi_session && sessionTab !== 'all'
+    const label = isSessionView ? '此場次的報到' : '報到'
+    if (!window.confirm(`確定要取消「${studentName}」的${label}嗎？`)) return
+
+    if (isSessionView) {
+      const { success, error } = await uncheckInSession(registrationId, sessionTab)
+      if (!success) { alert(`取消報到失敗：${error}`); return }
+      setRegistrations(prev => prev.map(r =>
+        r.registration_id === registrationId
+          ? { ...r, session_checkins: (r.session_checkins || []).filter(c => c.session_id !== sessionTab) }
+          : r
+      ))
+      return
+    }
+
     const { success, error } = await uncheckIn(registrationId)
     if (!success) { alert(`取消報到失敗：${error}`); return }
     setRegistrations(prev => prev.map(r =>
@@ -2183,6 +2220,12 @@ export default function EventDetailPage() {
                         <td className={`px-3 py-1.5 font-medium sticky left-0 z-[1] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] ${isSelected ? 'bg-blue-50' : 'bg-white'}`}>
                           <span className="flex items-center gap-1.5 flex-wrap">
                             {getDisplayName(r)}
+                            {r.source === 'walkin' && (
+                              <span
+                                className="text-xs bg-rose-100 text-rose-700 border border-rose-300 px-1.5 py-0.5 rounded-full font-normal leading-none"
+                                title="刷卡時不在名單上，於報到頁現場補報"
+                              >現場</span>
+                            )}
                             {newRegIds.has(r.registration_id) && (
                               <span className="text-xs bg-green-100 text-green-700 border border-green-300 px-1.5 py-0.5 rounded-full font-normal leading-none">新</span>
                             )}
@@ -2242,14 +2285,20 @@ export default function EventDetailPage() {
                             ))}
                           </>
                         })()}
-                        {showCheckin && (
-                          <td className="px-3 py-1.5">
-                            {r.checked_in_at
-                              ? <span className="text-green-600 text-xs font-medium">✓ 已報到</span>
-                              : <span className="text-gray-300 text-xs">—</span>
-                            }
-                          </td>
-                        )}
+                        {showCheckin && (() => {
+                          const chk = effectiveCheckinAt(r)
+                          return (
+                            <td className="px-3 py-1.5">
+                              {chk ? (
+                                <span className="text-green-600 text-xs font-medium" title={new Date(chk).toLocaleString('zh-TW', { hour12: false })}>
+                                  ✓ {new Date(chk).toLocaleTimeString('zh-TW', { hour12: false }).slice(0, 5)}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300 text-xs">—</span>
+                              )}
+                            </td>
+                          )
+                        })()}
                         {showRegTime && (
                           <td className="px-3 py-1.5 text-xs text-gray-400 whitespace-nowrap">
                             {(r.updated_at ?? r.registered_at)
@@ -2260,7 +2309,7 @@ export default function EventDetailPage() {
                         <td className={`px-3 py-1.5 text-right sticky right-0 z-[1] shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)] ${isSelected ? 'bg-blue-50' : 'bg-white'}`}>
                           {isAdmin && (
                             <div className="flex gap-2 justify-end">
-                              {r.checked_in_at && (
+                              {effectiveCheckinAt(r) && (
                                 <button
                                   onClick={() => handleUncheckIn(r.registration_id, getDisplayName(r))}
                                   className="text-xs text-orange-500 hover:text-orange-700 border border-orange-200 hover:border-orange-400 px-2 py-1 rounded transition-colors"
