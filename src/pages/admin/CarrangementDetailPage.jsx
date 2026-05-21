@@ -1149,12 +1149,6 @@ export default function CarrangementDetailPage() {
     })
   }
 
-  // 切換大車提前出發旗標
-  function toggleLargePreDepart(carIdx) {
-    setCars(prev => prev.map((c, i) =>
-      i === carIdx ? { ...c, preDepart: !c.preDepart } : c
-    ))
-  }
 
   function updateCarName(carIdx, name) {
     setCars(prev => prev.map((c, i) => i === carIdx ? { ...c, car_name: name } : c))
@@ -1799,11 +1793,6 @@ export default function CarrangementDetailPage() {
                     本方向已排 <strong className="text-blue-700">{totalPeople}</strong> 人
                     <span className="text-gray-400">／{totalSeats} 座</span>
                   </span>
-                  {totalMonks > 0 && (
-                    <span className="bg-purple-50 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5">
-                      含法師 {totalMonks} 人
-                    </span>
-                  )}
                 </div>
                 {/* 超額警示橫條 */}
                 {overflows.length > 0 && (
@@ -1857,9 +1846,6 @@ export default function CarrangementDetailPage() {
                         <div className="text-gray-700 mt-1 text-xs">
                           已排 <strong className={overflow > 0 ? 'text-red-600' : ''}>{totalInCar}</strong> 人
                           <span className="text-gray-400">／{car.seats}</span>
-                          {monkCount > 0 && (
-                            <span className="text-purple-600 ml-2">含法師 {monkCount} 人</span>
-                          )}
                         </div>
                         <div className="bg-white/80 rounded h-1.5 mt-1.5 overflow-hidden">
                           <div
@@ -1899,9 +1885,6 @@ export default function CarrangementDetailPage() {
                       座位數：<strong>{car.seats}</strong>
                       <span className="mx-2 text-amber-400">|</span>
                       已排入：<strong className={overflow > 0 ? 'text-red-600' : ''}>{totalInCar}</strong>
-                      {monkCount > 0 && (
-                        <span className="ml-1 text-purple-700">（含法師 {monkCount}）</span>
-                      )}
                     </span>
                     {overflow > 0 && (
                       <span className="text-xs font-bold text-white bg-red-600 rounded-full px-2.5 py-0.5 animate-pulse">
@@ -1921,16 +1904,6 @@ export default function CarrangementDetailPage() {
                         法師：{(car.monks ?? []).map(mid => allMonks.find(m => m.id === mid)?.name ?? '').filter(Boolean).join('、')}
                       </span>
                     )}
-                    {/* 大車提前出發 */}
-                    <label className="flex items-center gap-1 cursor-pointer ml-1">
-                      <input
-                        type="checkbox"
-                        checked={car.preDepart || false}
-                        onChange={() => toggleLargePreDepart(ci)}
-                        className="accent-teal-600 w-3.5 h-3.5"
-                      />
-                      <span className={`text-xs ${car.preDepart ? 'text-teal-700 font-semibold' : 'text-gray-400'}`}>提前出發</span>
-                    </label>
                     <div className="ml-auto shrink-0">
                       {car.access_token ? (
                         <button
