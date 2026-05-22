@@ -923,7 +923,11 @@ export default function CarCheckinPage() {
                               : chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-100 text-green-700 hover:bg-green-200'
                           }`}
                         >
-                          {memberExcluded ? (volSelfReturn ? '義工' : dir === 'down' ? '延後' : '提前') : chk ? '已到' : '報到'}
+                          {memberExcluded
+                            ? (volSelfReturn
+                              ? (member.registrations?.answers?.identity === '義工' ? '義工' : '自行')
+                              : dir === 'down' ? '延後' : '提前')
+                            : chk ? '已到' : '報到'}
                         </button>
                       </div>
                     )
@@ -1270,9 +1274,16 @@ export default function CarCheckinPage() {
                     const fullyEffectivePre  = headDirection === 'up'   && isCarFullyEffectiveExcluded(c, dateStart, dateEnd)
                     const volSelfReturn      = headDirection === 'down' && isVolunteerSelfReturn(c, dateEnd)
                     const integratedExcluded = c.late_return || c.pre_depart || volSelfReturn || fullyEffectiveLate || fullyEffectivePre
-                    const cardBg = integratedExcluded
+                    // 背景色：依車況；展開時加 border-l-4 強調線（顏色依車況）
+                    const cardBaseBg = integratedExcluded
                       ? (headDirection === 'down' ? 'bg-amber-50' : 'bg-teal-50')
-                      : (innerExp ? 'bg-emerald-50 border-l-4 border-emerald-500' : 'bg-gray-50')
+                      : (innerExp ? 'bg-emerald-50' : 'bg-gray-50')
+                    const cardBorderL = innerExp
+                      ? (integratedExcluded
+                        ? (headDirection === 'down' ? 'border-l-4 border-amber-500' : 'border-l-4 border-teal-500')
+                        : 'border-l-4 border-emerald-500')
+                      : ''
+                    const cardBg = `${cardBaseBg} ${cardBorderL}`.trim()
                     return (
                       <div key={c.car_id} className={cardBg}>
                         <button
@@ -1366,7 +1377,11 @@ export default function CarCheckinPage() {
                                         : chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
                                     }`}
                                   >
-                                    {memberExcluded ? (volSelfReturn ? '義工' : headDirection === 'down' ? '延後' : '提前') : chk ? '已到' : '報到'}
+                                    {memberExcluded
+                                      ? (volSelfReturn
+                                        ? (member.registrations?.answers?.identity === '義工' ? '義工' : '自行')
+                                        : headDirection === 'down' ? '延後' : '提前')
+                                      : chk ? '已到' : '報到'}
                                   </button>
                                 </div>
                               )
