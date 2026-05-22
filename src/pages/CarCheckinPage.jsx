@@ -726,10 +726,12 @@ export default function CarCheckinPage() {
       (c.direction ?? 'down') === 'down' ? !c.late_return : !c.pre_depart
     )
     const totalAll   = activeCars.reduce((s, c) =>
-      s + (c.car_members?.filter(m => !isExcludedHere(m, c)).length ?? 0), 0
+      s + (c.car_members?.filter(m => !isExcludedHere(m, c)).length ?? 0)
+        + (c.car_monks?.length ?? 0), 0
     )
     const checkedAll = activeCars.reduce((s, c) =>
-      s + (c.car_members?.filter(m => !isExcludedHere(m, c) && isCheckedIn(m)).length ?? 0), 0
+      s + (c.car_members?.filter(m => !isExcludedHere(m, c) && isCheckedIn(m)).length ?? 0)
+        + (c.car_monks?.filter(cm => !!cm.checked_in_at).length ?? 0), 0
     )
     const uncheckedAll = totalAll - checkedAll
 
@@ -765,8 +767,10 @@ export default function CarCheckinPage() {
             const members  = c.car_members ?? []
             // 排除延後/提前者
             const todayMembers = members.filter(m => !isExcludedHere(m, c))
-            const total    = todayMembers.length
-            const checked  = todayMembers.filter(isCheckedIn).length
+            const monkCnt     = (c.car_monks ?? []).length
+            const monkChecked = (c.car_monks ?? []).filter(cm => !!cm.checked_in_at).length
+            const total    = todayMembers.length + monkCnt
+            const checked  = todayMembers.filter(isCheckedIn).length + monkChecked
             const unchecked = total - checked
             const done     = checked === total && total > 0
 
@@ -796,6 +800,28 @@ export default function CarCheckinPage() {
 
                 {/* 成員清單（常駐顯示，不需展開） */}
                 <div className="divide-y">
+                  {/* 法師（排最上面，紫色強調） */}
+                  {(c.car_monks ?? []).map(cm => {
+                    const mchk = !!cm.checked_in_at
+                    return (
+                      <div key={cm.id} className={`flex items-center gap-3 px-4 py-2.5 bg-purple-50/40 ${mchk ? 'opacity-50' : ''}`}>
+                        <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-sm ${mchk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
+                            {cm.temple_monks?.name ?? '（未知）'}
+                          </span>
+                          <span className="text-xs bg-purple-100 text-purple-700 rounded-full px-1.5 shrink-0">法師</span>
+                        </div>
+                        <button
+                          onClick={() => handleToggleMonkCheckin(cm.id, cm.checked_in_at)}
+                          className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                            mchk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-100 text-green-700 hover:bg-green-200'
+                          }`}
+                        >
+                          {mchk ? '已到' : '報到'}
+                        </button>
+                      </div>
+                    )
+                  })}
                   {sortCheckinMembers(members, (c.car_leaders ?? []).map(l => l.registration_id)).map(member => {
                     const name   = getMemberName(member)
                     const guest  = isGuest(member)
@@ -917,10 +943,12 @@ export default function CarCheckinPage() {
       headDirection === 'down' ? !c.late_return : !c.pre_depart
     )
     const smallTotal   = smallCarsToday.reduce((s, c) =>
-      s + (c.car_members?.filter(m => !isExcludedFromExpected(m, c)).length ?? 0), 0
+      s + (c.car_members?.filter(m => !isExcludedFromExpected(m, c)).length ?? 0)
+        + (c.car_monks?.length ?? 0), 0
     )
     const smallChecked = smallCarsToday.reduce((s, c) =>
-      s + (c.car_members?.filter(m => !isExcludedFromExpected(m, c) && isCheckedIn(m)).length ?? 0), 0
+      s + (c.car_members?.filter(m => !isExcludedFromExpected(m, c) && isCheckedIn(m)).length ?? 0)
+        + (c.car_monks?.filter(cm => !!cm.checked_in_at).length ?? 0), 0
     )
 
     // 「回報聯絡組資訊」統計（上下山皆顯示）
@@ -1154,8 +1182,10 @@ export default function CarCheckinPage() {
                   {smallCars.map(c => {
                     // 排除延後/提前者（與外層摘要一致）
                     const todayMembers = (c.car_members ?? []).filter(m => !isExcludedFromExpected(m, c))
-                    const total     = todayMembers.length
-                    const checked   = todayMembers.filter(isCheckedIn).length
+                    const monkCnt      = (c.car_monks ?? []).length
+                    const monkChecked  = (c.car_monks ?? []).filter(cm => !!cm.checked_in_at).length
+                    const total     = todayMembers.length + monkCnt
+                    const checked   = todayMembers.filter(isCheckedIn).length + monkChecked
                     const unchecked = total - checked
                     const done      = checked === total && total > 0
                     const innerExp  = expandedSmallCarId === c.car_id
@@ -1194,6 +1224,28 @@ export default function CarCheckinPage() {
 
                         {innerExp && (
                           <div className="bg-white border-t divide-y">
+                            {/* 法師（排最上面，紫色強調） */}
+                            {(c.car_monks ?? []).map(cm => {
+                              const mchk = !!cm.checked_in_at
+                              return (
+                                <div key={cm.id} className={`flex items-center gap-3 px-5 py-2.5 bg-purple-50/40 ${mchk ? 'opacity-55' : ''}`}>
+                                  <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                                    <span className={`text-sm truncate ${mchk ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
+                                      {cm.temple_monks?.name ?? '（未知）'}
+                                    </span>
+                                    <span className="text-xs bg-purple-100 text-purple-700 rounded-full px-1.5 shrink-0">法師</span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleToggleMonkCheckin(cm.id, cm.checked_in_at)}
+                                    className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                                      mchk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
+                                    }`}
+                                  >
+                                    {mchk ? '已到' : '報到'}
+                                  </button>
+                                </div>
+                              )
+                            })}
                             {sorted.map(member => {
                               const name  = getMemberName(member)
                               const guest = isGuest(member)

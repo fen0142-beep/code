@@ -1661,7 +1661,8 @@ export async function getAllSmallCarsProgress(eventId) {
           registration_id, answers, checked_in_at, student_id, pre_depart_override, late_return_override,
           students!student_id ( name, student_classes ( class_name, group_name ) )
         )
-      )
+      ),
+      car_monks ( id, monk_id, checked_in_at, temple_monks ( name ) )
     `)
     .eq('event_id', eventId)
     .eq('car_type', 'small')
