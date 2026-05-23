@@ -11,6 +11,10 @@ import {
   checkIn,
   checkInAllCar,
   uncheckIn,
+  checkInCarMember,
+  uncheckInCarMember,
+  checkInOtherTransport,
+  uncheckInOtherTransport,
   checkInMonk,
   uncheckInMonk,
 } from '../lib/supabase'
@@ -24,7 +28,15 @@ const getMemberName = (member) =>
 
 const isGuest = (member) => !member?.registrations?.student_id
 
-const isCheckedIn = (member) => !!member?.registrations?.checked_in_at
+// car_members 有 checked_in_at（undefined = regAsMember/其他交通 fallback）
+// direction 只對 regAsMember（其他交通）有效：up → checked_in_at；down → checked_in_down_at
+const getMemberCheckedAt = (member, direction = 'up') =>
+  member?.checked_in_at !== undefined
+    ? member.checked_in_at
+    : direction === 'down'
+      ? (member?.registrations?.checked_in_down_at ?? null)
+      : (member?.registrations?.checked_in_at ?? null)
+const isCheckedIn = (member, direction = 'up') => !!getMemberCheckedAt(member, direction)
 
 // 「其他交通」判定：transport 不歸大車也不歸小車
 // 沿用 CarrangementDetailPage 的分類邏輯：大車=含「精舍」，小車=含「自行開車」或「搭學員」
@@ -329,7 +341,7 @@ export default function CarCheckinPage() {
         )
       })
       if (toAutoCheck.length > 0) {
-        await Promise.all(toAutoCheck.map(m => checkIn(m.registration_id)))
+        await Promise.all(toAutoCheck.map(m => checkInCarMember(c.car_id, m.registration_id)))
         markAutoChecked(token, toAutoCheck.map(m => m.registration_id))
         const fresh = await loadCarWithLinked(token)
         setLinkedCars(fresh.linkedCars)
@@ -365,7 +377,7 @@ export default function CarCheckinPage() {
         )
       })
       if (toAutoCheck.length > 0) {
-        await Promise.all(toAutoCheck.map(m => checkIn(m.registration_id)))
+        await Promise.all(toAutoCheck.map(m => checkInCarMember(c.car_id, m.registration_id)))
         markAutoChecked(token, toAutoCheck.map(m => m.registration_id))
         const { cars: fresh } = leaderType === 'small_car'
           ? await getAllSmallCarsProgress(eventId)
@@ -475,7 +487,7 @@ export default function CarCheckinPage() {
     }
 
     const name = getMemberName(found)
-    await checkIn(found.registration_id)
+    await checkInCarMember(foundCar.car_id, found.registration_id)
     showMsg(`✓ ${name} 報到完成`)
     await refresh()
   }
@@ -486,13 +498,24 @@ export default function CarCheckinPage() {
   }
 
   // ── 手動點選報到 ──
-  async function handleToggleCheckin(registrationId, checkedAt) {
-    if (checkedAt) {
-      await uncheckIn(registrationId)
-      // 取消報到時，把該 reg_id 加進 autoCheckedSet，避免後續 autoCheck 又把他勾回去
-      markAutoChecked(token, [registrationId])
+  // carId: 有值 → 寫 car_members.checked_in_at（方向分離）
+  //         null → 其他交通，寫 registrations.checked_in_at
+  async function handleToggleCheckin(carId, registrationId, checkedAt) {
+    if (carId) {
+      if (checkedAt) {
+        await uncheckInCarMember(carId, registrationId)
+        markAutoChecked(token, [registrationId])
+      } else {
+        await checkInCarMember(carId, registrationId)
+      }
     } else {
-      await checkIn(registrationId)
+      // 其他交通：方向分離（headDirection closure）
+      if (checkedAt) {
+        await uncheckInOtherTransport(registrationId, headDirection)
+        markAutoChecked(token, [registrationId])
+      } else {
+        await checkInOtherTransport(registrationId, headDirection)
+      }
     }
     await refresh()
   }
@@ -701,7 +724,7 @@ export default function CarCheckinPage() {
                   )}
                 </div>
                 <button
-                  onClick={() => !ex && handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                  onClick={() => !ex && handleToggleCheckin(car.car_id, member.registration_id, getMemberCheckedAt(member))}
                   disabled={!!ex}
                   title={ex ? `已標記為${exLabel}，從應到排除（如需手動處理，請至排車頁取消標記）` : ''}
                   className={`shrink-0 px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
@@ -914,7 +937,7 @@ export default function CarCheckinPage() {
                           {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                         </div>
                         <button
-                          onClick={() => !memberExcluded && handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                          onClick={() => !memberExcluded && handleToggleCheckin(c.car_id, member.registration_id, getMemberCheckedAt(member))}
                           disabled={memberExcluded}
                           title={memberExcluded ? (volSelfReturn ? '義工車自行回程，從應到排除' : `已標記為${dir === 'down' ? '延後回程' : '提前出發'}，從應到排除`) : ''}
                           className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
@@ -999,9 +1022,10 @@ export default function CarCheckinPage() {
     const otherRegsInDir = otherAllInDir.filter(r => !isOtherExcluded(r))
     const otherExcluded  = otherAllInDir.filter(isOtherExcluded)
     const otherTotal   = otherRegsInDir.length
-    // 義工：預設已報到（不需刷卡），信眾：需實際 checked_in_at
+    // 義工：預設已報到（不需刷卡），信眾：需實際報到時間（方向分離）
+    const otherCheckedField = headDirection === 'down' ? 'checked_in_down_at' : 'checked_in_at'
     const otherChecked = otherRegsInDir.filter(r =>
-      r.answers?.identity === '義工' || !!r.checked_in_at
+      r.answers?.identity === '義工' || !!r[otherCheckedField]
     ).length
 
     const totalAll      = todayMembers.length + monkTotalAll + otherTotal
@@ -1043,11 +1067,19 @@ export default function CarCheckinPage() {
     }
     // 其他交通的提前/延後也算「已確認」（不來當天）
     for (const r of otherExcluded) confirmedRegIds.add(r.registration_id)
+    // reportCounts 改用 car_members.checked_in_at（方向已由 carsInDir 過濾）
+    // 其他交通仍用 registrations.checked_in_at；義工預設已確認
+    const carCheckedRegIds = new Set(
+      carsInDir.flatMap(c => c.car_members ?? []).filter(m => !!m.checked_in_at).map(m => m.registration_id)
+    )
+    for (const r of otherRegsInDir) {
+      if (r.answers?.identity === '義工' || !!r.checked_in_at) carCheckedRegIds.add(r.registration_id)
+    }
     const reportCounts = { 法師: monkCheckedAll, 義工: 0, 信眾: 0 }
     for (const r of allEventRegs) {
       const id = r.answers?.identity
       if (id !== '義工' && id !== '信眾') continue
-      if (!r.checked_in_at && !confirmedRegIds.has(r.registration_id)) continue
+      if (!carCheckedRegIds.has(r.registration_id) && !confirmedRegIds.has(r.registration_id)) continue
       if (id === '義工') reportCounts.義工 += 1
       else reportCounts.信眾 += 1
     }
@@ -1210,7 +1242,7 @@ export default function CarCheckinPage() {
                             {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                           </div>
                           <button
-                            onClick={() => !ex && handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                            onClick={() => !ex && handleToggleCheckin(c.car_id, member.registration_id, getMemberCheckedAt(member))}
                             disabled={!!ex}
                             title={ex ? `已標記為${exLabel}，從應到排除` : ''}
                             className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
@@ -1370,7 +1402,7 @@ export default function CarCheckinPage() {
                                     {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                                   </div>
                                   <button
-                                    onClick={() => !memberExcluded && handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                                    onClick={() => !memberExcluded && handleToggleCheckin(c.car_id, member.registration_id, getMemberCheckedAt(member))}
                                     disabled={memberExcluded}
                                     title={memberExcluded ? (volSelfReturn ? '義工車自行回程，從應到排除' : `已標記為${headDirection === 'down' ? '延後回程' : '提前出發'}，從應到排除`) : ''}
                                     className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
@@ -1430,7 +1462,7 @@ export default function CarCheckinPage() {
                     {otherSorted.map(member => {
                       const name   = getMemberName(member)
                       const guest  = isGuest(member)
-                      const chk    = isCheckedIn(member)
+                      const chk    = isCheckedIn(member, headDirection)
                       const cls    = formatMemberClasses(member)
                       const dirKey = headDirection === 'up' ? 'transport_up' : 'transport_down'
                       const t      = member.registrations?.answers?.[dirKey] ?? '（未填）'
@@ -1445,7 +1477,7 @@ export default function CarCheckinPage() {
                             {cls && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{cls}</div>}
                           </div>
                           <button
-                            onClick={() => handleToggleCheckin(member.registration_id, member.registrations?.checked_in_at)}
+                            onClick={() => handleToggleCheckin(null, member.registration_id, getMemberCheckedAt(member, headDirection))}
                             className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
                               chk ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-600 text-white hover:bg-green-700'
                             }`}
@@ -1484,6 +1516,7 @@ export default function CarCheckinPage() {
           <CameraScanner
             onScan={code => { setShowCamera(false); handleScanCode(code) }}
             onClose={() => setShowCamera(false)}
+    
           />
         )}
       </div>

@@ -547,21 +547,10 @@ export async function checkIn(registrationId) {
  * 全車到齊：把某台車所有成員一次標記為已報到
  */
 export async function checkInAllCar(carId) {
-  // 先取得此車所有 registration_id
-  const { data, error: fetchErr } = await supabase
-    .from('car_members')
-    .select('registration_id')
-    .eq('car_id', carId)
-
-  if (fetchErr) return { success: false, error: fetchErr.message }
-
-  const ids = (data ?? []).map(m => m.registration_id)
-  if (ids.length === 0) return { success: true, error: null }
-
   const { error } = await supabase
-    .from('registrations')
+    .from('car_members')
     .update({ checked_in_at: new Date().toISOString() })
-    .in('registration_id', ids)
+    .eq('car_id', carId)
     .is('checked_in_at', null)   // 只更新尚未報到的
 
   if (error) return { success: false, error: error.message }
@@ -575,6 +564,63 @@ export async function uncheckIn(registrationId) {
   const { error } = await supabase
     .from('registrations')
     .update({ checked_in_at: null })
+    .eq('registration_id', registrationId)
+
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
+/**
+ * 車輛成員報到（方向級別，寫入 car_members.checked_in_at）
+ */
+export async function checkInCarMember(carId, registrationId) {
+  const { error } = await supabase
+    .from('car_members')
+    .update({ checked_in_at: new Date().toISOString() })
+    .eq('car_id', carId)
+    .eq('registration_id', registrationId)
+
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
+/**
+ * 取消車輛成員報到（方向級別）
+ */
+export async function uncheckInCarMember(carId, registrationId) {
+  const { error } = await supabase
+    .from('car_members')
+    .update({ checked_in_at: null })
+    .eq('car_id', carId)
+    .eq('registration_id', registrationId)
+
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
+/**
+ * 其他交通成員報到（方向分離）
+ * 上山 → checked_in_at；下山 → checked_in_down_at
+ */
+export async function checkInOtherTransport(registrationId, direction) {
+  const field = direction === 'down' ? 'checked_in_down_at' : 'checked_in_at'
+  const { error } = await supabase
+    .from('registrations')
+    .update({ [field]: new Date().toISOString() })
+    .eq('registration_id', registrationId)
+
+  if (error) return { success: false, error: error.message }
+  return { success: true, error: null }
+}
+
+/**
+ * 取消其他交通成員報到（方向分離）
+ */
+export async function uncheckInOtherTransport(registrationId, direction) {
+  const field = direction === 'down' ? 'checked_in_down_at' : 'checked_in_at'
+  const { error } = await supabase
+    .from('registrations')
+    .update({ [field]: null })
     .eq('registration_id', registrationId)
 
   if (error) return { success: false, error: error.message }
@@ -1501,6 +1547,7 @@ export async function getCarByToken(token) {
       events ( name, date_start ),
       car_members (
         registration_id,
+        checked_in_at,
         registrations (
           registration_id, answers, checked_in_at, student_id,
           students!student_id ( name, student_classes ( class_name, group_name ) )
@@ -1548,6 +1595,7 @@ export async function getLinkedCarsForLeader(eventId, leaderRegIds) {
       events ( name, date_start ),
       car_members (
         registration_id,
+        checked_in_at,
         registrations (
           registration_id, answers, checked_in_at, student_id,
           students!student_id ( name, student_classes ( class_name, group_name ) )
@@ -1596,6 +1644,7 @@ export async function getAllCarsProgress(eventId) {
       car_leaders ( registration_id ),
       car_members (
         registration_id,
+        checked_in_at,
         registrations (
           registration_id, answers, checked_in_at, student_id, pre_depart_override, late_return_override,
           students!student_id ( name, student_classes ( class_name, group_name ) )
@@ -1620,7 +1669,7 @@ export async function getEventRegistrations(eventId) {
   const { data, error } = await supabase
     .from('registrations')
     .select(`
-      registration_id, answers, checked_in_at, student_id, pre_depart_override, late_return_override,
+      registration_id, answers, checked_in_at, checked_in_down_at, student_id, pre_depart_override, late_return_override,
       students!student_id ( name, student_classes ( class_name, group_name ) )
     `)
     .eq('event_id', eventId)
@@ -1657,6 +1706,7 @@ export async function getAllSmallCarsProgress(eventId) {
       car_leaders ( registration_id ),
       car_members (
         registration_id,
+        checked_in_at,
         registrations (
           registration_id, answers, checked_in_at, student_id, pre_depart_override, late_return_override,
           students!student_id ( name, student_classes ( class_name, group_name ) )
