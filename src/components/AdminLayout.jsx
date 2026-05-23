@@ -26,46 +26,51 @@ export default function AdminLayout({ children }) {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* 頂部導覽列 */}
       <header className="bg-amber-700 text-white shadow-md">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="font-bold text-lg tracking-wide">普宜精舍 · 後台</span>
-            {!isAdmin && (
-              <span className="text-xs bg-white/20 border border-white/30 text-white/90 px-2 py-0.5 rounded-full">
-                義工
-              </span>
-            )}
-            <nav className="flex gap-1 ml-2">
-              {navItems.map(item => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    `px-3 py-1 rounded text-sm font-medium transition-colors ${
-                      isActive
-                        ? 'bg-white/20'
-                        : 'hover:bg-white/10'
-                    }`
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
+        <div className="max-w-6xl mx-auto px-3 py-2">
+          {/* 第一行：Logo + 右側按鈕 */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-base sm:text-lg tracking-wide whitespace-nowrap">普宜精舍 · 後台</span>
+              {!isAdmin && (
+                <span className="text-xs bg-white/20 border border-white/30 text-white/90 px-2 py-0.5 rounded-full whitespace-nowrap">
+                  義工
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-2">
+              <NavLink
+                to="/"
+                className="text-xs text-white/70 hover:text-white transition-colors whitespace-nowrap"
+              >
+                ← 前台報名
+              </NavLink>
+              <button
+                onClick={handleSignOut}
+                className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1 rounded transition-colors whitespace-nowrap"
+              >
+                登出
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <NavLink
-              to="/"
-              className="text-xs text-white/70 hover:text-white transition-colors"
-            >
-              ← 前台報名
-            </NavLink>
-            <button
-              onClick={handleSignOut}
-              className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1 rounded transition-colors"
-            >
-              登出
-            </button>
-          </div>
+          {/* 第二行：Nav（手機版橫向捲動） */}
+          <nav className="flex gap-1 mt-1.5 overflow-x-auto pb-0.5 -mx-1 px-1"
+               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            {navItems.map(item => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
+                    isActive
+                      ? 'bg-white/20'
+                      : 'hover:bg-white/10'
+                  }`
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
         </div>
       </header>
 

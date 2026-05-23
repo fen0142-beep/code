@@ -1098,12 +1098,14 @@ export default function CarCheckinPage() {
             {monkTotalAll > 0 && (
               <div className="mt-1 text-xs opacity-80">含法師 {monkTotalAll} 人（已到 {monkCheckedAll}）</div>
             )}
-            <div className="flex gap-4 mt-1.5 text-sm flex-wrap opacity-90">
+            {headDirection === 'up' && (
+              <div className="flex gap-4 mt-1.5 text-sm flex-wrap opacity-90">
                 <span>法師 <strong>{reportCounts.法師}</strong></span>
                 <span>義工 <strong>{reportCounts.義工}</strong></span>
                 <span>信眾 <strong>{reportCounts.信眾}</strong></span>
                 <span className="text-xs opacity-60 self-center">（回報聯絡組資訊）</span>
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
