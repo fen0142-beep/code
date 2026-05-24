@@ -1275,38 +1275,19 @@ export default function EventDetailPage() {
             >
               ＋ 新增欄位
             </button>
-            {templates.map(tmpl => {
-              const tmplSessionFields = Array.isArray(tmpl.session_fields) ? tmpl.session_fields : []
-              const hasSessionFields = tmplSessionFields.length > 0
-              return (
-                <button
-                  key={tmpl.template_id}
-                  onClick={async () => {
-                    const warn = hasSessionFields
-                      ? `套用「${tmpl.name}」後，目前的欄位將被取代，且場次共用子欄位（${tmplSessionFields.length} 個）將覆蓋。確定要繼續嗎？`
-                      : `套用「${tmpl.name}」後，目前設定的欄位將全部被取代。確定要繼續嗎？`
-                    if ((fields.length === 0 && sessionFields.length === 0) || window.confirm(warn)) {
-                      setFields((tmpl.fields || []).map(f => ({ ...f })))
-                      // 若模板有場次共用子欄位，立刻寫入此活動的 event_session_fields
-                      if (hasSessionFields) {
-                        const { success, error } = await saveEventSessionFields(id, tmplSessionFields)
-                        if (!success) {
-                          window.alert('場次共用子欄位寫入失敗：' + error)
-                          return
-                        }
-                        // 重 load 讓 EventSessionFieldsPanel 顯示最新值
-                        load()
-                      }
-                    }
-                  }}
-                  className="border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 text-sm px-4 py-2 rounded-lg transition-colors"
-                  title={hasSessionFields ? `含 ${tmplSessionFields.length} 個場次共用子欄位` : ''}
-                >
-                  📋 套用{tmpl.name}
-                  {hasSessionFields && <span className="ml-1 text-emerald-600">＋場</span>}
-                </button>
-              )
-            })}
+            {templates.map(tmpl => (
+              <button
+                key={tmpl.template_id}
+                onClick={() => {
+                  if (fields.length === 0 || window.confirm(`套用「${tmpl.name}」後，目前設定的欄位將全部被取代。確定要繼續嗎？`)) {
+                    setFields((tmpl.fields || []).map(f => ({ ...f })))
+                  }
+                }}
+                className="border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 text-sm px-4 py-2 rounded-lg transition-colors"
+              >
+                📋 套用{tmpl.name}
+              </button>
+            ))}
             <button
               onClick={handleSaveFields}
               disabled={saving}

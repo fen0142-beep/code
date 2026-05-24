@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import AdminLayout from '../../components/AdminLayout'
 import FieldRow from '../../components/FieldRow'
-import SessionFieldsEditor, { cleanSessionFieldsForSave, validateSessionFields } from '../../components/SessionFieldsEditor'
 import { getTemplates, createTemplate, updateTemplate, deleteTemplate } from '../../lib/supabase'
 
 const NEW_FIELD = () => ({
@@ -19,11 +18,6 @@ function TemplateEditor({ template, onSaved, onCancelled, isNew }) {
   const [name, setName] = useState(template.name)
   const [fields, setFields] = useState(
     (template.fields || []).map((f, i) => ({ ...f, _id: i }))
-  )
-  // Phase 5：場次共用子欄位（給多場次活動用，可空）
-  const [sessionFields, setSessionFields] = useState(template.session_fields || [])
-  const [showSessionFields, setShowSessionFields] = useState(
-    Array.isArray(template.session_fields) && template.session_fields.length > 0
   )
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
@@ -57,33 +51,23 @@ function TemplateEditor({ template, onSaved, onCancelled, isNew }) {
   async function handleSave() {
     if (!name.trim()) { setMsg('請填寫模板名稱'); return }
 
-    // 清洗 + 驗證場次共用子欄位
-    const cleanedSessionFields = cleanSessionFieldsForSave(sessionFields)
-    if (cleanedSessionFields.length > 0) {
-      const v = validateSessionFields(cleanedSessionFields)
-      if (!v.ok) { setMsg(v.msg); return }
-    }
-
     setSaving(true)
     setMsg('')
-    // 清除內部用的 _id key
     const cleanFields = fields.map(({ _id, ...f }) => f)
-    // 儲存時把 SessionFieldsEditor 帶的 _key / field_id 移除（後端不認）
-    const storedSessionFields = cleanedSessionFields.map(({ field_id, ...f }) => f)
 
     let result
     if (isNew) {
-      result = await createTemplate(name.trim(), cleanFields, storedSessionFields)
+      result = await createTemplate(name.trim(), cleanFields, [])
       if (result.error) { setMsg(`儲存失敗：${result.error}`); setSaving(false); return }
       onSaved(result.template)
     } else {
       result = await updateTemplate(template.template_id, {
         name: name.trim(),
         fields: cleanFields,
-        session_fields: storedSessionFields,
+        session_fields: [],
       })
       if (result.error) { setMsg(`儲存失敗：${result.error}`); setSaving(false); return }
-      onSaved({ ...template, name: name.trim(), fields: cleanFields, session_fields: storedSessionFields })
+      onSaved({ ...template, name: name.trim(), fields: cleanFields, session_fields: [] })
     }
     setSaving(false)
   }
@@ -117,31 +101,6 @@ function TemplateEditor({ template, onSaved, onCancelled, isNew }) {
             isDragOver={dragOverIndex === i}
           />
         ))}
-      </div>
-
-      {/* 場次共用子欄位（多場次活動用，預設摺疊）*/}
-      <div className="border-t border-amber-200 pt-3">
-        <button
-          type="button"
-          onClick={() => setShowSessionFields(v => !v)}
-          className="flex items-center gap-2 text-sm font-medium text-emerald-700 hover:text-emerald-900"
-        >
-          <span>{showSessionFields ? '▼' : '▶'}</span>
-          <span>場次共用子欄位（多場次活動用）</span>
-          {sessionFields.length > 0 && (
-            <span className="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5">
-              {sessionFields.length} 個
-            </span>
-          )}
-        </button>
-        {showSessionFields && (
-          <SessionFieldsEditor
-            value={sessionFields}
-            onChange={setSessionFields}
-            description="只有多場次活動會用到。學員勾選任一場次時，下方會出現的子問題（例：午齋、停車…）。套用此模板時會一併設定到目標活動。"
-            emptyHint="尚無子欄位（單場次活動不需要設定，留空即可）"
-          />
-        )}
       </div>
 
       {/* 操作按鈕列 */}
