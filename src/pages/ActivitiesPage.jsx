@@ -57,7 +57,7 @@ function CornerRibbon({ tag }) {
     }}>
       <span style={{
         color: c.color,
-        fontSize: '0.8rem',
+        fontSize: '1.2rem',
         fontWeight: '700',
         letterSpacing: '0.05em',
         lineHeight: 1,
