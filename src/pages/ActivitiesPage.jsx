@@ -32,26 +32,33 @@ function locationGradient(tag) {
   return 'linear-gradient(135deg, #2E0E1F 0%, #4A1A32 100%)'
 }
 
-function LocationBadge({ tag }) {
+function CornerRibbon({ tag }) {
   const config = {
-    zhongtai:  { label: '中台禪寺', borderColor: '#C9A96E', color: '#C9A96E' },
-    tianxiang: { label: '天祥寶塔', borderColor: '#7FAFC0', color: '#7FAFC0' },
-    other:     { label: '精舍',     borderColor: '#8FAF8A', color: '#8FAF8A' },
+    zhongtai:  { label: '中台', bg: '#C9A96E', color: '#2E0E1F' },
+    tianxiang: { label: '天祥', bg: '#7FAFC0', color: '#ffffff' },
+    other:     { label: '普宜', bg: '#C0C0C8', color: '#2E0E1F' },
   }
   const c = config[tag] || config.other
   return (
-    <span style={{
-      border: `1px solid ${c.borderColor}`,
+    <div style={{
+      position: 'absolute',
+      bottom: '14px',
+      right: '-22px',
+      width: '80px',
+      padding: '4px 0',
+      backgroundColor: c.bg,
       color: c.color,
-      backgroundColor: 'rgba(0,0,0,0.55)',
-      backdropFilter: 'blur(4px)',
-      borderRadius: '4px',
-      padding: '2px 8px',
-      fontSize: '0.7rem',
-      letterSpacing: '0.05em',
+      fontSize: '0.65rem',
+      fontWeight: '700',
+      textAlign: 'center',
+      transform: 'rotate(-45deg)',
+      letterSpacing: '0.08em',
+      boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+      pointerEvents: 'none',
+      zIndex: 10,
     }}>
       {c.label}
-    </span>
+    </div>
   )
 }
 
@@ -92,6 +99,7 @@ function ActivityCard({ event }) {
     <Link to={`/activities/${event.event_id}`} style={{ textDecoration: 'none' }}>
       <div
         style={{
+          position: 'relative',
           backgroundColor: '#3D1429',
           borderRadius: '8px',
           overflow: 'hidden',
@@ -110,7 +118,7 @@ function ActivityCard({ event }) {
         }}
       >
         {/* 封面圖或 Placeholder */}
-        <div style={{ height: '160px', overflow: 'hidden', position: 'relative' }}>
+        <div style={{ height: '160px', overflow: 'hidden' }}>
           {event.cover_image_url ? (
             <img
               src={event.cover_image_url}
@@ -132,9 +140,6 @@ function ActivityCard({ event }) {
               </span>
             </div>
           )}
-          <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
-            <LocationBadge tag={event.location_tag} />
-          </div>
         </div>
 
         {/* 卡片內文 */}
@@ -153,6 +158,9 @@ function ActivityCard({ event }) {
           </p>
           <RegistrationButton event={event} />
         </div>
+
+        {/* 角落 Ribbon */}
+        <CornerRibbon tag={event.location_tag} />
       </div>
     </Link>
   )

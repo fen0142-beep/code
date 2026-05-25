@@ -15,26 +15,17 @@ function formatDateRange(start, end) {
   return `${sm}/${sd}–${em}/${ed}`
 }
 
-function LocationBadge({ tag }) {
+function LocationLabel({ tag }) {
   const config = {
-    zhongtai:  { label: '中台禪寺', borderColor: '#C9A96E', color: '#C9A96E' },
-    tianxiang: { label: '天祥寶塔', borderColor: '#7FAFC0', color: '#7FAFC0' },
-    other:     { label: '精舍',     borderColor: '#8FAF8A', color: '#8FAF8A' },
+    zhongtai:  { label: '📍 中台禪寺', color: '#C9A96E' },
+    tianxiang: { label: '📍 天祥寶塔禪寺', color: '#7FAFC0' },
+    other:     { label: '📍 普宜精舍', color: '#C0C0C8' },
   }
   const c = config[tag] || config.other
   return (
-    <span style={{
-      border: `1px solid ${c.borderColor}`,
-      color: c.color,
-      backgroundColor: 'rgba(0,0,0,0.55)',
-      backdropFilter: 'blur(4px)',
-      borderRadius: '4px',
-      padding: '2px 8px',
-      fontSize: '0.7rem',
-      letterSpacing: '0.05em',
-    }}>
+    <p style={{ color: c.color, fontSize: '0.85rem', marginBottom: '12px', letterSpacing: '0.05em' }}>
       {c.label}
-    </span>
+    </p>
   )
 }
 
@@ -139,10 +130,8 @@ export default function ActivityDetailPage() {
               </div>
             )}
 
-            {/* 地點 Badge */}
-            <div style={{ marginBottom: '12px' }}>
-              <LocationBadge tag={event.location_tag} />
-            </div>
+            {/* 地點標籤 */}
+            <LocationLabel tag={event.location_tag} />
 
             {/* 活動名稱 */}
             <h1 style={{
