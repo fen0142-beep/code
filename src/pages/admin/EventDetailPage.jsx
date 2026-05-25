@@ -229,6 +229,7 @@ export default function EventDetailPage() {
       offline_registration: !!ev.offline_registration,
       location_tag: ev.location_tag ?? 'zhongtai',
       cover_image_url: ev.cover_image_url ?? '',
+      cover_image_position: ev.cover_image_position ?? '50% 50%',
       description: ev.description ?? '',
     })
     setFields(f)
@@ -362,6 +363,7 @@ export default function EventDetailPage() {
         offline_registration: form.offline_registration,
         location_tag: form.location_tag,
         cover_image_url: form.cover_image_url || null,
+        cover_image_position: form.cover_image_position || '50% 50%',
         description: form.description || null,
       }),
       setEventVolunteers(id, [...eventVolunteerIds]),
@@ -766,6 +768,20 @@ export default function EventDetailPage() {
                   </span>
                 </label>
 
+                {/* 報名截止 */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.status === 'closed'}
+                    onChange={e => setForm(f => ({
+                      ...f,
+                      status: e.target.checked ? 'closed' : 'draft'
+                    }))}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">報名已截止（介紹頁顯示玫瑰紅按鈕）</span>
+                </label>
+
                 {/* 離線報名 */}
                 <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
                   <input
@@ -811,13 +827,6 @@ export default function EventDetailPage() {
                 {/* 封面圖片 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">活動封面圖片</label>
-                  {form.cover_image_url && (
-                    <img
-                      src={form.cover_image_url}
-                      alt="封面預覽"
-                      className="w-full max-w-xs rounded-lg mb-2 object-cover aspect-video border border-gray-200"
-                    />
-                  )}
                   <input
                     type="file"
                     accept="image/*"
@@ -837,6 +846,40 @@ export default function EventDetailPage() {
                   <p className="text-xs text-gray-400 mt-1">
                     建議尺寸 1200×675（16:9），檔案大小 2MB 以內。上傳後請點「儲存設定」。
                   </p>
+                  {form.cover_image_url && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-500 mb-1">圖片顯示位置</p>
+                      <div className="relative w-full h-32 overflow-hidden rounded border border-gray-200 mb-2">
+                        <img
+                          src={form.cover_image_url}
+                          alt="預覽"
+                          className="w-full h-full object-cover"
+                          style={{ objectPosition: form.cover_image_position || '50% 50%' }}
+                        />
+                      </div>
+                      <label className="text-xs text-gray-600">左右位置</label>
+                      <input
+                        type="range" min="0" max="100" step="5"
+                        value={parseInt((form.cover_image_position || '50% 50%').split(' ')[0])}
+                        onChange={e => {
+                          const parts = (form.cover_image_position || '50% 50%').split(' ')
+                          setForm(f => ({ ...f, cover_image_position: `${e.target.value}% ${parts[1] || '50%'}` }))
+                        }}
+                        className="w-full"
+                      />
+                      <label className="text-xs text-gray-600 mt-1 block">上下位置</label>
+                      <input
+                        type="range" min="0" max="100" step="5"
+                        value={parseInt((form.cover_image_position || '50% 50%').split(' ')[1])}
+                        onChange={e => {
+                          const parts = (form.cover_image_position || '50% 50%').split(' ')
+                          setForm(f => ({ ...f, cover_image_position: `${parts[0] || '50%'} ${e.target.value}%` }))
+                        }}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">目前：{form.cover_image_position || '50% 50%'}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

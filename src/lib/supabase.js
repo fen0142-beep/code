@@ -2215,7 +2215,7 @@ export async function getPublicActivities() {
   const today = new Date().toISOString().slice(0, 10)
   const { data, error } = await supabase
     .from('events')
-    .select('event_id, name, date_start, date_end, location, location_tag, status, offline_registration, cover_image_url, description')
+    .select('event_id, name, date_start, date_end, location, location_tag, status, offline_registration, cover_image_url, cover_image_position, description')
     .eq('show_on_activities', true)
     .or(`date_end.is.null,date_end.gte.${today}`)
     .order('date_start', { ascending: true })
@@ -2227,7 +2227,7 @@ export async function getPublicActivities() {
 export async function getPublicActivity(eventId) {
   const { data, error } = await supabase
     .from('events')
-    .select('event_id, name, date_start, date_end, location, location_tag, status, offline_registration, cover_image_url, description')
+    .select('event_id, name, date_start, date_end, location, location_tag, status, offline_registration, cover_image_url, cover_image_position, description')
     .eq('event_id', eventId)
     .eq('show_on_activities', true)
     .single()

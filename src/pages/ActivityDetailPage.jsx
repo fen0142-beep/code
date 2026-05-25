@@ -2,20 +2,6 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getPublicActivity } from '../lib/supabase'
 
-const PLACEHOLDER_GRADIENTS = [
-  'from-amber-100 to-amber-200',
-  'from-blue-100 to-blue-200',
-  'from-emerald-100 to-emerald-200',
-  'from-purple-100 to-purple-200',
-  'from-rose-100 to-rose-200',
-]
-
-const LOCATION_COLORS = {
-  zhongtai:  'bg-blue-100 text-blue-800',
-  tianxiang: 'bg-green-100 text-green-800',
-  other:     'bg-gray-100 text-gray-700',
-}
-
 function formatDateRange(start, end) {
   if (!start) return '日期待定'
   const s = new Date(start)
@@ -29,29 +15,59 @@ function formatDateRange(start, end) {
   return `${sm}/${sd}–${em}/${ed}`
 }
 
-function RegistrationButton({ event }) {
+function LocationBadge({ tag }) {
+  const config = {
+    zhongtai:  { label: '中台禪寺', borderColor: '#C9A96E', color: '#C9A96E' },
+    tianxiang: { label: '天祥寶塔', borderColor: '#7FAFC0', color: '#7FAFC0' },
+    other:     { label: '精舍',     borderColor: '#8FAF8A', color: '#8FAF8A' },
+  }
+  const c = config[tag] || config.other
+  return (
+    <span style={{
+      border: `1px solid ${c.borderColor}`,
+      color: c.color,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      backdropFilter: 'blur(4px)',
+      borderRadius: '4px',
+      padding: '2px 8px',
+      fontSize: '0.7rem',
+      letterSpacing: '0.05em',
+    }}>
+      {c.label}
+    </span>
+  )
+}
+
+const btnBase = {
+  display: 'inline-block',
+  padding: '6px 16px',
+  borderRadius: '4px',
+  fontSize: '0.82rem',
+  fontWeight: '500',
+  letterSpacing: '0.05em',
+  cursor: 'default',
+  textDecoration: 'none',
+}
+
+function RegistrationButton({ event, large }) {
+  const style = large ? { ...btnBase, padding: '12px 32px', fontSize: '1rem' } : btnBase
   if (event.offline_registration) {
-    return (
-      <span className="inline-block w-full text-center py-2 px-4 rounded-lg bg-gray-100 text-gray-500 text-sm">
-        報名請洽精舍
-      </span>
-    )
+    return <span style={{ ...style, backgroundColor: '#4A2A35', color: '#8a9aaa' }}>報名請洽精舍</span>
+  }
+  if (event.status === 'closed') {
+    return <span style={{ ...style, backgroundColor: '#5C1020', color: '#d08090' }}>報名已截止</span>
   }
   if (event.status === 'active') {
     return (
-      <Link
-        to={`/?event=${event.event_id}`}
-        className="inline-block w-full text-center py-2 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium transition-colors"
+      <a
+        href={`/?event=${event.event_id}`}
+        style={{ ...style, backgroundColor: '#C9A96E', color: '#2E0E1F', cursor: 'pointer' }}
       >
-        點我報名 →
-      </Link>
+        點我報名
+      </a>
     )
   }
-  return (
-    <span className="inline-block w-full text-center py-2 px-4 rounded-lg bg-gray-100 text-gray-400 text-sm">
-      尚未開放報名
-    </span>
-  )
+  return <span style={{ ...style, backgroundColor: '#2E0E1F', color: '#6a7a8a' }}>尚未開放報名</span>
 }
 
 export default function ActivityDetailPage() {
@@ -68,95 +84,105 @@ export default function ActivityDetailPage() {
     })
   }, [id])
 
-  const locationTag = event?.location_tag ?? 'zhongtai'
-  const locationLabel =
-    locationTag === 'other'
-      ? (event?.location || '其他')
-      : locationTag === 'tianxiang'
-        ? '天祥寶塔禪寺'
-        : '中台禪寺'
-  const locationColor = LOCATION_COLORS[locationTag] ?? LOCATION_COLORS.other
-  const gradient = PLACEHOLDER_GRADIENTS[0]
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <img
-          src="/logo.png"
-          alt="普宜精舍"
-          className="w-8 h-8 rounded"
-          onError={e => { e.target.style.display = 'none' }}
-        />
-        <div>
-          <p className="text-sm font-semibold text-gray-800">普宜精舍</p>
-          <p className="text-xs text-gray-500">中台禪寺所屬精舍</p>
-        </div>
-      </header>
-
-      <main className="max-w-xl mx-auto px-4 py-8">
-        <Link to="/activities" className="inline-flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700 mb-6">
+    <div style={{ minHeight: '100vh', backgroundColor: '#2E0E1F' }}>
+      {/* 返回列 */}
+      <div style={{ backgroundColor: '#220A17', borderBottom: '1px solid #5C1F3D44', padding: '12px 24px' }}>
+        <Link
+          to="/activities"
+          style={{ color: '#C9A96E', fontSize: '0.85rem', letterSpacing: '0.05em', textDecoration: 'none' }}
+        >
           ← 返回活動列表
         </Link>
+      </div>
 
+      <div className="max-w-2xl mx-auto px-6 py-10">
         {loading && (
-          <p className="text-center text-gray-400 py-20">載入中…</p>
+          <p style={{ textAlign: 'center', color: '#B0A898', paddingTop: '60px' }}>載入中…</p>
         )}
 
         {!loading && notFound && (
-          <div className="text-center py-20 space-y-4">
-            <p className="text-gray-500">找不到此活動，或活動尚未公開。</p>
-            <Link to="/activities" className="inline-block px-4 py-2 rounded-lg bg-emerald-500 text-white text-sm hover:bg-emerald-600 transition-colors">
+          <div style={{ textAlign: 'center', paddingTop: '60px' }}>
+            <p style={{ color: '#B0A898', marginBottom: '16px' }}>找不到此活動，或活動尚未公開。</p>
+            <Link
+              to="/activities"
+              style={{
+                display: 'inline-block',
+                backgroundColor: '#C9A96E',
+                color: '#2E0E1F',
+                padding: '8px 20px',
+                borderRadius: '4px',
+                textDecoration: 'none',
+                fontSize: '0.9rem',
+                fontWeight: '500',
+              }}
+            >
               返回活動列表
             </Link>
           </div>
         )}
 
         {!loading && event && (
-          <div className="space-y-5">
+          <>
             {/* 封面圖 */}
-            <div className="aspect-video w-full overflow-hidden rounded-2xl">
-              {event.cover_image_url ? (
+            {event.cover_image_url && (
+              <div style={{ borderRadius: '8px', overflow: 'hidden', marginBottom: '24px', height: '280px' }}>
                 <img
                   src={event.cover_image_url}
                   alt={event.name}
-                  className="w-full h-full object-cover"
+                  style={{
+                    width: '100%', height: '100%',
+                    objectFit: 'cover',
+                    objectPosition: event.cover_image_position || '50% 50%',
+                  }}
                 />
-              ) : (
-                <div className={`w-full h-full bg-gradient-to-br ${gradient} flex items-center justify-center`}>
-                  <span className="text-6xl opacity-50">🪷</span>
-                </div>
-              )}
+              </div>
+            )}
+
+            {/* 地點 Badge */}
+            <div style={{ marginBottom: '12px' }}>
+              <LocationBadge tag={event.location_tag} />
             </div>
 
-            {/* 標題區 */}
-            <div className="space-y-2">
-              <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${locationColor}`}>
-                {locationLabel}
-              </span>
-              <h1 className="text-2xl font-bold text-gray-900 leading-snug">{event.name}</h1>
-              <p className="text-sm text-gray-600">📅 {formatDateRange(event.date_start, event.date_end)}</p>
-              {event.location && (
-                <p className="text-sm text-gray-600">📍 {event.location}</p>
-              )}
-            </div>
+            {/* 活動名稱 */}
+            <h1 style={{
+              color: '#F0E8D8',
+              fontSize: '1.5rem',
+              fontWeight: '400',
+              letterSpacing: '0.08em',
+              marginBottom: '8px',
+            }}>
+              {event.name}
+            </h1>
 
-            {/* 說明文字 */}
+            {/* 金色裝飾線 */}
+            <div style={{ width: '40px', height: '2px', backgroundColor: '#C9A96E', marginBottom: '16px' }} />
+
+            {/* 日期 */}
+            <p style={{ color: '#B0A898', fontSize: '0.9rem', marginBottom: '24px' }}>
+              📅 {formatDateRange(event.date_start, event.date_end)}
+            </p>
+
+            {/* 活動說明 */}
             {event.description && (
-              <div>
-                <p className="text-sm font-semibold text-gray-700 mb-2">活動說明</p>
-                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                  {event.description}
-                </p>
+              <div style={{
+                color: '#D8D0C0',
+                fontSize: '0.95rem',
+                lineHeight: '1.9',
+                whiteSpace: 'pre-wrap',
+                marginBottom: '32px',
+                borderLeft: '2px solid #C9A96E44',
+                paddingLeft: '16px',
+              }}>
+                {event.description}
               </div>
             )}
 
             {/* 報名按鈕 */}
-            <div className="pt-2">
-              <RegistrationButton event={event} />
-            </div>
-          </div>
+            <RegistrationButton event={event} large />
+          </>
         )}
-      </main>
+      </div>
     </div>
   )
 }
