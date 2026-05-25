@@ -447,7 +447,19 @@ export default function KioskPage() {
       setPhase('session_select')
     } else {
       // 一般模式
-      setAnswers(reg?.answers || {})
+      const baseAnswers = reg?.answers || {}
+      // 義工限定模式：預填 identity = '義工'
+      const isVolunteerOnly = !!item.event.locked && !!item.event.volunteer_open
+      if (isVolunteerOnly && !reg) {
+        const identityField = item.fields.find(f => f.field_key === 'identity' || f.dashboard_role === 'identity')
+        if (identityField) {
+          setAnswers({ ...baseAnswers, [identityField.field_key]: '義工' })
+        } else {
+          setAnswers(baseAnswers)
+        }
+      } else {
+        setAnswers(baseAnswers)
+      }
       setPhase('form')
     }
     startFormTimer()
@@ -1052,6 +1064,7 @@ export default function KioskPage() {
             fields={selectedItem.fields}
             answers={answers}
             isUpdate={isUpdate}
+            isVolunteerOnly={!!selectedItem.event.locked && !!selectedItem.event.volunteer_open}
             errorMsg={errorMsg}
             submitting={phase === 'submitting'}
             onChange={setAnswers}
@@ -1073,6 +1086,7 @@ export default function KioskPage() {
             sessionSelections={sessionSelections}
             sessionSubAnswers={sessionSubAnswers}
             isUpdate={isUpdate}
+            isVolunteerOnly={!!selectedItem.event.locked && !!selectedItem.event.volunteer_open}
             errorMsg={errorMsg}
             submitting={phase === 'session_submitting'}
             onToggleSession={handleToggleSession}
@@ -1378,6 +1392,7 @@ function OverviewScreen({
           const registered = !!reg
           const confirming = cancellingEventId === event.event_id
 
+          const isVolunteerOnly = !!event.locked && !!event.volunteer_open
           return (
             <div
               key={event.event_id}
@@ -1385,6 +1400,20 @@ function OverviewScreen({
                 confirming ? 'border-red-300 bg-red-50' : registered ? 'border-green-300' : 'border-gray-200'
               }`}
             >
+              {/* 義工限定模式提示橫條 */}
+              {isVolunteerOnly && (
+                <div style={{
+                  backgroundColor: '#FEF3C7',
+                  border: '1px solid #F59E0B',
+                  borderRadius: '6px',
+                  padding: '8px 12px',
+                  marginBottom: '12px',
+                  fontSize: '0.85rem',
+                  color: '#92400E',
+                }}>
+                  ⚠️ 此活動學員報名已截止，目前僅開放義工報名。
+                </div>
+              )}
               {/* 上方：活動資訊 + 主要按鈕 */}
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -1472,8 +1501,8 @@ function OverviewScreen({
                 </div>
 
                 <div className="flex-shrink-0">
-                  {/* 活動鎖定：只顯示狀態，不提供任何操作 */}
-                  {event.locked ? (
+                  {/* 活動鎖定（非義工開放）：只顯示狀態，不提供任何操作 */}
+                  {event.locked && !isVolunteerOnly ? (
                     registered ? (
                       <span className="px-4 py-2 border-2 border-green-400 text-green-700 rounded-xl text-kiosk-sm font-medium bg-green-50 inline-block text-center">
                         ✓ 已報名
@@ -1556,8 +1585,8 @@ function OverviewScreen({
                 )
               })()}
 
-              {/* 鎖定提示（取代取消報名按鈕） */}
-              {event.locked ? (
+              {/* 鎖定提示（取代取消報名按鈕，義工開放模式除外） */}
+              {event.locked && !isVolunteerOnly ? (
                 <div className="mt-3 pt-3 border-t border-gray-100 text-center">
                   <p className="text-kiosk-base font-semibold text-amber-700 text-center leading-relaxed">
                     如需新增或異動報名<br/>請聯絡精舍
@@ -1692,7 +1721,17 @@ function OverviewScreen({
 }
 
 // ── 填表畫面 ─────────────────────────────────────────────
-function FormScreen({ student, classes, event, fields, answers, isUpdate, errorMsg, submitting, onChange, onSubmit, onBack }) {
+function FormScreen({ student, classes, event, fields, answers, isUpdate, isVolunteerOnly, errorMsg, submitting, onChange, onSubmit, onBack }) {
+  // 義工限定模式：identity 欄位只保留「義工」選項
+  const visibleFields = isVolunteerOnly
+    ? fields.map(f => {
+        if ((f.field_key === 'identity' || f.dashboard_role === 'identity') && Array.isArray(f.options)) {
+          return { ...f, options: f.options.filter(opt => opt === '義工') }
+        }
+        return f
+      })
+    : fields
+
   return (
     <div className="w-full max-w-lg">
       {/* 學員資訊卡 */}
@@ -1708,10 +1747,25 @@ function FormScreen({ student, classes, event, fields, answers, isUpdate, errorM
         </div>
       </div>
 
+      {/* 義工限定提示橫條 */}
+      {isVolunteerOnly && (
+        <div style={{
+          backgroundColor: '#FEF3C7',
+          border: '1px solid #F59E0B',
+          borderRadius: '6px',
+          padding: '8px 12px',
+          marginBottom: '12px',
+          fontSize: '0.85rem',
+          color: '#92400E',
+        }}>
+          ⚠️ 此活動學員報名已截止，目前僅開放義工報名。
+        </div>
+      )}
+
       {/* 動態表單 */}
-      {fields.length > 0 && (
+      {visibleFields.length > 0 && (
         <div className="bg-white rounded-2xl shadow-md p-5 mb-4">
-          <DynamicForm fields={fields} answers={answers} onChange={onChange} />
+          <DynamicForm fields={visibleFields} answers={answers} onChange={onChange} />
         </div>
       )}
 
@@ -1890,7 +1944,7 @@ function FriendFormScreen({
 function SessionSelectScreen({
   student, classes, event,
   sessionItems, sessionFields, sessionSelections, sessionSubAnswers,
-  isUpdate, errorMsg, submitting,
+  isUpdate, isVolunteerOnly, errorMsg, submitting,
   onToggleSession, onChangeSubAnswer, onSelectAll,
   onSubmit, onBack,
   friendName, onFriendNameChange,
@@ -1902,6 +1956,20 @@ function SessionSelectScreen({
 
   return (
     <div className="w-full max-w-lg">
+      {/* 義工限定模式提示橫條 */}
+      {isVolunteerOnly && (
+        <div style={{
+          backgroundColor: '#FEF3C7',
+          border: '1px solid #F59E0B',
+          borderRadius: '6px',
+          padding: '8px 12px',
+          marginBottom: '12px',
+          fontSize: '0.85rem',
+          color: '#92400E',
+        }}>
+          ⚠️ 此活動學員報名已截止，目前僅開放義工報名。
+        </div>
+      )}
       {/* 學員資訊卡 / 親友姓名輸入 */}
       {isFriendMode ? (
         <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-purple-500">

@@ -336,6 +336,7 @@ export default function EventDetailPage() {
       cover_image_url: ev.cover_image_url ?? '',
       cover_image_position: ev.cover_image_position ?? '50% 50%',
       description: ev.description ?? '',
+      volunteer_open: !!ev.volunteer_open,
     })
     setFields(f)
     // 多場次：把 session_checkins 用 reg_id 分組掛到每筆 registration
@@ -470,6 +471,7 @@ export default function EventDetailPage() {
         cover_image_url: form.cover_image_url || null,
         cover_image_position: form.cover_image_position || '50% 50%',
         description: form.description || null,
+        volunteer_open: form.volunteer_open,
       }),
       setEventVolunteers(id, [...eventVolunteerIds]),
     ])
@@ -913,6 +915,7 @@ export default function EventDetailPage() {
                   >
                     <option value="zhongtai">📍 中台禪寺</option>
                     <option value="tianxiang">📍 天祥寶塔禪寺</option>
+                    <option value="puyi">📍 普宜精舍</option>
                     <option value="other">📍 其他（以「地點」欄文字為主）</option>
                   </select>
                 </div>
@@ -998,6 +1001,7 @@ export default function EventDetailPage() {
               setLocking(false)
               if (!success) { setSaveMsg(`❌ 操作失敗：${err}`); return }
               setEvent(ev => ({ ...ev, locked: newLocked }))
+              if (!newLocked) setForm(f => ({ ...f, volunteer_open: false }))
               setSaveMsg(newLocked ? '🔒 已停止異動' : '🔓 已開放異動')
               setTimeout(() => setSaveMsg(''), 3000)
             }}
@@ -1010,6 +1014,31 @@ export default function EventDetailPage() {
             {locking ? '處理中…' : event.locked ? '🔓 解除鎖定' : '🔒 停止異動'}
           </button>
         </div>
+
+        {/* 義工開放模式（鎖定時才顯示，隨儲存設定一起送出） */}
+        {event.locked && (
+          <div style={{
+            marginTop: '8px',
+            marginLeft: '28px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+          }}>
+            <input
+              type="checkbox"
+              id="volunteer_open"
+              checked={!!form.volunteer_open}
+              onChange={e => setForm(f => ({ ...f, volunteer_open: e.target.checked }))}
+              style={{ marginTop: '3px', accentColor: '#16a34a' }}
+            />
+            <label htmlFor="volunteer_open" style={{ fontSize: '0.85rem', color: '#374151', cursor: 'pointer' }}>
+              開放義工繼續報名
+              <span style={{ display: 'block', fontSize: '0.75rem', color: '#9CA3AF', marginTop: '2px' }}>
+                勾選後，刷卡頁仍可報名，但身分別固定為「義工」。勾選後請按頂部「💾 儲存設定」。
+              </span>
+            </label>
+          </div>
+        )}
 
         {/* 義工存取設定（勾選後請按頂部「💾 儲存設定」一併儲存） */}
         <div className="mt-4 bg-white rounded-xl border border-gray-200 p-5">

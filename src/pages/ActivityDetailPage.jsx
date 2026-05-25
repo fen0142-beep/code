@@ -17,11 +17,12 @@ function formatDateRange(start, end) {
 
 function LocationLabel({ tag }) {
   const config = {
-    zhongtai:  { label: '📍 中台禪寺', color: '#C9A96E' },
+    zhongtai:  { label: '📍 中台禪寺',   color: '#C9A96E' },
     tianxiang: { label: '📍 天祥寶塔禪寺', color: '#7FAFC0' },
-    other:     { label: '📍 普宜精舍', color: '#C0C0C8' },
+    puyi:      { label: '📍 普宜精舍',   color: '#C0C0C8' },
+    other:     { label: '📍 其他地點',   color: '#9CA3AF' },
   }
-  const c = config[tag] || config.other
+  const c = config[tag] || config.puyi
   return (
     <p style={{ color: c.color, fontSize: '0.85rem', marginBottom: '12px', letterSpacing: '0.05em' }}>
       {c.label}
@@ -52,7 +53,7 @@ function RegistrationButton({ event, large }) {
     return (
       <a
         href={`/?event=${event.event_id}`}
-        style={{ ...style, backgroundColor: '#C9A96E', color: '#2E0E1F', cursor: 'pointer' }}
+        style={{ ...style, backgroundColor: '#2E0E1F', color: '#C9A96E', border: '1.5px solid #C9A96E', cursor: 'pointer' }}
       >
         點我報名
       </a>

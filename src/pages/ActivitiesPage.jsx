@@ -34,11 +34,12 @@ function locationGradient(tag) {
 
 function CornerRibbon({ tag }) {
   const config = {
-    zhongtai:  { label: '中台', bg: '#C9A96E', color: '#2E0E1F' },
-    tianxiang: { label: '天祥', bg: '#7FAFC0', color: '#1a1a1a' },
-    other:     { label: '普宜', bg: '#C0C0C8', color: '#2E0E1F' },
+    zhongtai:  { label: '中台',   bg: '#C9A96E', color: '#2E0E1F' },
+    tianxiang: { label: '天祥',   bg: '#7FAFC0', color: '#ffffff' },
+    puyi:      { label: '普宜精舍', bg: '#C0C0C8', color: '#2E0E1F' },
+    other:     { label: '其他',   bg: '#E5E7EB', color: '#6B7280' },
   }
-  const c = config[tag] || config.other
+  const c = config[tag] || config.puyi
   return (
     <div style={{
       position: 'absolute',
@@ -90,7 +91,7 @@ function RegistrationButton({ event }) {
     return (
       <a
         href={`/?event=${event.event_id}`}
-        style={{ ...btnBase, backgroundColor: '#C9A96E', color: '#2E0E1F', cursor: 'pointer' }}
+        style={{ ...btnBase, backgroundColor: '#2E0E1F', color: '#C9A96E', border: '1.5px solid #C9A96E', cursor: 'pointer' }}
         onClick={e => e.stopPropagation()}
       >
         點我報名
