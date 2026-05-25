@@ -159,6 +159,57 @@ async function shareQRCard(cardData) {
   }
 }
 
+// ── 學員個人 QR Code 下載 ──────────────────────────────────────
+async function downloadStudentQR(student) {
+  try {
+    const svgEl = document.getElementById(`student-qr-${student.student_id}`)
+    if (!svgEl) { alert('QR Code 尚未載入，請稍後再試'); return }
+    const W = 480, H = 580
+    const canvas = document.createElement('canvas')
+    canvas.width = W; canvas.height = H
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, W, H)
+    // 標題
+    ctx.fillStyle = '#1e40af'
+    ctx.font = 'bold 26px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('普宜精舍　學員證', W / 2, 48)
+    // 姓名
+    ctx.fillStyle = '#1f2937'
+    ctx.font = 'bold 30px sans-serif'
+    ctx.fillText((student.name || '') + ' 師兄', W / 2, 90)
+    // QR Code
+    const qrSize = 300
+    const qrX = (W - qrSize) / 2
+    const qrY = 110
+    const svgData = new XMLSerializer().serializeToString(svgEl)
+    const blob = new Blob([svgData], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(blob)
+    await new Promise((res, rej) => {
+      const img = new Image()
+      img.onload = () => { ctx.drawImage(img, qrX, qrY, qrSize, qrSize); URL.revokeObjectURL(url); res() }
+      img.onerror = rej
+      img.src = url
+    })
+    // 學員編號
+    ctx.fillStyle = '#374151'
+    ctx.font = '20px monospace'
+    ctx.fillText('學員編號：' + student.student_id, W / 2, qrY + qrSize + 36)
+    // 備註
+    ctx.fillStyle = '#9ca3af'
+    ctx.font = '17px sans-serif'
+    ctx.fillText('請妥善保存，遺失請洽精舍補發', W / 2, qrY + qrSize + 66)
+    const link = document.createElement('a')
+    link.download = `${student.name || '學員'}_學員QR.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  } catch (e) {
+    console.warn('[downloadStudentQR]', e)
+    alert('下載失敗，請稍後再試')
+  }
+}
+
 // ── 多場次輔助函式 ───────────────────────────────────────────
 // "2026-05-24" → "5/24（六）"
 function formatSessionDate(dateStr) {
@@ -1229,6 +1280,35 @@ function OverviewScreen({
           ))}
         </div>
 
+        {/* 個人 QR Code 下載 Accordion */}
+        <details className="mt-4 group">
+          <summary className="cursor-pointer select-none list-none flex items-center gap-1.5 text-kiosk-sm text-blue-600">
+            <span className="inline-block transition-transform group-open:rotate-90 text-xs">▶</span>
+            <span>沒帶學員證？點此查看個人 QR Code</span>
+          </summary>
+          <div className="mt-3 flex flex-col items-center gap-3 py-2">
+            {student?.student_id && (
+              <QRCodeSVG
+                id={`student-qr-${student.student_id}`}
+                value={String(student.student_id)}
+                size={180}
+                level="M"
+                includeMargin
+              />
+            )}
+            <p className="text-kiosk-sm text-gray-500 font-mono">學員編號：{student?.student_id}</p>
+            <button
+              onClick={() => downloadStudentQR(student)}
+              className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl text-kiosk-sm font-medium active:bg-blue-700"
+            >
+              📥 下載 QR 圖片存手機
+            </button>
+            <p className="text-kiosk-sm text-gray-400 text-center leading-snug">
+              下載後截圖存手機，<br />下次可掃圖片代替實體學員證
+            </p>
+          </div>
+        </details>
+
       </div>
 
       {/* 報名成功提示 */}
@@ -1997,7 +2077,7 @@ function FriendSuccessScreen({
           ＋ 再代報一位
         </button>
         <button
-          onClick={onDone}
+      
           className="w-full py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium"
         >
           完成，返回總覽
