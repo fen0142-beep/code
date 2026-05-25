@@ -1,10 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { QRCodeSVG } from 'qrcode.react'
 import AdminLayout from '../../components/AdminLayout'
-import DynamicForm from '../../components/DynamicForm'
 import FieldRow from '../../components/FieldRow'
-import SearchableSelect from '../../components/SearchableSelect'
 import { useAuth } from '../../lib/auth'
 import {
   getAllEvents,
@@ -15,8 +12,6 @@ import {
   saveEventFields,
   getRegistrationsWithStudents,
   deleteRegistration,
-  createGuestRegistration,
-  submitRegistration,
   uncheckIn,
   uncheckInSession,
   logRegistrationChange,
@@ -26,8 +21,6 @@ import {
   getEventVolunteers,
   setEventVolunteers,
   getTemplates,
-  getAllStudents,
-  checkDuplicate,
   getEventSessions,
   getEventSessionFields,
   getEventSessionCheckins,
@@ -42,9 +35,13 @@ import EventSessionsPanel from '../../components/EventSessionsPanel'
 import EventSessionFieldsPanel from '../../components/EventSessionFieldsPanel'
 import DiffDetailModal from '../../components/DiffDetailModal'
 import EditRegistrationModal from '../../components/EditRegistrationModal'
+import GuestRegistrationModal from '../../components/GuestRegistrationModal'
+import StudentRegistrationModal from '../../components/StudentRegistrationModal'
+import QrCodeModal from '../../components/QrCodeModal'
+import BatchPrintModal from '../../components/BatchPrintModal'
 
 import {
-  STATUS_LABEL, formatFieldValue, formatEventDate, getDisplayName,
+  STATUS_LABEL, formatFieldValue, getDisplayName,
   timePeriodShort, timePeriodLabel, formatSessionTabLabel,
   SESSION_LEGACY_KEYS, resolveSessionAns, exportSessionCSV,
   SortTh, exportCSV,
@@ -180,19 +177,9 @@ export default function EventDetailPage() {
 
   // 訪客報名 modal
   const [guestModal, setGuestModal] = useState(false)
-  const [guestName, setGuestName] = useState('')
-  const [guestAnswers, setGuestAnswers] = useState({})
-  const [guestSaving, setGuestSaving] = useState(false)
-  const [guestRegId, setGuestRegId] = useState(null)
 
   // 學員手動報名 modal（後台補登用）
-  const [studentModal, setStudentModal]               = useState(false)
-  const [studentSelectedId, setStudentSelectedId]     = useState('')
-  const [studentAnswers, setStudentAnswers]           = useState({})
-  const [studentSaving, setStudentSaving]             = useState(false)
-  const [studentDuplicate, setStudentDuplicate]       = useState(false)   // 是否已有報名
-  const [allStudents, setAllStudents]                 = useState([])
-  const [studentsLoading, setStudentsLoading]         = useState(false)
+  const [studentModal, setStudentModal] = useState(false)
 
   // 編輯報名 modal（state + 邏輯都搬到 EditRegistrationModal 元件）
   const [editingReg, setEditingReg] = useState(null) // null | registration
@@ -411,116 +398,6 @@ export default function EventDetailPage() {
     navigate('/admin/events')
   }
 
-  function openGuestModal() {
-    setGuestName('')
-    setGuestAnswers({})
-    setGuestRegId(null)
-    setGuestModal(true)
-  }
-
-  function closeGuestModal() {
-    setGuestModal(false)
-    setGuestRegId(null)
-  }
-
-  async function handleGuestSubmit(e) {
-    e.preventDefault()
-    if (!guestName.trim()) return
-    setGuestSaving(true)
-    const { registrationId, error } = await createGuestRegistration(id, guestName.trim(), guestAnswers)
-    setGuestSaving(false)
-    if (error) { alert(`新增失敗：${error}`); return }
-    setGuestRegId(registrationId)
-
-    // 記錄訪客新增
-    await logRegistrationChange({
-      registrationId,
-      eventId: id,
-      eventName: event.name,
-      studentName: guestName.trim(),
-      changeType: 'created',
-      oldAnswers: null,
-      newAnswers: { guest_name: guestName.trim(), ...guestAnswers },
-    })
-
-    await load()
-  }
-
-  // ── 學員手動報名（後台補登）─────────────────────────────────
-  async function openStudentModal() {
-    setStudentSelectedId('')
-    setStudentAnswers({})
-    setStudentDuplicate(false)
-    setStudentModal(true)
-    // 第一次開啟時 lazy load 學員清單
-    if (allStudents.length === 0 && !studentsLoading) {
-      setStudentsLoading(true)
-      const { students } = await getAllStudents()
-      // 只保留在籍學員，依編號排序
-      setAllStudents((students || []).filter(s => s.active !== false))
-      setStudentsLoading(false)
-    }
-  }
-
-  function closeStudentModal() {
-    setStudentModal(false)
-    setStudentSelectedId('')
-    setStudentAnswers({})
-    setStudentDuplicate(false)
-  }
-
-  // 選到的學員資訊（顯示確認卡用）
-  const selectedStudent = studentSelectedId
-    ? allStudents.find(s => s.student_id === studentSelectedId)
-    : null
-
-  // 切換學員時檢查重複報名
-  async function handleStudentPick(sid) {
-    setStudentSelectedId(sid)
-    setStudentDuplicate(false)
-    if (!sid) return
-    const dup = await checkDuplicate(id, sid)
-    setStudentDuplicate(dup)
-  }
-
-  async function handleStudentSubmit(e) {
-    e.preventDefault()
-    if (!studentSelectedId) { alert('請先選擇學員'); return }
-    if (studentDuplicate) { alert('此學員已報名此活動，請改用「編輯」'); return }
-
-    setStudentSaving(true)
-    // is_driver 判定：若答案中有任何 plate 欄位填了車號 → true
-    const plateFields = fields.filter(f => f.field_type === 'plate')
-    const isDriver    = plateFields.some(f => {
-      const v = studentAnswers?.[f.field_key]
-      return v && String(v).trim() !== ''
-    })
-
-    const { success, error } = await submitRegistration(
-      id,
-      studentSelectedId,
-      studentAnswers,
-      'admin-manual',
-      isDriver,
-    )
-    setStudentSaving(false)
-    if (!success) { alert(`新增失敗：${error}`); return }
-
-    // 記錄手動新增（與訪客新增採同 changeType='created'）
-    await logRegistrationChange({
-      registrationId: null, // 不需精準 reg_id，後台異動表用 student_id 也可追溯
-      eventId: id,
-      eventName: event.name,
-      studentName: selectedStudent?.name ?? '',
-      changeType: 'created',
-      oldAnswers: null,
-      newAnswers: studentAnswers,
-    })
-
-    closeStudentModal()
-    await load()
-  }
-
   async function handleUncheckIn(registrationId, studentName) {
     // 多場次「場次視圖」→ 取消該場次的 session_checkin；其他 → 取消 registrations.checked_in_at
     const isSessionView = event?.multi_session && sessionTab !== 'all'
@@ -627,106 +504,12 @@ export default function EventDetailPage() {
   return (
     <AdminLayout>
       {/* ── 批次列印 Modal ── */}
-      {batchPrintOpen && (
-        <>
-          <style>{`
-            @page { size: A4 portrait; margin: 2mm; }
-            @media print {
-              body * { visibility: hidden !important; }
-              .batch-print-cards, .batch-print-cards * { visibility: visible !important; }
-              .batch-print-overlay {
-                position: static !important;
-                background: transparent !important;
-                overflow: visible !important;
-                display: block !important;
-                height: auto !important;
-              }
-              .batch-print-toolbar { display: none !important; }
-              .batch-print-preview {
-                overflow: visible !important;
-                padding: 0 !important;
-                flex: none !important;
-              }
-              .batch-print-cards {
-                display: grid !important;
-                grid-template-columns: repeat(4, 1fr) !important;
-                gap: 2mm !important;
-                max-width: none !important;
-                margin: 0 !important;
-                width: 100% !important;
-              }
-              .batch-print-card {
-                break-inside: avoid !important;
-                page-break-inside: avoid !important;
-              }
-            }
-          `}</style>
-          <div className="batch-print-overlay fixed inset-0 z-50 flex flex-col bg-gray-100">
-            {/* 頂部工具列 */}
-            <div className="batch-print-toolbar bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4 shrink-0 shadow-sm">
-              <div>
-                <h3 className="text-base font-bold text-gray-800">批次列印訪客通行證</h3>
-                <p className="text-xs text-gray-400">共 {selectedGuestRegs.length} 張・一列 4 張・列印後沿虛線剪開，每人一張</p>
-              </div>
-              <div className="ml-auto flex gap-3">
-                <button
-                  onClick={() => window.print()}
-                  className="bg-amber-700 hover:bg-amber-800 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors"
-                >
-                  🖨️ 列印
-                </button>
-                <button
-                  onClick={() => setBatchPrintOpen(false)}
-                  className="border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium px-5 py-2 rounded-lg transition-colors"
-                >
-                  關閉
-                </button>
-              </div>
-            </div>
-
-            {/* 卡片預覽區 */}
-            <div className="batch-print-preview flex-1 overflow-auto p-3">
-              <div
-                className="batch-print-cards"
-                style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', maxWidth: '880px', margin: '0 auto' }}
-              >
-                {selectedGuestRegs.map(r => (
-                  <div
-                    key={r.registration_id}
-                    className="batch-print-card"
-                    style={{
-                      border: '1px dashed #d1d5db',
-                      borderRadius: '6px',
-                      padding: '8px 8px',
-                      textAlign: 'center',
-                      background: 'white',
-                      breakInside: 'avoid',
-                      pageBreakInside: 'avoid',
-                    }}
-                  >
-                    <p style={{ fontSize: '8px', color: '#9ca3af', letterSpacing: '2px', marginBottom: '4px', fontWeight: '600' }}>
-                      普宜精舍
-                    </p>
-                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '5px' }}>
-                      <QRCodeSVG value={r.registration_id} size={110} />
-                    </div>
-                    <p style={{ fontSize: '13px', fontWeight: 'bold', color: '#1f2937', margin: '0 0 2px' }}>
-                      {getDisplayName(r)}
-                    </p>
-                    <p style={{ fontSize: '10px', color: '#4b5563', margin: '0 0 1px' }}>{event.name}</p>
-                    {event.date_start && (
-                      <p style={{ fontSize: '9px', color: '#6b7280', margin: 0 }}>{formatEventDate(event)}</p>
-                    )}
-                    <p style={{ fontSize: '7px', color: '#d1d5db', marginTop: '4px' }}>
-                      掃描此 QR code 即可報到
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      <BatchPrintModal
+        open={batchPrintOpen}
+        onClose={() => setBatchPrintOpen(false)}
+        event={event}
+        selectedGuestRegs={selectedGuestRegs}
+      />
 
       {/* ── 異動明細 Modal ── */}
       <DiffDetailModal
@@ -753,214 +536,32 @@ export default function EventDetailPage() {
       />
 
       {/* ── 補看 QR code Modal（單張）── */}
-      {qrModal && (
-        <>
-          <style>{`
-            @media print {
-              body * { visibility: hidden; }
-              .qr-print-card, .qr-print-card * { visibility: visible; }
-              .qr-print-card {
-                position: fixed;
-                top: 50%; left: 50%;
-                transform: translate(-50%, -50%);
-              }
-            }
-          `}</style>
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
-              <p className="text-sm text-gray-400 mb-4">截圖或列印後交給訪客，報到時掃描即可</p>
-              <div className="qr-print-card border-2 border-gray-200 rounded-xl p-5 mb-4 bg-white">
-                <p className="text-sm font-semibold text-gray-400 tracking-widest mb-3">普宜精舍</p>
-                <div className="flex justify-center mb-4">
-                  <QRCodeSVG value={qrModal.registrationId} size={160} />
-                </div>
-                <p className="text-2xl font-bold text-gray-800 mb-1">{qrModal.name}</p>
-                <p className="text-sm text-gray-600">{event.name}</p>
-                {event.date_start && (
-                  <p className="text-sm text-gray-500 mt-0.5">{formatEventDate(event)}</p>
-                )}
-                <p className="text-xs text-gray-300 mt-3">掃描此 QR code 即可報到</p>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => window.print()}
-                  className="flex-1 border-2 border-amber-400 text-amber-700 hover:bg-amber-50 font-medium py-2.5 rounded-xl transition-colors"
-                >
-                  🖨️ 列印
-                </button>
-                <button
-                  onClick={() => setQrModal(null)}
-                  className="flex-1 bg-amber-700 hover:bg-amber-800 text-white font-medium py-2.5 rounded-xl transition-colors"
-                >
-                  關閉
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      <QrCodeModal
+        registrationId={qrModal?.registrationId ?? null}
+        name={qrModal?.name ?? ''}
+        event={event}
+        onClose={() => setQrModal(null)}
+      />
 
       {/* ── 訪客報名 Modal ── */}
-      {guestModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
-            {guestRegId ? (
-              <>
-                <style>{`
-                  @media print {
-                    body * { visibility: hidden; }
-                    .qr-print-card, .qr-print-card * { visibility: visible; }
-                    .qr-print-card {
-                      position: fixed;
-                      top: 50%; left: 50%;
-                      transform: translate(-50%, -50%);
-                    }
-                  }
-                `}</style>
-                <div className="text-center">
-                  <div className="text-3xl mb-2">✅</div>
-                  <p className="text-sm text-gray-400 mb-4">截圖或列印後交給訪客，報到時掃描即可</p>
-                  <div className="qr-print-card border-2 border-gray-200 rounded-xl p-5 mb-4 bg-white">
-                    <p className="text-sm font-semibold text-gray-400 tracking-widest mb-3">普宜精舍</p>
-                    <div className="flex justify-center mb-4">
-                      <QRCodeSVG value={guestRegId} size={160} />
-                    </div>
-                    <p className="text-2xl font-bold text-gray-800 mb-1">{guestName}</p>
-                    <p className="text-sm text-gray-600">{event.name}</p>
-                    {event.date_start && (
-                      <p className="text-sm text-gray-500 mt-0.5">{formatEventDate(event)}</p>
-                    )}
-                    <p className="text-xs text-gray-300 mt-3">掃描此 QR code 即可報到</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => window.print()}
-                      className="flex-1 border-2 border-amber-400 text-amber-700 hover:bg-amber-50 font-medium py-2.5 rounded-xl transition-colors"
-                    >
-                      🖨️ 列印
-                    </button>
-                    <button
-                      onClick={closeGuestModal}
-                      className="flex-1 bg-amber-700 hover:bg-amber-800 text-white font-medium py-2.5 rounded-xl transition-colors"
-                    >
-                      關閉
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <form onSubmit={handleGuestSubmit}>
-                <h3 className="text-lg font-bold text-gray-800 mb-4">新增訪客報名</h3>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    姓名 <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    required
-                    value={guestName}
-                    onChange={e => setGuestName(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    placeholder="請輸入姓名"
-                  />
-                </div>
-                {fields.length > 0 && (
-                  <div className="mb-4">
-                    <DynamicForm fields={fields} answers={guestAnswers} onChange={setGuestAnswers} />
-                  </div>
-                )}
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={closeGuestModal}
-                    className="flex-1 border border-gray-300 text-gray-600 hover:bg-gray-50 font-medium py-2.5 rounded-xl transition-colors"
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={guestSaving}
-                    className="flex-1 bg-amber-700 hover:bg-amber-800 text-white font-medium py-2.5 rounded-xl transition-colors disabled:opacity-50"
-                  >
-                    {guestSaving ? '新增中…' : '確認報名'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
+      <GuestRegistrationModal
+        open={guestModal}
+        onClose={() => setGuestModal(false)}
+        onSuccess={load}
+        event={event}
+        eventId={id}
+        fields={fields}
+      />
 
       {/* ── 學員手動報名 Modal（後台補登）── */}
-      {studentModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
-            <form onSubmit={handleStudentSubmit}>
-              <h3 className="text-lg font-bold text-gray-800 mb-1">新增學員報名</h3>
-              <p className="text-xs text-gray-500 mb-4">從學員清單選人後補填表單（不必刷學員證）</p>
-
-              {/* 選擇學員 */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  學員 <span className="text-red-500">*</span>
-                </label>
-                {studentsLoading ? (
-                  <p className="text-sm text-gray-400 px-3 py-2">載入學員清單中…</p>
-                ) : (
-                  <SearchableSelect
-                    value={studentSelectedId}
-                    onChange={handleStudentPick}
-                    options={allStudents.map(s => {
-                      const cls = s.student_classes?.[0]
-                      const classText = cls
-                        ? `${cls.class_name ?? ''}${cls.group_name ? `・${cls.group_name}` : ''}`
-                        : ''
-                      return {
-                        value: s.student_id,
-                        label: `${s.name}（${s.student_id}）`,
-                        sublabel: classText,
-                        searchText: `${s.name} ${s.student_id} ${classText}`.toLowerCase(),
-                      }
-                    })}
-                    placeholder="請選擇學員（可搜尋姓名／編號／班級）"
-                    searchPlaceholder="輸入姓名／編號／班級…"
-                  />
-                )}
-              </div>
-
-              {/* 重複報名警示 */}
-              {studentDuplicate && selectedStudent && (
-                <div className="mb-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                  ⚠️ <strong>{selectedStudent.name}</strong> 已報名此活動。請至報名名單點該筆「編輯」修改。
-                </div>
-              )}
-
-              {/* 動態欄位 */}
-              {studentSelectedId && !studentDuplicate && fields.length > 0 && (
-                <div className="mb-4 pt-3 border-t border-gray-100">
-                  <DynamicForm fields={fields} answers={studentAnswers} onChange={setStudentAnswers} />
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={closeStudentModal}
-                  className="flex-1 border border-gray-300 text-gray-600 hover:bg-gray-50 font-medium py-2.5 rounded-xl transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={studentSaving || !studentSelectedId || studentDuplicate}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {studentSaving ? '新增中…' : '確認報名'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <StudentRegistrationModal
+        open={studentModal}
+        onClose={() => setStudentModal(false)}
+        onSuccess={load}
+        event={event}
+        eventId={id}
+        fields={fields}
+      />
 
       {/* 麵包屑 */}
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
@@ -1943,14 +1544,14 @@ export default function EventDetailPage() {
                   </button>
                 )}
                 <button
-                  onClick={openStudentModal}
+                  onClick={() => setStudentModal(true)}
                   className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
                   title="從學員清單選人補登報名（不必刷學員證）"
                 >
                   ＋ 新增學員報名
                 </button>
                 <button
-                  onClick={openGuestModal}
+                  onClick={() => setGuestModal(true)}
                   className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
                 >
                   ＋ 新增訪客
