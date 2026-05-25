@@ -16,6 +16,8 @@ import MonksPage from './pages/admin/MonksPage'
 import DonorManagePage from './pages/admin/DonorManagePage'
 import CarCheckinPage from './pages/CarCheckinPage'
 import LeaderScanPage from './pages/LeaderScanPage'
+import ActivitiesPage from './pages/ActivitiesPage'
+import ActivityDetailPage from './pages/ActivityDetailPage'
 
 export default function App() {
   return (
@@ -66,6 +68,10 @@ export default function App() {
 
           {/* 公開：領隊報到頁（不需登入，用 token 驗身） */}
           <Route path="/car-checkin/:token" element={<CarCheckinPage />} />
+
+          {/* 公開：活動介紹頁 */}
+          <Route path="/activities" element={<ActivitiesPage />} />
+          <Route path="/activities/:id" element={<ActivityDetailPage />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

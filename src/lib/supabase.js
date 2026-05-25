@@ -2207,3 +2207,41 @@ export async function saveEventSessionFields(eventId, fields) {
   if (insErr) return { success: false, error: insErr.message }
   return { success: true, error: null }
 }
+
+// ─── 活動介紹頁（公開） ─────────────────────────────────────
+
+/** 取得所有顯示在 /activities 頁的活動（依開始日期排序） */
+export async function getPublicActivities() {
+  const { data, error } = await supabase
+    .from('events')
+    .select('event_id, name, date_start, date_end, location, location_tag, status, offline_registration, cover_image_url, description')
+    .eq('show_on_activities', true)
+    .order('date_start', { ascending: true })
+  if (error) return { data: null, error: error.message }
+  return { data, error: null }
+}
+
+/** 取得單一公開活動詳情 */
+export async function getPublicActivity(eventId) {
+  const { data, error } = await supabase
+    .from('events')
+    .select('event_id, name, date_start, date_end, location, location_tag, status, offline_registration, cover_image_url, description')
+    .eq('event_id', eventId)
+    .eq('show_on_activities', true)
+    .single()
+  if (error) return { data: null, error: error.message }
+  return { data, error: null }
+}
+
+/** 上傳活動封面圖片到 Supabase Storage，回傳公開 URL */
+export async function uploadEventCoverImage(eventId, file) {
+  const ext = file.name.split('.').pop()
+  const path = `${eventId}/cover.${ext}`
+  const { error: upErr } = await supabase.storage
+    .from('event-covers')
+    .upload(path, file, { upsert: true, contentType: file.type })
+  if (upErr) return { url: null, error: upErr.message }
+  const { data } = supabase.storage.from('event-covers').getPublicUrl(path)
+  const url = `${data.publicUrl}?t=${Date.now()}`
+  return { url, error: null }
+}

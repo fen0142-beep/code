@@ -25,6 +25,7 @@ import {
   getEventSessionFields,
   getEventSessionCheckins,
   saveEventSessionFields,
+  uploadEventCoverImage,
 } from '../../lib/supabase'
 import {
   sessionFieldsForPeriod,
@@ -223,6 +224,12 @@ export default function EventDetailPage() {
       is_dharma: !!ev.is_dharma,
       multi_session: !!ev.multi_session,
       show_transport_to_public: !!ev.show_transport_to_public,
+      // 活動介紹頁
+      show_on_activities: !!ev.show_on_activities,
+      offline_registration: !!ev.offline_registration,
+      location_tag: ev.location_tag ?? 'zhongtai',
+      cover_image_url: ev.cover_image_url ?? '',
+      description: ev.description ?? '',
     })
     setFields(f)
     // 多場次：把 session_checkins 用 reg_id 分組掛到每筆 registration
@@ -350,6 +357,12 @@ export default function EventDetailPage() {
         is_dharma: form.is_dharma,
         multi_session: form.multi_session,
         show_transport_to_public: form.show_transport_to_public,
+        // 活動介紹頁
+        show_on_activities: form.show_on_activities,
+        offline_registration: form.offline_registration,
+        location_tag: form.location_tag,
+        cover_image_url: form.cover_image_url || null,
+        description: form.description || null,
       }),
       setEventVolunteers(id, [...eventVolunteerIds]),
     ])
@@ -730,6 +743,102 @@ export default function EventDetailPage() {
                   </span>
                 </span>
               </label>
+            </div>
+
+            {/* ── 活動介紹頁設定 ─────────────────────────────── */}
+            <div className="sm:col-span-2 mt-2">
+              <div className="border border-emerald-200 rounded-xl p-4 bg-emerald-50 space-y-4">
+                <p className="text-sm font-semibold text-emerald-800">🌐 活動介紹頁設定（/activities）</p>
+
+                {/* 顯示開關 */}
+                <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!form.show_on_activities}
+                    onChange={e => setForm(f => ({ ...f, show_on_activities: e.target.checked }))}
+                    className="w-4 h-4 accent-emerald-600 mt-0.5"
+                  />
+                  <span>
+                    顯示在活動介紹頁
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      勾選後學員可在 /activities 看到此活動；取消勾選可隱藏（明年複用時只需改日期再勾回）
+                    </span>
+                  </span>
+                </label>
+
+                {/* 離線報名 */}
+                <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!form.offline_registration}
+                    onChange={e => setForm(f => ({ ...f, offline_registration: e.target.checked }))}
+                    className="w-4 h-4 accent-gray-500 mt-0.5"
+                  />
+                  <span>
+                    僅供現場／電話報名（按鈕改顯示「報名請洽精舍」）
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      勾選後介紹頁按鈕變灰色，不提供線上報名連結
+                    </span>
+                  </span>
+                </label>
+
+                {/* 地點標籤 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">地點標籤</label>
+                  <select
+                    value={form.location_tag ?? 'zhongtai'}
+                    onChange={e => setForm(f => ({ ...f, location_tag: e.target.value }))}
+                    className="w-full sm:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  >
+                    <option value="zhongtai">📍 中台禪寺</option>
+                    <option value="tianxiang">📍 天祥寶塔禪寺</option>
+                    <option value="other">📍 其他（以「地點」欄文字為主）</option>
+                  </select>
+                </div>
+
+                {/* 活動說明 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">活動說明</label>
+                  <textarea
+                    value={form.description ?? ''}
+                    onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                    rows={5}
+                    placeholder="介紹活動緣起、流程、注意事項等，學員在介紹頁可閱讀此內容"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-y"
+                  />
+                </div>
+
+                {/* 封面圖片 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">活動封面圖片</label>
+                  {form.cover_image_url && (
+                    <img
+                      src={form.cover_image_url}
+                      alt="封面預覽"
+                      className="w-full max-w-xs rounded-lg mb-2 object-cover aspect-video border border-gray-200"
+                    />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={async e => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      if (file.size > 2 * 1024 * 1024) {
+                        alert('圖片請小於 2MB')
+                        return
+                      }
+                      const { url, error } = await uploadEventCoverImage(event.event_id, file)
+                      if (error) { alert('上傳失敗：' + error); return }
+                      setForm(f => ({ ...f, cover_image_url: url }))
+                    }}
+                    className="text-sm text-gray-600 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 cursor-pointer"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    建議尺寸 1200×675（16:9），檔案大小 2MB 以內。上傳後請點「儲存設定」。
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
           {/* （原本底部的儲存按鈕已移至頁面頂部 sticky bar） */}
