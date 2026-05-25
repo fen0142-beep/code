@@ -45,8 +45,8 @@ function CornerRibbon({ tag }) {
       position: 'absolute',
       bottom: 0,
       right: 0,
-      width: '100px',
-      height: '80px',
+      width: '72px',
+      height: '56px',
       clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
       backgroundColor: c.bg,
       display: 'flex',
@@ -58,7 +58,7 @@ function CornerRibbon({ tag }) {
     }}>
       <span style={{
         color: c.color,
-        fontSize: '1.2rem',
+        fontSize: '0.85rem',
         fontWeight: '700',
         letterSpacing: '0.05em',
         lineHeight: 1,
