@@ -35,29 +35,35 @@ function locationGradient(tag) {
 function CornerRibbon({ tag }) {
   const config = {
     zhongtai:  { label: '中台', bg: '#C9A96E', color: '#2E0E1F' },
-    tianxiang: { label: '天祥', bg: '#7FAFC0', color: '#ffffff' },
+    tianxiang: { label: '天祥', bg: '#7FAFC0', color: '#1a1a1a' },
     other:     { label: '普宜', bg: '#C0C0C8', color: '#2E0E1F' },
   }
   const c = config[tag] || config.other
   return (
     <div style={{
       position: 'absolute',
-      bottom: '14px',
-      right: '-22px',
-      width: '80px',
-      padding: '4px 0',
+      bottom: 0,
+      right: 0,
+      width: '90px',
+      height: '70px',
+      clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
       backgroundColor: c.bg,
-      color: c.color,
-      fontSize: '0.65rem',
-      fontWeight: '700',
-      textAlign: 'center',
-      transform: 'rotate(-45deg)',
-      letterSpacing: '0.08em',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: 'flex-end',
+      padding: '8px 10px',
       pointerEvents: 'none',
       zIndex: 10,
     }}>
-      {c.label}
+      <span style={{
+        color: c.color,
+        fontSize: '0.8rem',
+        fontWeight: '700',
+        letterSpacing: '0.05em',
+        lineHeight: 1,
+      }}>
+        {c.label}
+      </span>
     </div>
   )
 }
