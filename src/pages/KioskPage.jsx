@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import QrScanner from 'qr-scanner'
 import {
   getActiveEvents,
   getStudentById,
@@ -1017,7 +1018,7 @@ export default function KioskPage() {
       </header>
 
       <main className="flex-1 flex items-center justify-center p-6">
-        {phase === 'idle' && <IdleScreen onOpenCamera={() => setCameraOpen(true)} />}
+        {phase === 'idle' && <IdleScreen onOpenCamera={() => setCameraOpen(true)} onScanImage={handleScan} />}
         {phase === 'loading' && <LoadingScreen />}
         {phase === 'no_event' && <NoEventScreen onRefresh={loadEvents} />}
         {phase === 'not_found' && <NotFoundScreen onReset={reset} />}
@@ -1156,19 +1157,63 @@ export default function KioskPage() {
 }
 
 // ── 等待刷卡 ────────────────────────────────────────────────
-function IdleScreen({ onOpenCamera }) {
+function IdleScreen({ onOpenCamera, onScanImage }) {
+  const fileInputRef = useRef(null)
+  const [scanning, setScanning] = useState(false)
+  const [imgError, setImgError] = useState('')
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''   // 允許重複選同一張
+    setImgError('')
+    setScanning(true)
+    try {
+      const result = await QrScanner.scanImage(file, { returnDetailedScanResult: true })
+      onScanImage(result.data)
+    } catch {
+      setImgError('找不到 QR Code，請選擇清晰的學員證圖片再試一次')
+    } finally {
+      setScanning(false)
+    }
+  }
+
   return (
     <div className="text-center select-none">
       <div className="text-9xl mb-8 animate-pulse">📛</div>
       <p className="text-kiosk-2xl font-bold text-gray-700 mb-4">請刷學員證</p>
-      <p className="text-kiosk-base text-gray-500 mb-8">將學員證條碼對準掃描機</p>
-      <button
-        onClick={onOpenCamera}
-        className="inline-flex items-center gap-3 px-8 py-4 bg-white border-2 border-blue-400 text-blue-700 rounded-2xl text-kiosk-base font-semibold shadow-sm active:scale-95 transition-transform"
-      >
-        <span className="text-2xl">📷</span>
-        用手機相機掃描
-      </button>
+      <p className="text-kiosk-base text-gray-500 mb-6">將學員證條碼對準掃描機</p>
+
+      <div className="flex flex-col items-center gap-3">
+        <button
+          onClick={onOpenCamera}
+          className="inline-flex items-center gap-3 px-8 py-4 bg-white border-2 border-blue-400 text-blue-700 rounded-2xl text-kiosk-base font-semibold shadow-sm active:scale-95 transition-transform"
+        >
+          <span className="text-2xl">📷</span>
+          用手機相機掃描
+        </button>
+
+        <button
+          onClick={() => { setImgError(''); fileInputRef.current?.click() }}
+          disabled={scanning}
+          className="inline-flex items-center gap-3 px-8 py-4 bg-white border-2 border-green-400 text-green-700 rounded-2xl text-kiosk-base font-semibold shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+        >
+          <span className="text-2xl">{scanning ? '⏳' : '🖼️'}</span>
+          {scanning ? '辨識中…' : '從手機相簿選取 QR Code'}
+        </button>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        {imgError && (
+          <p className="text-red-600 text-kiosk-sm mt-1 max-w-xs">{imgError}</p>
+        )}
+      </div>
     </div>
   )
 }
