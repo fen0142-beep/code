@@ -17,7 +17,7 @@ export default function EventsPage() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', date_start: '', date_end: '', location: '', status: 'draft', event_type: 'mountain', is_dharma: false, multi_session: false })
+  const [form, setForm] = useState({ name: '', date_start: '', date_end: '', location: '', status: 'draft', event_type: 'mountain', is_dharma: false, multi_session: false, show_on_activities: true })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
@@ -60,7 +60,7 @@ export default function EventsPage() {
     }
 
     setShowForm(false)
-    setForm({ name: '', date_start: '', date_end: '', location: '', status: 'draft', event_type: 'mountain', is_dharma: false, multi_session: false })
+    setForm({ name: '', date_start: '', date_end: '', location: '', status: 'draft', event_type: 'mountain', is_dharma: false, multi_session: false, show_on_activities: true })
     navigate(`/admin/events/${event.event_id}`)
   }
 

@@ -2212,10 +2212,12 @@ export async function saveEventSessionFields(eventId, fields) {
 
 /** 取得所有顯示在 /activities 頁的活動（依開始日期排序） */
 export async function getPublicActivities() {
+  const today = new Date().toISOString().slice(0, 10)
   const { data, error } = await supabase
     .from('events')
     .select('event_id, name, date_start, date_end, location, location_tag, status, offline_registration, cover_image_url, description')
     .eq('show_on_activities', true)
+    .or(`date_end.is.null,date_end.gte.${today}`)
     .order('date_start', { ascending: true })
   if (error) return { data: null, error: error.message }
   return { data, error: null }
