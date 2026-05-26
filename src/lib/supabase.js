@@ -2229,21 +2229,4 @@ export async function getPublicActivity(eventId) {
     .from('events')
     .select('event_id, name, date_start, date_end, location, location_tag, status, offline_registration, cover_image_url, cover_image_position, description')
     .eq('event_id', eventId)
-    .eq('show_on_activities', true)
-    .single()
-  if (error) return { data: null, error: error.message }
-  return { data, error: null }
-}
-
-/** 上傳活動封面圖片到 Supabase Storage，回傳公開 URL */
-export async function uploadEventCoverImage(eventId, file) {
-  const ext = file.name.split('.').pop()
-  const path = `${eventId}/cover.${ext}`
-  const { error: upErr } = await supabase.storage
-    .from('event-covers')
-    .upload(path, file, { upsert: true, contentType: file.type })
-  if (upErr) return { url: null, error: upErr.message }
-  const { data } = supabase.storage.from('event-covers').getPublicUrl(path)
-  const url = `${data.publicUrl}?t=${Date.now()}`
-  return { url, error: null }
-}
+    .eq(
