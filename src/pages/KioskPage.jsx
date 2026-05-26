@@ -175,7 +175,7 @@ async function downloadStudentQR(student) {
     ctx.fillStyle = '#1e40af'
     ctx.font = 'bold 26px sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('普宜精舍　學員證', W / 2, 48)
+    ctx.fillText(`${import.meta.env.VITE_TEMPLE_NAME}　學員證`, W / 2, 48)
     // 姓名
     ctx.fillStyle = '#1f2937'
     ctx.font = 'bold 30px sans-serif'
@@ -1025,7 +1025,7 @@ export default function KioskPage() {
 
       {/* Header */}
       <header className="px-6 py-4 shadow-md" style={{ backgroundColor: '#2E0E1F', borderBottom: '1px solid #C9A96E' }}>
-        <p className="text-kiosk-sm" style={{ color: '#C9A96E', opacity: 0.85 }}>普宜精舍</p>
+        <p className="text-kiosk-sm" style={{ color: '#C9A96E', opacity: 0.85 }}>{import.meta.env.VITE_TEMPLE_NAME}</p>
         <h1 className="text-kiosk-lg font-bold leading-tight" style={{ color: '#C9A96E' }}>活動報名</h1>
       </header>
 
@@ -1254,7 +1254,7 @@ function IdleScreen({ onOpenCamera, onScanImage }) {
             <rect x="47" y="53" width="4" height="4" fill="#2E0E1F"/>
           </g>
           {/* 底部精舍名 */}
-          <text x="145" y="180" textAnchor="middle" fontFamily="sans-serif" fontSize="12" fill="#C9A96E" letterSpacing="3">普宜精舍</text>
+          <text x="145" y="180" textAnchor="middle" fontFamily="sans-serif" fontSize="12" fill="#C9A96E" letterSpacing="3">{import.meta.env.VITE_TEMPLE_NAME}</text>
           {/* 底部金色線 */}
           <rect x="0" y="186" width="290" height="10" fill="#C9A96E" clipPath="url(#kcc)"/>
           {/* 掃描光線 */}

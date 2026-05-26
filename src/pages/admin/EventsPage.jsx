@@ -155,7 +155,7 @@ export default function EventsPage() {
     const today = new Date().toISOString().slice(0, 10)
     const output = {
       _template_version: '1',
-      _source: '普宜精舍',
+      _source: import.meta.env.VITE_TEMPLE_NAME,
       _exported_at: today,
       _count: templatesArr.length,
       events: templatesArr,
@@ -165,7 +165,7 @@ export default function EventsPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `活動模板_普宜精舍_${today}.json`
+    a.download = `活動模板_${import.meta.env.VITE_TEMPLE_NAME}_${today}.json`
     a.click()
     URL.revokeObjectURL(url)
 

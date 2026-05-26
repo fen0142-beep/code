@@ -42,7 +42,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-amber-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg p-8">
-        <h1 className="text-2xl font-bold text-amber-800 mb-1 text-center">普宜精舍</h1>
+        <h1 className="text-2xl font-bold text-amber-800 mb-1 text-center">{import.meta.env.VITE_TEMPLE_NAME}</h1>
         <p className="text-sm text-gray-500 text-center mb-8">後台管理系統</p>
 
         {/* ── 選擇身分 ── */}

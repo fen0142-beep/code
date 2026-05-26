@@ -30,7 +30,7 @@ export default function QrCodeModal({ registrationId, name, event, onClose }) {
         <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
           <p className="text-sm text-gray-400 mb-4">截圖或列印後交給訪客，報到時掃描即可</p>
           <div className="qr-print-card border-2 border-gray-200 rounded-xl p-5 mb-4 bg-white">
-            <p className="text-sm font-semibold text-gray-400 tracking-widest mb-3">普宜精舍</p>
+            <p className="text-sm font-semibold text-gray-400 tracking-widest mb-3">{import.meta.env.VITE_TEMPLE_NAME}</p>
             <div className="flex justify-center mb-4">
               <QRCodeSVG value={registrationId} size={160} />
             </div>

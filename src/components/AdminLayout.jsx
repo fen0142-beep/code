@@ -30,7 +30,7 @@ export default function AdminLayout({ children }) {
           {/* 第一行：Logo + 右側按鈕 */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-base sm:text-lg tracking-wide whitespace-nowrap">普宜精舍 · 後台</span>
+              <span className="font-bold text-base sm:text-lg tracking-wide whitespace-nowrap">{import.meta.env.VITE_TEMPLE_NAME} · 後台</span>
               {!isAdmin && (
                 <span className="text-xs bg-white/20 border border-white/30 text-white/90 px-2 py-0.5 rounded-full whitespace-nowrap">
                   義工

@@ -211,7 +211,7 @@ export default function ActivitiesPage() {
         <div className="max-w-4xl mx-auto px-6 py-10 text-center">
           <div style={{ width: '60px', height: '2px', backgroundColor: '#C9A96E', margin: '0 auto 16px' }} />
           <h1 style={{ color: '#F0E8D8', fontSize: '1.75rem', fontWeight: '300', letterSpacing: '0.15em' }}>
-            普宜精舍
+            {import.meta.env.VITE_TEMPLE_NAME}
           </h1>
           <p style={{ color: '#B0A898', fontSize: '0.85rem', letterSpacing: '0.2em', marginTop: '4px' }}>
             中台禪寺宜蘭分院

@@ -91,7 +91,7 @@ export default function BatchPrintModal({ open, onClose, event, selectedGuestReg
                 }}
               >
                 <p style={{ fontSize: '8px', color: '#9ca3af', letterSpacing: '2px', marginBottom: '4px', fontWeight: '600' }}>
-                  普宜精舍
+                  {import.meta.env.VITE_TEMPLE_NAME}
                 </p>
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '5px' }}>
                   <QRCodeSVG value={r.registration_id} size={110} />
