@@ -77,8 +77,8 @@ export default function EventsPage() {
   async function openExportModal() {
     setExporting(true)
     const { events: allEvents } = await getAllEvents()
-    const activeEvents = (allEvents || []).filter(e => e.status === 'active')
-    setExportCandidates(activeEvents.map(e => ({ event_id: e.event_id, name: e.name, checked: true })))
+    const activeEvents = (allEvents || []).filter(e => e.status !== 'closed')
+    setExportCandidates(activeEvents.map(e => ({ event_id: e.event_id, name: e.name, status: e.status, checked: true })))
     setExporting(false)
     setShowExportModal(true)
   }
@@ -436,6 +436,7 @@ export default function EventsPage() {
                     className="w-4 h-4 accent-amber-600 flex-shrink-0"
                   />
                   <span className="text-sm text-gray-700">{c.name}</span>
+                  {c.status === 'draft' && <span className="text-xs text-gray-400 ml-1">（草稿）</span>}
                 </label>
               ))}
             </div>
