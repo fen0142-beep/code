@@ -35,6 +35,8 @@ export default function EventsPage() {
   const [showBuiltinModal, setShowBuiltinModal] = useState(false)
   const [builtinSelected, setBuiltinSelected] = useState([]) // indices of selected templates
   const [importingBuiltin, setImportingBuiltin] = useState(false)
+  // 篩選 tab
+  const [activeTab, setActiveTab] = useState('active')
 
   useEffect(() => { load() }, [])
 
@@ -416,6 +418,36 @@ export default function EventsPage() {
         </div>
       )}
 
+      {/* 狀態篩選 Tab */}
+      {!loading && (
+        <div className="flex gap-1 mb-4 border-b border-gray-200">
+          {[
+            { key: 'active', label: '進行中', color: 'text-green-700' },
+            { key: 'draft',  label: '草稿',   color: 'text-gray-600' },
+            { key: 'closed', label: '已關閉', color: 'text-red-500' },
+            { key: 'all',    label: '全部',   color: 'text-gray-500' },
+          ].map(tab => {
+            const count = tab.key === 'all'
+              ? events.length
+              : events.filter(e => e.status === tab.key).length
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === tab.key
+                    ? `border-amber-600 ${tab.color}`
+                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                {tab.label}
+                <span className="ml-1.5 text-xs bg-gray-100 text-gray-500 rounded-full px-1.5 py-0.5">{count}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* 活動列表 */}
       {loading ? (
         <p className="text-gray-400 text-sm py-8 text-center">載入中…</p>
@@ -427,31 +459,43 @@ export default function EventsPage() {
             : <p className="text-sm">尚未被指定任何活動，請聯絡師父設定</p>
           }
         </div>
-      ) : (
-        <div className="space-y-3">
-          {events.map(ev => (
-            <Link
-              key={ev.event_id}
-              to={`/admin/events/${ev.event_id}`}
-              className="block bg-white rounded-xl border border-gray-200 px-5 py-4 hover:border-amber-300 hover:shadow-sm transition-all"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-gray-800">{ev.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {ev.date_start || '日期未設定'}
-                    {ev.date_end && ev.date_end !== ev.date_start ? ` ～ ${ev.date_end}` : ''}
-                    {ev.location ? `　${ev.location}` : ''}
-                  </p>
+      ) : (() => {
+        const filtered = (activeTab === 'all' ? events : events.filter(e => e.status === activeTab))
+          .slice()
+          .sort((a, b) => {
+            if (!a.date_start && !b.date_start) return 0
+            if (!a.date_start) return 1
+            if (!b.date_start) return -1
+            return a.date_start.localeCompare(b.date_start)
+          })
+        return filtered.length === 0 ? (
+          <p className="text-center text-sm text-gray-400 py-12">此分類目前沒有活動</p>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(ev => (
+              <Link
+                key={ev.event_id}
+                to={`/admin/events/${ev.event_id}`}
+                className="block bg-white rounded-xl border border-gray-200 px-5 py-4 hover:border-amber-300 hover:shadow-sm transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-gray-800">{ev.name}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {ev.date_start || '日期未設定'}
+                      {ev.date_end && ev.date_end !== ev.date_start ? ` ～ ${ev.date_end}` : ''}
+                      {ev.location ? `　${ev.location}` : ''}
+                    </p>
+                  </div>
+                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_COLOR[ev.status]}`}>
+                    {STATUS_LABEL[ev.status]}
+                  </span>
                 </div>
-                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_COLOR[ev.status]}`}>
-                  {STATUS_LABEL[ev.status]}
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
+              </Link>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* 匯入成功提示 */}
       {importResult && (
