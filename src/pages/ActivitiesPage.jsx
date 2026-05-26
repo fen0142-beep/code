@@ -87,6 +87,22 @@ function RegistrationButton({ event }) {
   if (event.status === 'closed') {
     return <span style={{ ...btnBase, backgroundColor: '#5C1020', color: '#d08090' }}>報名已截止</span>
   }
+  if (event.locked && event.volunteer_open) {
+    return (
+      <div>
+        <a
+          href={`/?event=${event.event_id}`}
+          style={{ ...btnBase, backgroundColor: '#2E0E1F', color: '#C9A96E', border: '1.5px solid #C9A96E', cursor: 'pointer' }}
+          onClick={e => e.stopPropagation()}
+        >
+          義工報名
+        </a>
+        <p style={{ fontSize: '0.72rem', color: '#A0896A', marginTop: '4px', letterSpacing: '0.03em' }}>
+          ＊學員報名已截止，僅開放義工
+        </p>
+      </div>
+    )
+  }
   if (event.status === 'active') {
     return (
       <a
