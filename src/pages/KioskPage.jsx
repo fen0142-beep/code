@@ -1024,9 +1024,9 @@ export default function KioskPage() {
       )}
 
       {/* Header */}
-      <header className="text-white px-6 py-4 shadow-md" style={{ backgroundColor: '#2E0E1F', borderBottom: '1px solid #C9A96E' }}>
-        <p className="text-kiosk-sm opacity-80">普宜精舍</p>
-        <h1 className="text-kiosk-lg font-bold leading-tight">活動報名</h1>
+      <header className="px-6 py-4 shadow-md" style={{ backgroundColor: '#2E0E1F', borderBottom: '1px solid #C9A96E' }}>
+        <p className="text-kiosk-sm" style={{ color: '#C9A96E', opacity: 0.85 }}>普宜精舍</p>
+        <h1 className="text-kiosk-lg font-bold leading-tight" style={{ color: '#C9A96E' }}>活動報名</h1>
       </header>
 
       <main className="flex-1 flex items-center justify-center p-6">
