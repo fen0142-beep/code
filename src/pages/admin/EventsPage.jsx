@@ -29,6 +29,7 @@ export default function EventsPage() {
   const [showImportModal, setShowImportModal] = useState(false)
   const [importData, setImportData] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [importSelected, setImportSelected] = useState([]) // indices of selected events
   const [importResult, setImportResult] = useState('')
   // V7b built-in templates
   const [showBuiltinModal, setShowBuiltinModal] = useState(false)
@@ -183,6 +184,7 @@ export default function EventsPage() {
           return
         }
         setImportData(json)
+        setImportSelected(json.events.map((_, i) => i))
         setImportResult('')
         setShowImportModal(true)
       } catch {
@@ -198,7 +200,8 @@ export default function EventsPage() {
     setImporting(true)
     let successCount = 0
 
-    for (const tmpl of importData.events) {
+    const selectedEvents = importData.events.filter((_, i) => importSelected.includes(i))
+    for (const tmpl of selectedEvents) {
       const { event, error: evErr } = await createEvent({
         name: tmpl.name,
         description: tmpl.description,
@@ -227,6 +230,7 @@ export default function EventsPage() {
     setImporting(false)
     setShowImportModal(false)
     setImportData(null)
+    setImportSelected([])
     setImportResult(`✅ 已匯入 ${successCount} 個活動，請逐一補填日期與封面圖`)
   }
 
@@ -515,11 +519,32 @@ export default function EventsPage() {
                 來源：{importData._source}（{importData._exported_at} 匯出）
                 ，共 {importData._count ?? importData.events.length} 個活動：
               </p>
-              <ul className="space-y-1.5 mb-4">
+              <label className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 rounded px-2 py-1 mb-2 border-b pb-2">
+                <input
+                  type="checkbox"
+                  checked={importSelected.length === importData.events.length}
+                  onChange={e => setImportSelected(e.target.checked ? importData.events.map((_, i) => i) : [])}
+                  className="w-4 h-4 accent-amber-600 flex-shrink-0"
+                />
+                <span className="text-sm font-medium text-gray-700">全選 / 全不選</span>
+              </label>
+              <ul className="space-y-1 mb-4">
                 {importData.events.map((ev, i) => (
-                  <li key={i} className="text-sm text-gray-700 flex gap-1.5">
-                    <span className="text-gray-400 flex-shrink-0">•</span>
-                    <span>{ev.name}（{ev.location || '地點未填'}，{ev.fields?.length ?? 0} 個欄位）</span>
+                  <li key={i}>
+                    <label className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 rounded px-2 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={importSelected.includes(i)}
+                        onChange={e => setImportSelected(prev =>
+                          e.target.checked ? [...prev, i] : prev.filter(x => x !== i)
+                        )}
+                        className="w-4 h-4 accent-amber-600 flex-shrink-0"
+                      />
+                      <span className="text-sm text-gray-700">
+                        {ev.name}
+                        <span className="text-gray-400 ml-1">（{ev.location || '地點未填'}，{ev.fields?.length ?? 0} 個欄位）</span>
+                      </span>
+                    </label>
                   </li>
                 ))}
               </ul>
@@ -530,17 +555,18 @@ export default function EventsPage() {
             </div>
             <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-end gap-2">
               <button
-                onClick={() => { setShowImportModal(false); setImportData(null) }}
+                onClick={() => { setShowImportModal(false); setImportData(null); setImportSelected([]) }}
                 className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2"
               >
                 取消
               </button>
+              <span className="text-xs text-gray-400 mr-2">已選 {importSelected.length} 個</span>
               <button
                 onClick={handleConfirmImport}
-                disabled={importing}
+                disabled={importing || importSelected.length === 0}
                 className="bg-amber-700 hover:bg-amber-800 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
-                {importing ? '匯入中…' : '確認匯入全部'}
+                {importing ? '匯入中…' : '確認匯入'}
               </button>
             </div>
           </div>
