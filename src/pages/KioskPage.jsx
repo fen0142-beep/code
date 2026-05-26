@@ -1278,9 +1278,9 @@ function IdleScreen({ onOpenCamera, onScanImage }) {
         <button
           onClick={onOpenCamera}
           className="flex items-center gap-4 w-full px-6 py-4 rounded-2xl font-semibold shadow-sm active:scale-95 transition-transform"
-          style={{backgroundColor:'#2E0E1F', border:'2px solid #C9A96E', color:'#C9A96E'}}
+          style={{backgroundColor:'white', border:'2px solid #C9A96E', color:'#2E0E1F'}}
         >
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2E0E1F" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
             <circle cx="12" cy="13" r="4"/>
           </svg>
