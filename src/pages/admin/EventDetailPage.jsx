@@ -337,6 +337,7 @@ export default function EventDetailPage() {
       cover_image_position: ev.cover_image_position ?? '50% 50%',
       description: ev.description ?? '',
       volunteer_open: !!ev.volunteer_open,
+      related_links: ev.related_links ?? [],
     })
     setFields(f)
     // 多場次：把 session_checkins 用 reg_id 分組掛到每筆 registration
@@ -472,6 +473,7 @@ export default function EventDetailPage() {
         cover_image_position: form.cover_image_position || '50% 50%',
         description: form.description || null,
         volunteer_open: form.volunteer_open,
+        related_links: (form.related_links || []).filter(l => l.title && l.url),
       }),
       setEventVolunteers(id, [...eventVolunteerIds]),
     ])
@@ -930,6 +932,57 @@ export default function EventDetailPage() {
                     placeholder="介紹活動緣起、流程、注意事項等，學員在介紹頁可閱讀此內容"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-y"
                   />
+                </div>
+
+                {/* 相關連結 */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    相關連結
+                    <span className="text-xs text-gray-400 ml-2">（前台顯示標題，不顯示網址）</span>
+                  </label>
+
+                  {(form.related_links || []).map((link, i) => (
+                    <div key={i} className="flex gap-2 mb-2 items-center">
+                      <input
+                        type="text"
+                        placeholder="顯示標題，例：開山祖師開示：開悟三帖藥"
+                        value={link.title}
+                        onChange={e => {
+                          const links = [...(form.related_links || [])]
+                          links[i] = { ...links[i], title: e.target.value }
+                          setForm(f => ({ ...f, related_links: links }))
+                        }}
+                        className="flex-1 border rounded px-3 py-1.5 text-sm"
+                      />
+                      <input
+                        type="url"
+                        placeholder="網址"
+                        value={link.url}
+                        onChange={e => {
+                          const links = [...(form.related_links || [])]
+                          links[i] = { ...links[i], url: e.target.value }
+                          setForm(f => ({ ...f, related_links: links }))
+                        }}
+                        className="flex-1 border rounded px-3 py-1.5 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const links = (form.related_links || []).filter((_, idx) => idx !== i)
+                          setForm(f => ({ ...f, related_links: links }))
+                        }}
+                        className="text-red-500 hover:text-red-700 text-sm px-2"
+                      >✕</button>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, related_links: [...(f.related_links || []), { title: '', url: '' }] }))}
+                    className="text-sm text-blue-600 hover:underline mt-1"
+                  >
+                    ＋ 新增連結
+                  </button>
                 </div>
 
                 {/* 封面圖片 */}

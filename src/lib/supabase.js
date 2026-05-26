@@ -2226,7 +2226,7 @@ export async function getPublicActivities() {
 export async function getPublicActivity(eventId) {
   const { data, error } = await supabase
     .from('events')
-    .select('event_id, name, date_start, date_end, location, location_tag, status, locked, volunteer_open, offline_registration, cover_image_url, cover_image_position, description')
+    .select('event_id, name, date_start, date_end, location, location_tag, status, locked, volunteer_open, offline_registration, cover_image_url, cover_image_position, description, related_links')
     .eq('event_id', eventId)
     .single()
   if (error) return { data: null, error: error.message }

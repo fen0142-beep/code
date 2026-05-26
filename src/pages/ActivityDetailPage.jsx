@@ -183,6 +183,49 @@ export default function ActivityDetailPage() {
               </div>
             )}
 
+            {/* 相關閱讀 */}
+            {event.related_links?.length > 0 && (
+              <div style={{
+                marginTop: '24px',
+                paddingTop: '20px',
+                borderTop: '1px solid rgba(201, 169, 110, 0.2)',
+              }}>
+                <p style={{
+                  color: '#C9A96E',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  letterSpacing: '0.15em',
+                  marginBottom: '12px',
+                }}>
+                  相關閱讀
+                </p>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {event.related_links.map((link, i) => (
+                    <li key={i} style={{ marginBottom: '8px' }}>
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: '#D4B896',
+                          fontSize: '0.88rem',
+                          textDecoration: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.color = '#C9A96E'}
+                        onMouseLeave={e => e.currentTarget.style.color = '#D4B896'}
+                      >
+                        <span style={{ color: '#C9A96E', fontSize: '0.75rem' }}>▶</span>
+                        {link.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* 報名按鈕 */}
             <RegistrationButton event={event} large />
           </>
