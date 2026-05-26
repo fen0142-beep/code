@@ -917,7 +917,7 @@ export default function EventDetailPage() {
                   >
                     <option value="zhongtai">📍 中台禪寺</option>
                     <option value="tianxiang">📍 天祥寶塔禪寺</option>
-                    <option value="puyi">📍 普宜精舍</option>
+                    <option value="puyi">📍 {import.meta.env.VITE_TEMPLE_NAME}</option>
                     <option value="other">📍 其他（以「地點」欄文字為主）</option>
                   </select>
                 </div>

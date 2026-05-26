@@ -19,7 +19,7 @@ function LocationLabel({ tag }) {
   const config = {
     zhongtai:  { label: '📍 中台禪寺',   color: '#C9A96E' },
     tianxiang: { label: '📍 天祥寶塔禪寺', color: '#7FAFC0' },
-    puyi:      { label: '📍 普宜精舍',   color: '#C0C0C8' },
+    puyi:      { label: `📍 ${import.meta.env.VITE_TEMPLE_NAME}`,   color: '#C0C0C8' },
     other:     { label: '📍 其他地點',   color: '#9CA3AF' },
   }
   const c = config[tag] || config.puyi
