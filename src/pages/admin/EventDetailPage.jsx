@@ -934,57 +934,6 @@ export default function EventDetailPage() {
                   />
                 </div>
 
-                {/* 相關連結 */}
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    相關連結
-                    <span className="text-xs text-gray-400 ml-2">（前台顯示標題，不顯示網址）</span>
-                  </label>
-
-                  {(form.related_links || []).map((link, i) => (
-                    <div key={i} className="flex gap-2 mb-2 items-center">
-                      <input
-                        type="text"
-                        placeholder="顯示標題，例：開山祖師開示：開悟三帖藥"
-                        value={link.title}
-                        onChange={e => {
-                          const links = [...(form.related_links || [])]
-                          links[i] = { ...links[i], title: e.target.value }
-                          setForm(f => ({ ...f, related_links: links }))
-                        }}
-                        className="flex-1 border rounded px-3 py-1.5 text-sm"
-                      />
-                      <input
-                        type="url"
-                        placeholder="網址"
-                        value={link.url}
-                        onChange={e => {
-                          const links = [...(form.related_links || [])]
-                          links[i] = { ...links[i], url: e.target.value }
-                          setForm(f => ({ ...f, related_links: links }))
-                        }}
-                        className="flex-1 border rounded px-3 py-1.5 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const links = (form.related_links || []).filter((_, idx) => idx !== i)
-                          setForm(f => ({ ...f, related_links: links }))
-                        }}
-                        className="text-red-500 hover:text-red-700 text-sm px-2"
-                      >✕</button>
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() => setForm(f => ({ ...f, related_links: [...(f.related_links || []), { title: '', url: '' }] }))}
-                    className="text-sm text-blue-600 hover:underline mt-1"
-                  >
-                    ＋ 新增連結
-                  </button>
-                </div>
-
                 {/* 封面圖片 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">活動封面圖片</label>
@@ -1015,6 +964,40 @@ export default function EventDetailPage() {
                     />
                   )}
                 </div>
+              </div>
+
+              {/* 相關連結 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  相關連結
+                  <span className="text-xs text-gray-400 ml-2">（前台顯示標題，不顯示網址）</span>
+                </label>
+                {(form.related_links || []).map((link, i) => (
+                  <div key={i} className="flex gap-2 mb-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="顯示標題，例：開山祖師開示：開悟三帖藥"
+                      value={link.title}
+                      onChange={e => { const ls=[...(form.related_links||[])]; ls[i]={...ls[i],title:e.target.value}; setForm(f=>({...f,related_links:ls})) }}
+                      className="flex-1 border rounded px-3 py-1.5 text-sm"
+                    />
+                    <input
+                      type="url"
+                      placeholder="網址"
+                      value={link.url}
+                      onChange={e => { const ls=[...(form.related_links||[])]; ls[i]={...ls[i],url:e.target.value}; setForm(f=>({...f,related_links:ls})) }}
+                      className="flex-1 border rounded px-3 py-1.5 text-sm"
+                    />
+                    <button type="button"
+                      onClick={() => setForm(f=>({...f,related_links:(f.related_links||[]).filter((_,idx)=>idx!==i)}))}
+                      className="text-red-500 hover:text-red-700 text-sm px-2">✕</button>
+                  </div>
+                ))}
+                <button type="button"
+                  onClick={() => setForm(f=>({...f,related_links:[...(f.related_links||[]),{title:'',url:''}]}))}
+                  className="text-sm text-blue-600 hover:underline mt-1">
+                  ＋ 新增連結
+                </button>
               </div>
             </div>
           </div>
