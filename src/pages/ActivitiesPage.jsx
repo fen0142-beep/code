@@ -36,7 +36,7 @@ function CornerRibbon({ tag }) {
   const config = {
     zhongtai:  { label: '中台',   bg: '#C9A96E', color: '#2E0E1F' },
     tianxiang: { label: '天祥',   bg: '#7FAFC0', color: '#ffffff' },
-    puyi:      { label: '普宜',   bg: '#C0C0C8', color: '#2E0E1F' },
+    puyi:      { label: (import.meta.env.VITE_TEMPLE_NAME || '普宜').slice(0, 2),   bg: '#C0C0C8', color: '#2E0E1F' },
     other:     { label: '其他',   bg: '#E5E7EB', color: '#6B7280' },
   }
   const c = config[tag] || config.puyi
