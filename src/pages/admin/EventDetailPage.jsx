@@ -331,6 +331,7 @@ export default function EventDetailPage() {
       show_transport_to_public: !!ev.show_transport_to_public,
       // 活動介紹頁
       show_on_activities: !!ev.show_on_activities,
+      kiosk_open: ev.kiosk_open !== false,  // 預設 true；僅明確設為 false 才關閉刷卡報名
       offline_registration: !!ev.offline_registration,
       location_tag: ev.location_tag ?? 'zhongtai',
       cover_image_url: ev.cover_image_url ?? '',
@@ -467,6 +468,7 @@ export default function EventDetailPage() {
         show_transport_to_public: form.show_transport_to_public,
         // 活動介紹頁
         show_on_activities: form.show_on_activities,
+        kiosk_open: form.kiosk_open,
         offline_registration: form.offline_registration,
         location_tag: form.location_tag,
         cover_image_url: form.cover_image_url || null,
@@ -851,6 +853,24 @@ export default function EventDetailPage() {
                   對外公開排車資訊（勾選後，學員在前台刷卡可看到自己的車次）
                   <span className="block text-xs text-gray-500 mt-0.5">
                     排車作業中請保持關閉；確認排車定案後再開啟
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            {/* 開放刷卡報名 */}
+            <div className="sm:col-span-2">
+              <label className="inline-flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!!form.kiosk_open}
+                  onChange={e => setForm(f => ({ ...f, kiosk_open: e.target.checked }))}
+                  className="w-4 h-4 accent-orange-600 mt-0.5"
+                />
+                <span>
+                  開放刷卡報名（現場平板 Kiosk 顯示此活動）
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    取消勾選後活動仍可顯示在介紹頁，但不出現在報名 Kiosk 清單
                   </span>
                 </span>
               </label>

@@ -37,6 +37,7 @@ export async function getActiveEvents() {
     .from('events')
     .select('*')
     .eq('status', 'active')
+    .neq('kiosk_open', false)
     .gte('date_end', new Date().toISOString().slice(0, 10))
     .order('date_start', { ascending: true })
 

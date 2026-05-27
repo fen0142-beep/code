@@ -1994,10 +1994,10 @@ function FriendFormScreen({
       </div>
 
       {/* 動態欄位（套用本人活動欄位 + 親友額外選項） */}
-      {fields.length > 0 && (
+      {visibleFields.length > 0 && (
         <div className="bg-white rounded-2xl shadow-md p-5 mb-4">
           <DynamicForm
-            fields={fields}
+            fields={visibleFields}
             answers={answers}
             onChange={onChangeAnswers}
             fieldExtraOptions={fieldExtraOptions}
