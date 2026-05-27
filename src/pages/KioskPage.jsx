@@ -1122,6 +1122,7 @@ export default function KioskPage() {
             student={student}
             event={selectedItem.event}
             fields={selectedItem.fields}
+            isVolunteerOnly={!!selectedItem.event.locked && !!selectedItem.event.volunteer_open}
             friendName={friendName}
             friendPhone={friendPhone}
             answers={friendAnswers}
@@ -1957,11 +1958,11 @@ function FriendFormScreen({
   student, event, fields, isVolunteerOnly, friendName, friendPhone, answers, errorMsg, submitting,
   onChangeName, onChangePhone, onChangeAnswers, onSubmit, onBack,
 }) {
-  // 義工限定模式：identity 欄位只保留「義工」選項（與 FormScreen 完全一致）
+  // 義工限定模式：含「義工」選項的欄位只保留「義工」，其餘選項全部移除
   const visibleFields = isVolunteerOnly
     ? fields.map(f => {
-        if ((f.field_key === 'identity' || f.dashboard_role === 'identity') && Array.isArray(f.options)) {
-          return { ...f, options: f.options.filter(opt => opt === '義工') }
+        if (Array.isArray(f.options) && f.options.includes('義工')) {
+          return { ...f, options: ['義工'] }
         }
         return f
       })
