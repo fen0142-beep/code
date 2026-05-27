@@ -1957,7 +1957,7 @@ function FriendFormScreen({
         const isIdentityField =
           f.field_key === 'identity' ||
           f.dashboard_role === 'identity' ||
-          (f.field_label && f.field_label.includes('身分'))
+          (f.field_label && (f.field_label.includes('身分') || f.field_label.includes('身份')))
         if (isIdentityField && Array.isArray(f.options)) {
           return { ...f, options: f.options.filter(opt => opt === '義工') }
         }
