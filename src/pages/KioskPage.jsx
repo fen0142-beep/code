@@ -653,7 +653,14 @@ export default function KioskPage() {
     setErrorMsg('')
     setFriendName('')
     setFriendPhone('')
-    setFriendAnswers({})
+    // 義工模式：預設 identity='義工'（與一般學員流程對齊，避免信眾選項被誤選）
+    const isVol = !!item.event.locked && !!item.event.volunteer_open
+    const initFriendAnswers = {}
+    if (isVol) {
+      const identField = item.fields.find(f => f.field_key === 'identity' || f.dashboard_role === 'identity')
+      if (identField) initFriendAnswers[identField.field_key] = '義工'
+    }
+    setFriendAnswers(initFriendAnswers)
 
     if (item.event.multi_session) {
       // 親友・多場次：初始化 sessions 狀態（與本人流程一致,但不預填既有報名）
@@ -1950,13 +1957,13 @@ function FriendFormScreen({
   student, event, fields, isVolunteerOnly, friendName, friendPhone, answers, errorMsg, submitting,
   onChangeName, onChangePhone, onChangeAnswers, onSubmit, onBack,
 }) {
-  // 義工限定模式：移除所有欄位中的「信眾」選項（不依賴 field_key 名稱，確保各模板相容）
+  // 義工限定模式：identity 欄位只保留「義工」選項（與 FormScreen 完全一致）
   const visibleFields = isVolunteerOnly
     ? fields.map(f => {
-        if (!Array.isArray(f.options)) return f
-        const filtered = f.options.filter(opt => opt !== '信眾')
-        if (filtered.length === f.options.length) return f
-        return { ...f, options: filtered }
+        if ((f.field_key === 'identity' || f.dashboard_role === 'identity') && Array.isArray(f.options)) {
+          return { ...f, options: f.options.filter(opt => opt === '義工') }
+        }
+        return f
       })
     : fields
 
