@@ -1950,18 +1950,13 @@ function FriendFormScreen({
   student, event, fields, isVolunteerOnly, friendName, friendPhone, answers, errorMsg, submitting,
   onChangeName, onChangePhone, onChangeAnswers, onSubmit, onBack,
 }) {
-  // 義工限定模式：identity 欄位只保留「義工」選項
-  // 用三種方式偵測身分別欄位（field_key / dashboard_role / field_label），確保相容各活動模板
+  // 義工限定模式：移除所有欄位中的「信眾」選項（不依賴 field_key 名稱，確保各模板相容）
   const visibleFields = isVolunteerOnly
     ? fields.map(f => {
-        const isIdentityField =
-          f.field_key === 'identity' ||
-          f.dashboard_role === 'identity' ||
-          (f.field_label && (f.field_label.includes('身分') || f.field_label.includes('身份')))
-        if (isIdentityField && Array.isArray(f.options)) {
-          return { ...f, options: f.options.filter(opt => opt === '義工') }
-        }
-        return f
+        if (!Array.isArray(f.options)) return f
+        const filtered = f.options.filter(opt => opt !== '信眾')
+        if (filtered.length === f.options.length) return f
+        return { ...f, options: filtered }
       })
     : fields
 
