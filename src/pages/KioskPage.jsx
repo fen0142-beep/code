@@ -1905,14 +1905,17 @@ function FriendEventChooseScreen({ student, eventItems, onPick, onCancel }) {
         {eventItems.map((item) => {
           const { event, fields } = item
           const locked = !!event.locked
+          const volunteerOpen = !!event.volunteer_open
+          const isVolunteerOnly = locked && volunteerOpen
+          const effectiveLocked = locked && !volunteerOpen
 
           return (
             <button
               key={event.event_id}
-              onClick={() => !locked && onPick(item)}
-              disabled={locked}
+              onClick={() => !effectiveLocked && onPick(item)}
+              disabled={effectiveLocked}
               className={`w-full text-left bg-white rounded-2xl border-2 p-4 transition-all ${
-                locked ? 'border-gray-200 opacity-60 cursor-not-allowed' : 'border-purple-300 hover:bg-purple-50 active:scale-[0.99]'
+                effectiveLocked ? 'border-gray-200 opacity-60 cursor-not-allowed' : 'border-purple-300 hover:bg-purple-50 active:scale-[0.99]'
               }`}
             >
               <p className="text-kiosk-base font-bold text-gray-800">{event.name}</p>
@@ -1921,8 +1924,11 @@ function FriendEventChooseScreen({ student, eventItems, onPick, onCancel }) {
                 {event.date_end && event.date_end !== event.date_start ? ` ～ ${event.date_end}` : ''}
                 {event.location ? `　${event.location}` : ''}
               </p>
-              {locked && (
+              {effectiveLocked && (
                 <p className="text-kiosk-sm text-amber-700 mt-1">已停止異動</p>
+              )}
+              {isVolunteerOnly && (
+                <p className="text-kiosk-sm text-amber-700 mt-1">義工報名開放中</p>
               )}
             </button>
           )
@@ -1941,12 +1947,22 @@ function FriendEventChooseScreen({ student, eventItems, onPick, onCancel }) {
 
 // ── 親友代報：填寫畫面 ───────────────────────────────────
 function FriendFormScreen({
-  student, event, fields, friendName, friendPhone, answers, errorMsg, submitting,
+  student, event, fields, isVolunteerOnly, friendName, friendPhone, answers, errorMsg, submitting,
   onChangeName, onChangePhone, onChangeAnswers, onSubmit, onBack,
 }) {
+  // 義工限定模式：identity 欄位只保留「義工」選項
+  const visibleFields = isVolunteerOnly
+    ? fields.map(f => {
+        if ((f.field_key === 'identity' || f.dashboard_role === 'identity') && Array.isArray(f.options)) {
+          return { ...f, options: f.options.filter(opt => opt === '義工') }
+        }
+        return f
+      })
+    : fields
+
   // 精舍活動：parking_type radio 動態加「跟 OOO 同車（不另計）」選項
   const isTemple = event.event_type === 'temple'
-  const hasParkingField = fields.some(f => f.field_key === 'parking_type')
+  const hasParkingField = visibleFields.some(f => f.field_key === 'parking_type')
   const carpoolOption = `跟 ${student?.name ?? '代報者'} 同車（不另計）`
   const fieldExtraOptions = (isTemple && hasParkingField)
     ? { parking_type: [carpoolOption] }
@@ -1958,6 +1974,15 @@ function FriendFormScreen({
         <p className="text-kiosk-sm font-bold text-purple-700">親友代報</p>
         <p className="text-kiosk-sm text-purple-600">代報者：{student?.name} 師兄</p>
       </div>
+      {isVolunteerOnly && (
+        <div style={{
+          backgroundColor: '#FEF3C7', border: '1px solid #F59E0B',
+          borderRadius: '6px', padding: '8px 12px', marginBottom: '12px',
+          fontSize: '0.85rem', color: '#92400E',
+        }}>
+          ⚠️ 此活動學員報名已截止，目前僅開放義工報名。
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl shadow-md p-5 mb-4 border-l-8 border-purple-600">
         <p className="text-kiosk-xl font-bold text-gray-800">為親友報名</p>
