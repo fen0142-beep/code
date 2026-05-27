@@ -1951,9 +1951,14 @@ function FriendFormScreen({
   onChangeName, onChangePhone, onChangeAnswers, onSubmit, onBack,
 }) {
   // 義工限定模式：identity 欄位只保留「義工」選項
+  // 用三種方式偵測身分別欄位（field_key / dashboard_role / field_label），確保相容各活動模板
   const visibleFields = isVolunteerOnly
     ? fields.map(f => {
-        if ((f.field_key === 'identity' || f.dashboard_role === 'identity') && Array.isArray(f.options)) {
+        const isIdentityField =
+          f.field_key === 'identity' ||
+          f.dashboard_role === 'identity' ||
+          (f.field_label && f.field_label.includes('身分'))
+        if (isIdentityField && Array.isArray(f.options)) {
           return { ...f, options: f.options.filter(opt => opt === '義工') }
         }
         return f
