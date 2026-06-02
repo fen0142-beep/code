@@ -2288,3 +2288,52 @@ export async function deleteRecurringTemplate(templateId) {
   if (error) return { error: error.message }
   return { error: null }
 }
+
+/**
+ * 從範本建立單一活動（指定日期）
+ * @param {object} tmpl  - recurring_templates 行
+ * @param {string} date  - 'YYYY-MM-DD'
+ * @returns {{ event_id, error }}
+ */
+export async function createEventFromTemplate(tmpl, date) {
+  const name = tmpl.prepend_date
+    ? `${date.replace(/-/g, '/')} ${tmpl.name}`
+    : tmpl.name
+  const { data, error } = await supabase
+    .from('events')
+    .insert({
+      name,
+      date_start: date,
+      date_end: date,
+      location: tmpl.location || '',
+      location_tag: tmpl.location_tag || 'puyi',
+      event_type: tmpl.event_type || 'temple',
+      status: 'active',
+      walkin_mode: tmpl.walkin_mode ?? false,
+      kiosk_open: tmpl.kiosk_open ?? true,
+      offline_registration: tmpl.offline_registration ?? false,
+      show_on_activities: tmpl.show_on_activities ?? false,
+      is_recurring: true,
+      template_id: tmpl.template_id,
+    })
+    .select('event_id')
+    .single()
+  if (error) return { event_id: null, error: error.message }
+  return { event_id: data.event_id, error: null }
+}
+
+/**
+ * 查詢某範本在指定日期是否已建立活動
+ * @param {string} templateId
+ * @param {string[]} dates  - ['YYYY-MM-DD', ...]
+ * @returns {Set<string>}   - 已存在的日期集合
+ */
+export async function getExistingTemplateDates(templateId, dates) {
+  if (!dates.length) return new Set()
+  const { data } = await supabase
+    .from('events')
+    .select('date_start')
+    .eq('template_id', templateId)
+    .in('date_start', dates)
+  return new Set((data || []).map(r => r.date_start))
+}

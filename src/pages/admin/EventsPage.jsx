@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AdminLayout from '../../components/AdminLayout'
-import { supabase, getAllEvents, createEvent, getMyEvents, saveEventFields, saveEventSessionFields, getRecurringTemplates, createRecurringTemplate, updateRecurringTemplate, deleteRecurringTemplate } from '../../lib/supabase'
+import { supabase, getAllEvents, createEvent, getMyEvents, saveEventFields, saveEventSessionFields, getRecurringTemplates, createRecurringTemplate, updateRecurringTemplate, deleteRecurringTemplate, createEventFromTemplate, getExistingTemplateDates } from '../../lib/supabase'
 import { DEFAULT_TEMPLATES } from '../../lib/defaultEventTemplates'
 import { useAuth } from '../../lib/auth'
 
@@ -49,6 +49,11 @@ export default function EventsPage() {
   const [templateForm, setTemplateForm] = useState(TMPL_DEFAULT)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [deletingTemplate, setDeletingTemplate] = useState(null)
+  // 區間手動產生
+  const [generateTarget, setGenerateTarget] = useState(null)
+  const [generateRange, setGenerateRange] = useState({ start: '', end: '' })
+  const [generatePreview, setGeneratePreview] = useState([]) // [{date, exists}]
+  const [generating, setGenerating] = useState(false)
 
   useEffect(() => { load() }, [])
 
@@ -125,6 +130,60 @@ export default function EventsPage() {
     setDeletingTemplate(null)
     const { templates } = await getRecurringTemplates()
     setRecurringTemplates(templates || [])
+  }
+
+  // ── 區間手動產生 ────────────────────────────────────────────────
+  /** 計算範本在 [start, end] 內符合週期的所有日期（字串陣列，上限 52） */
+  function computeTemplateDates(tmpl, start, end) {
+    if (!start || !end || start > end) return []
+    const dates = []
+    let cur = new Date(start + 'T00:00:00')
+    const last = new Date(end + 'T00:00:00')
+    while (cur <= last && dates.length < 52) {
+      const dow = cur.getDay()           // 0=日
+      const dom = cur.getDate()          // 1-31
+      if (
+        (tmpl.frequency === 'weekly'  && dow === Number(tmpl.day_of_week)) ||
+        (tmpl.frequency === 'monthly' && dom === Number(tmpl.day_of_month))
+      ) {
+        dates.push(cur.toISOString().slice(0, 10))
+      }
+      cur.setDate(cur.getDate() + 1)
+    }
+    return dates
+  }
+
+  async function openGenerateModal(tmpl) {
+    // 預設：今天起往後 30 天
+    const today = new Date().toISOString().slice(0, 10)
+    const endDate = new Date(); endDate.setDate(endDate.getDate() + 30)
+    const end = endDate.toISOString().slice(0, 10)
+    setGenerateTarget(tmpl)
+    setGenerateRange({ start: today, end })
+    const dates = computeTemplateDates(tmpl, today, end)
+    const existing = await getExistingTemplateDates(tmpl.template_id, dates)
+    setGeneratePreview(dates.map(d => ({ date: d, exists: existing.has(d) })))
+  }
+
+  async function refreshGeneratePreview(tmpl, start, end) {
+    const dates = computeTemplateDates(tmpl, start, end)
+    const existing = await getExistingTemplateDates(tmpl.template_id, dates)
+    setGeneratePreview(dates.map(d => ({ date: d, exists: existing.has(d) })))
+  }
+
+  async function handleGenerate() {
+    const toCreate = generatePreview.filter(p => !p.exists)
+    if (toCreate.length === 0) return
+    setGenerating(true)
+    let failed = 0
+    for (const { date } of toCreate) {
+      const { error } = await createEventFromTemplate(generateTarget, date)
+      if (error) failed++
+    }
+    setGenerating(false)
+    if (failed > 0) alert(`產生完成，${failed} 筆失敗，請重試。`)
+    setGenerateTarget(null)
+    load()
   }
 
   async function handleCreate(e) {
@@ -604,6 +663,10 @@ export default function EventsPage() {
                         </div>
                         {isAdmin && (
                           <div className="flex gap-2 shrink-0 ml-3">
+                            <button onClick={() => openGenerateModal(tmpl)}
+                              className="text-xs px-2.5 py-1 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors font-medium">
+                              ▶ 產生
+                            </button>
                             <button onClick={() => openEditTemplate(tmpl)}
                               className="text-xs px-2.5 py-1 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors">
                               編輯
@@ -897,6 +960,89 @@ export default function EventsPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 區間手動產生 Modal */}
+      {generateTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-gray-800">▶ 產生定期活動</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{generateTarget.name}</p>
+              </div>
+              <button onClick={() => setGenerateTarget(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+            </div>
+            <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
+              {/* 日期範圍 */}
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">起始日</label>
+                  <input type="date" value={generateRange.start}
+                    onChange={async e => {
+                      const v = e.target.value
+                      setGenerateRange(r => ({ ...r, start: v }))
+                      await refreshGeneratePreview(generateTarget, v, generateRange.end)
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">結束日</label>
+                  <input type="date" value={generateRange.end}
+                    onChange={async e => {
+                      const v = e.target.value
+                      setGenerateRange(r => ({ ...r, end: v }))
+                      await refreshGeneratePreview(generateTarget, generateRange.start, v)
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                </div>
+              </div>
+
+              {/* 預覽清單 */}
+              <div>
+                <p className="text-xs font-medium text-gray-600 mb-2">
+                  預覽（{generatePreview.length} 筆，上限 52 筆）
+                  {generatePreview.filter(p => !p.exists).length > 0 &&
+                    <span className="ml-2 text-indigo-600 font-semibold">
+                      ＋{generatePreview.filter(p => !p.exists).length} 筆將新建
+                    </span>
+                  }
+                  {generatePreview.filter(p => p.exists).length > 0 &&
+                    <span className="ml-2 text-gray-400">
+                      （{generatePreview.filter(p => p.exists).length} 筆已存在，略過）
+                    </span>
+                  }
+                </p>
+                {generatePreview.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-4">此區間內無符合週期的日期</p>
+                ) : (
+                  <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                    {generatePreview.map(({ date, exists }) => (
+                      <div key={date}
+                        className={`flex items-center justify-between rounded-lg px-3 py-1.5 text-sm ${exists ? 'bg-gray-50 text-gray-400' : 'bg-indigo-50 text-indigo-800'}`}>
+                        <span>{date}</span>
+                        {exists
+                          ? <span className="text-xs text-gray-400">已存在</span>
+                          : <span className="text-xs text-indigo-500 font-medium">新建</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+              <button onClick={() => setGenerateTarget(null)}
+                className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">取消</button>
+              <button
+                onClick={handleGenerate}
+                disabled={generating || generatePreview.filter(p => !p.exists).length === 0}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors disabled:opacity-50">
+                {generating ? '產生中…' : `確認產生 ${generatePreview.filter(p => !p.exists).length} 筆`}
+              </button>
             </div>
           </div>
         </div>
