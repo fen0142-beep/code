@@ -37,6 +37,9 @@ export default function EventsPage() {
   const [importingBuiltin, setImportingBuiltin] = useState(false)
   // 篩選 tab
   const [activeTab, setActiveTab] = useState('active')
+  // 定期活動批次刪除
+  const [selectedRecurring, setSelectedRecurring] = useState(new Set())
+  const [deletingRecurring, setDeletingRecurring] = useState(false)
 
   useEffect(() => { load() }, [])
 
@@ -51,6 +54,18 @@ export default function EventsPage() {
       setEvents(events)
     }
     setLoading(false)
+  }
+
+  async function handleDeleteRecurring() {
+    if (selectedRecurring.size === 0) return
+    if (!window.confirm(`確定要刪除選取的 ${selectedRecurring.size} 筆定期活動嗎？此動作無法復原。`)) return
+    setDeletingRecurring(true)
+    const ids = [...selectedRecurring]
+    const { error } = await supabase.from('events').delete().in('event_id', ids)
+    setDeletingRecurring(false)
+    if (error) { alert('刪除失敗：' + error.message); return }
+    setSelectedRecurring(new Set())
+    load()
   }
 
   async function handleCreate(e) {
@@ -422,18 +437,22 @@ export default function EventsPage() {
       {!loading && (
         <div className="flex gap-1 mb-4 border-b border-gray-200">
           {[
-            { key: 'active', label: '進行中', color: 'text-green-700' },
-            { key: 'draft',  label: '草稿',   color: 'text-gray-600' },
-            { key: 'closed', label: '已關閉', color: 'text-red-500' },
-            { key: 'all',    label: '全部',   color: 'text-gray-500' },
+            { key: 'active',    label: '進行中', color: 'text-green-700' },
+            { key: 'draft',     label: '草稿',   color: 'text-gray-600' },
+            { key: 'closed',    label: '已關閉', color: 'text-red-500' },
+            { key: 'all',       label: '全部',   color: 'text-gray-500' },
+            { key: 'recurring', label: '定期活動', color: 'text-teal-700' },
           ].map(tab => {
-            const count = tab.key === 'all'
-              ? events.length
-              : events.filter(e => e.status === tab.key).length
+            const nonRecurring = events.filter(e => !e.is_recurring)
+            const count = tab.key === 'recurring'
+              ? events.filter(e => e.is_recurring).length
+              : tab.key === 'all'
+              ? nonRecurring.length
+              : nonRecurring.filter(e => e.status === tab.key).length
             return (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => { setActiveTab(tab.key); setSelectedRecurring(new Set()) }}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab.key
                     ? `border-amber-600 ${tab.color}`
@@ -460,7 +479,78 @@ export default function EventsPage() {
           }
         </div>
       ) : (() => {
-        const filtered = (activeTab === 'all' ? events : events.filter(e => e.status === activeTab))
+        // 定期活動 tab：獨立 UI，支援批次刪除
+        if (activeTab === 'recurring') {
+          const recurringEvents = events
+            .filter(e => e.is_recurring)
+            .slice()
+            .sort((a, b) => (b.date_start || '').localeCompare(a.date_start || '')) // 新的在上
+          if (recurringEvents.length === 0) return (
+            <p className="text-center text-sm text-gray-400 py-12">尚無定期活動（系統每周五中午自動建立）</p>
+          )
+          const allSelected = recurringEvents.every(e => selectedRecurring.has(e.event_id))
+          return (
+            <div>
+              {/* 批次操作列 */}
+              <div className="flex items-center justify-between mb-3">
+                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={e => {
+                      if (e.target.checked) setSelectedRecurring(new Set(recurringEvents.map(e => e.event_id)))
+                      else setSelectedRecurring(new Set())
+                    }}
+                    className="w-4 h-4 accent-teal-600"
+                  />
+                  全選（{recurringEvents.length} 筆）
+                </label>
+                {selectedRecurring.size > 0 && (
+                  <button
+                    onClick={handleDeleteRecurring}
+                    disabled={deletingRecurring}
+                    className="px-4 py-1.5 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {deletingRecurring ? '刪除中…' : `刪除選取（${selectedRecurring.size}）`}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {recurringEvents.map(ev => (
+                  <div key={ev.event_id} className="flex items-center gap-3 bg-white rounded-xl border border-gray-200 px-4 py-3 hover:border-teal-300 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={selectedRecurring.has(ev.event_id)}
+                      onChange={e => {
+                        const s = new Set(selectedRecurring)
+                        e.target.checked ? s.add(ev.event_id) : s.delete(ev.event_id)
+                        setSelectedRecurring(s)
+                      }}
+                      className="w-4 h-4 accent-teal-600 shrink-0"
+                    />
+                    <Link
+                      to={`/admin/events/${ev.event_id}`}
+                      className="flex-1 flex items-center justify-between min-w-0"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-800 truncate">{ev.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{ev.date_start || '日期未設定'}</p>
+                      </div>
+                      <span className={`text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ml-3 ${STATUS_COLOR[ev.status]}`}>
+                        {STATUS_LABEL[ev.status]}
+                      </span>
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        }
+
+        // 一般 tab：排除 is_recurring
+        const nonRecurring = events.filter(e => !e.is_recurring)
+        const filtered = (activeTab === 'all' ? nonRecurring : nonRecurring.filter(e => e.status === activeTab))
           .slice()
           .sort((a, b) => {
             if (!a.date_start && !b.date_start) return 0
