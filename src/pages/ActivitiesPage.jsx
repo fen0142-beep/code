@@ -81,11 +81,11 @@ const btnBase = {
 }
 
 function RegistrationButton({ event }) {
-  if (event.offline_registration) {
-    return <span style={{ ...btnBase, backgroundColor: '#4A2A35', color: '#8a9aaa' }}>報名請洽精舍</span>
-  }
   if (event.status === 'closed') {
     return <span style={{ ...btnBase, backgroundColor: '#5C1020', color: '#d08090' }}>報名已截止</span>
+  }
+  if (event.offline_registration) {
+    return <span style={{ ...btnBase, backgroundColor: '#4A2A35', color: '#8a9aaa' }}>報名請洽精舍</span>
   }
   if (event.locked && event.volunteer_open) {
     return (
@@ -102,6 +102,12 @@ function RegistrationButton({ event }) {
         </p>
       </div>
     )
+  }
+  if (event.walkin_mode) {
+    return <span style={{ ...btnBase, backgroundColor: '#0F3D2E', color: '#6ecfaa' }}>現場刷卡即可參加</span>
+  }
+  if (!event.kiosk_open) {
+    return <span style={{ ...btnBase, backgroundColor: '#2E0E1F', color: '#6a7a8a' }}>敬請期待</span>
   }
   if (event.status === 'active') {
     return (

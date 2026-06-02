@@ -860,40 +860,99 @@ export default function EventDetailPage() {
               </label>
             </div>
 
-            {/* 開放刷卡報名 */}
+            {/* ── 報名方式 ─────────────────────────────────────── */}
             <div className="sm:col-span-2">
-              <label className="inline-flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={!!form.kiosk_open}
-                  onChange={e => setForm(f => ({ ...f, kiosk_open: e.target.checked }))}
-                  className="w-4 h-4 accent-orange-600 mt-0.5"
-                />
-                <span>
-                  開放刷卡報名（現場平板 Kiosk 顯示此活動）
-                  <span className="block text-xs text-gray-500 mt-0.5">
-                    取消勾選後活動仍可顯示在介紹頁，但不出現在報名 Kiosk 清單
-                  </span>
-                </span>
-              </label>
-            </div>
+              {(() => {
+                // 從現有欄位推算目前模式
+                const regMode = form.walkin_mode ? 'walkin'
+                  : form.offline_registration ? 'offline'
+                  : form.kiosk_open ? 'kiosk'
+                  : 'none'
 
-            {/* 自由刷卡模式 */}
-            <div className="sm:col-span-2">
-              <label className="inline-flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={!!form.walkin_mode}
-                  onChange={e => setForm(f => ({ ...f, walkin_mode: e.target.checked }))}
-                  className="w-4 h-4 accent-teal-600 mt-0.5"
-                />
-                <span>
-                  自由刷卡模式（刷卡即完成報名與報到）
-                  <span className="block text-xs text-gray-500 mt-0.5">
-                    適合自由參加、不需事先報名的活動。學員刷卡後直接記錄到場，無需填寫欄位。
-                  </span>
-                </span>
-              </label>
+                // 切換時同步設定底層三個欄位
+                function handleRegMode(mode) {
+                  setForm(f => ({
+                    ...f,
+                    kiosk_open: mode === 'kiosk' || mode === 'walkin',
+                    walkin_mode: mode === 'walkin',
+                    offline_registration: mode === 'offline',
+                  }))
+                }
+
+                // 預覽內容
+                const preview = {
+                  kiosk: {
+                    btn: '「點我報名」',
+                    kiosk: '✅ 會出現',
+                    kioskColor: 'text-green-700',
+                    form: '✅ 需填報名資料',
+                    formColor: 'text-green-700',
+                    scene: '一般法會、禪修活動',
+                  },
+                  walkin: {
+                    btn: form.show_on_activities ? '「現場刷卡即可參加」' : '（不顯示）',
+                    kiosk: '✅ 會出現',
+                    kioskColor: 'text-green-700',
+                    form: '❌ 不需填資料',
+                    formColor: 'text-gray-500',
+                    scene: form.show_on_activities ? '共修、早課等有公告的自由參加' : '純統計到場人數，不對外公告',
+                  },
+                  offline: {
+                    btn: form.show_on_activities ? '「報名請洽精舍」' : '（不顯示）',
+                    kiosk: '❌ 不出現',
+                    kioskColor: 'text-gray-400',
+                    form: '❌ 不需填資料',
+                    formColor: 'text-gray-500',
+                    scene: form.show_on_activities ? '星燈營等需電話或現場洽詢的活動' : '（少用）洽詢型活動暫不公告',
+                  },
+                  none: {
+                    btn: form.show_on_activities ? '「敬請期待」' : '（不顯示）',
+                    kiosk: '❌ 不出現',
+                    kioskColor: 'text-gray-400',
+                    form: '❌ 不需填資料',
+                    formColor: 'text-gray-500',
+                    scene: form.show_on_activities ? '活動預告中，報名尚未開始' : '草稿階段，尚未準備好',
+                  },
+                }[regMode]
+
+                return (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">報名方式</label>
+                      <select
+                        value={regMode}
+                        onChange={e => handleRegMode(e.target.value)}
+                        className="w-full sm:w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      >
+                        <option value="kiosk">線上刷卡報名（一般活動）</option>
+                        <option value="walkin">自由刷卡參加（無需填表）</option>
+                        <option value="offline">洽詢精舍報名（電話／現場）</option>
+                        <option value="none">暫不開放報名</option>
+                      </select>
+                    </div>
+
+                    {/* 預覽面板 */}
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">介紹頁按鈕</span>
+                        <span className="font-medium text-gray-800">{preview.btn}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">刷卡報到頁</span>
+                        <span className={`font-medium ${preview.kioskColor}`}>{preview.kiosk}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">需填報名資料</span>
+                        <span className={`font-medium ${preview.formColor}`}>{preview.form}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-gray-200 pt-1.5 mt-1">
+                        <span className="text-gray-400">適用場景</span>
+                        <span className="text-gray-500 text-right max-w-[60%]">{preview.scene}</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
             {/* ── 活動介紹頁設定 ─────────────────────────────── */}
@@ -913,36 +972,6 @@ export default function EventDetailPage() {
                     顯示在活動介紹頁
                     <span className="block text-xs text-gray-500 mt-0.5">
                       勾選後學員可在 /activities 看到此活動；取消勾選可隱藏（明年複用時只需改日期再勾回）
-                    </span>
-                  </span>
-                </label>
-
-                {/* 報名截止 */}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.status === 'closed'}
-                    onChange={e => setForm(f => ({
-                      ...f,
-                      status: e.target.checked ? 'closed' : 'draft'
-                    }))}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm text-gray-700">報名已截止（介紹頁顯示玫瑰紅按鈕）</span>
-                </label>
-
-                {/* 離線報名 */}
-                <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={!!form.offline_registration}
-                    onChange={e => setForm(f => ({ ...f, offline_registration: e.target.checked }))}
-                    className="w-4 h-4 accent-gray-500 mt-0.5"
-                  />
-                  <span>
-                    僅供現場／電話報名（按鈕改顯示「報名請洽精舍」）
-                    <span className="block text-xs text-gray-500 mt-0.5">
-                      勾選後介紹頁按鈕變灰色，不提供線上報名連結
                     </span>
                   </span>
                 </label>
