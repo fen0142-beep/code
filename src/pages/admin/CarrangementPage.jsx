@@ -23,7 +23,7 @@ export default function CarrangementPage() {
 
   useEffect(() => {
     getAllEvents().then(({ events }) => {
-      setEvents(events)
+      setEvents((events || []).filter(ev => ev.event_type === 'zhongtai' && ev.status === 'active'))
       setLoading(false)
     })
   }, [])
@@ -39,7 +39,7 @@ export default function CarrangementPage() {
         {loading ? (
           <div className="text-center py-20 text-gray-400">載入中…</div>
         ) : events.length === 0 ? (
-          <div className="text-center py-20 text-gray-400">尚無活動</div>
+          <div className="text-center py-20 text-gray-400">目前沒有進行中的外出活動</div>
         ) : (
           <div className="space-y-2">
             {events.map(ev => (
