@@ -882,12 +882,12 @@ export default function EventDetailPage() {
                 // 預覽內容
                 const preview = {
                   kiosk: {
-                    btn: '「點我報名」',
+                    btn: form.show_on_activities ? '「點我報名」' : '（不顯示）',
                     kiosk: '✅ 會出現',
                     kioskColor: 'text-green-700',
                     form: '✅ 需填報名資料',
                     formColor: 'text-green-700',
-                    scene: '一般法會、禪修活動',
+                    scene: form.show_on_activities ? '一般法會、禪修活動' : '內部活動，只現場刷卡不對外公告',
                   },
                   walkin: {
                     btn: form.show_on_activities ? '「現場刷卡即可參加」' : '（不顯示）',
