@@ -12,7 +12,6 @@ import {
   deleteRegistration,
   logRegistrationChange,
   submitFriendRegistration,
-  walkinRegister,
 } from '../lib/supabase'
 import DynamicForm from '../components/DynamicForm'
 import CameraScanner from '../components/CameraScanner'
@@ -410,41 +409,13 @@ export default function KioskPage() {
   }
 
   // ── 選擇某場活動（填表）──────────────────────────────────
-  async function handleSelectEvent(item) {
+  function handleSelectEvent(item) {
     clearTimeout(idleTimerRef.current)
     const reg = statuses[item.event.event_id]
     setSelectedItem(item)
     setCurrentReg(reg)
     setIsUpdate(!!reg)
     setErrorMsg('')
-
-    // ── 自由刷卡模式：一步完成報名 + 報到 ──────────────────
-    if (item.event.walkin_mode) {
-      if (reg) {
-        // 已記錄過 → 顯示提示
-        setPhase('walkin_already')
-        scheduleAutoReset(3)
-      } else {
-        setPhase('loading')
-        const { success, error } = await walkinRegister(
-          item.event.event_id,
-          student.student_id,
-          { terminal: 'kiosk-walkin' }
-        )
-        if (!success) {
-          setErrorMsg(error || '記錄失敗，請再試一次')
-          setPhase('overview')
-          startIdleTimer()
-          return
-        }
-        // 更新本地狀態（讓 overview 顯示已報名）
-        setStatuses(prev => ({ ...prev, [item.event.event_id]: { event_id: item.event.event_id, answers: {} } }))
-        setSuccessEventName(item.event.name)
-        setPhase('walkin_success')
-        scheduleAutoReset(3)
-      }
-      return
-    }
 
     if (item.event.multi_session) {
       // 多場次模式：初始化場次 selections（若已報名則預填）
@@ -1072,28 +1043,6 @@ export default function KioskPage() {
         {phase === 'not_found' && <NotFoundScreen onReset={reset} />}
         {phase === 'error' && <ErrorScreen message={errorMsg} onReset={reset} />}
 
-        {phase === 'walkin_success' && (
-          <div className="flex flex-col items-center justify-center gap-6 text-center max-w-sm mx-auto">
-            <div className="text-7xl">✅</div>
-            <div>
-              <p className="text-3xl font-bold text-green-700 mb-2">報到成功</p>
-              <p className="text-xl text-gray-700">{successEventName}</p>
-              <p className="text-lg text-gray-500 mt-1">已記錄參加，感謝出席！</p>
-            </div>
-            <p className="text-sm text-gray-400">3 秒後自動返回…</p>
-          </div>
-        )}
-
-        {phase === 'walkin_already' && (
-          <div className="flex flex-col items-center justify-center gap-6 text-center max-w-sm mx-auto">
-            <div className="text-7xl">ℹ️</div>
-            <div>
-              <p className="text-3xl font-bold text-blue-700 mb-2">已記錄</p>
-              <p className="text-lg text-gray-500 mt-1">您已登記參加此活動</p>
-            </div>
-            <p className="text-sm text-gray-400">3 秒後自動返回…</p>
-          </div>
-        )}
 
         {phase === 'overview' && (
           <OverviewScreen

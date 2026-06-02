@@ -207,6 +207,23 @@ export default function CheckinPage() {
         return
       }
       if (res.state === 'not_registered') {
+        // 自由刷卡模式：直接自動記錄，不顯示紅卡
+        if (event?.walkin_mode) {
+          const stu = await getStudentById(scanned).catch(() => null)
+          const name = stu?.student?.name || scanned
+          const { success } = await walkinRegister(id, scanned, { isMulti: true, sessionId: currentSessionId, terminal: 'admin-checkin' })
+          if (success) {
+            setTodayCount(c => c + 1)
+            refreshStats()
+            setStatus('success')
+            setResult({ name })
+          } else {
+            setStatus('error')
+            setResult(null)
+          }
+          startCountdown()
+          return
+        }
         // 多場活動完全沒報過 → 共用 not_found UI，但補學員資料給「現場報名」按鈕用
         setStatus('not_found')
         const stu = await getStudentById(scanned).catch(() => null)
@@ -277,6 +294,23 @@ export default function CheckinPage() {
     }
 
     if (error === 'NOT_REGISTERED') {
+      // 自由刷卡模式：直接自動記錄，不顯示紅卡
+      if (event?.walkin_mode) {
+        const stu = await getStudentById(scanned).catch(() => null)
+        const name = stu?.student?.name || scanned
+        const { success } = await walkinRegister(id, scanned, { terminal: 'admin-checkin' })
+        if (success) {
+          setTodayCount(c => c + 1)
+          refreshStats()
+          setStatus('success')
+          setResult({ name })
+        } else {
+          setStatus('error')
+          setResult(null)
+        }
+        startCountdown()
+        return
+      }
       // 單場活動沒報過 → 補學員資料給「現場報名」按鈕用
       setStatus('not_found')
       const stu = await getStudentById(scanned).catch(() => null)
