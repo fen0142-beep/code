@@ -332,6 +332,7 @@ export default function EventDetailPage() {
       // 活動介紹頁
       show_on_activities: !!ev.show_on_activities,
       kiosk_open: ev.kiosk_open !== false,  // 預設 true；僅明確設為 false 才關閉刷卡報名
+      walkin_mode: !!ev.walkin_mode,
       offline_registration: !!ev.offline_registration,
       location_tag: ev.location_tag ?? 'zhongtai',
       cover_image_url: ev.cover_image_url ?? '',
@@ -469,6 +470,7 @@ export default function EventDetailPage() {
         // 活動介紹頁
         show_on_activities: form.show_on_activities,
         kiosk_open: form.kiosk_open,
+        walkin_mode: form.walkin_mode,
         offline_registration: form.offline_registration,
         location_tag: form.location_tag,
         cover_image_url: form.cover_image_url || null,
@@ -876,6 +878,24 @@ export default function EventDetailPage() {
               </label>
             </div>
 
+            {/* 自由刷卡模式 */}
+            <div className="sm:col-span-2">
+              <label className="inline-flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!!form.walkin_mode}
+                  onChange={e => setForm(f => ({ ...f, walkin_mode: e.target.checked }))}
+                  className="w-4 h-4 accent-teal-600 mt-0.5"
+                />
+                <span>
+                  自由刷卡模式（刷卡即完成報名與報到）
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    適合自由參加、不需事先報名的活動。學員刷卡後直接記錄到場，無需填寫欄位。
+                  </span>
+                </span>
+              </label>
+            </div>
+
             {/* ── 活動介紹頁設定 ─────────────────────────────── */}
             <div className="sm:col-span-2 mt-2">
               <div className="border border-emerald-200 rounded-xl p-4 bg-emerald-50 space-y-4">
@@ -1161,6 +1181,11 @@ export default function EventDetailPage() {
       {/* ── Tab: 動態欄位 ── */}
       {tab === 'fields' && (
         <div className="space-y-4">
+          {event?.walkin_mode && (
+            <div className="bg-teal-50 border border-teal-300 rounded-xl px-4 py-3 text-sm text-teal-800">
+              ℹ️ 此活動已啟用「自由刷卡模式」，學員刷卡後<strong>直接記錄到場，不會顯示任何欄位</strong>。此處的動態欄位設定不會被使用。
+            </div>
+          )}
           {event?.multi_session && (
             <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-sm text-amber-800">
               ⚠️ 此活動已啟用「多場次報名」，前台刷卡時會<strong>直接進入場次選擇</strong>，不會顯示這裡的動態欄位。<br />
