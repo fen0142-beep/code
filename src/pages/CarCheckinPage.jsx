@@ -101,10 +101,10 @@ const formatDate = (dateStr) => {
 // 上下山方向 badge（顯示用）
 function DirectionBadge({ direction }) {
   if (direction === 'up') {
-    return <span className="text-xs bg-blue-100 text-blue-700 border border-blue-200 rounded-full px-1.5 shrink-0">🚌 上山</span>
+    return <span className="text-xs bg-blue-100 text-blue-700 border border-blue-200 rounded-full px-1.5 shrink-0">🚌 去程</span>
   }
   if (direction === 'down') {
-    return <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-1.5 shrink-0">🚍 下山</span>
+    return <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-1.5 shrink-0">🚍 回程</span>
   }
   return null
 }
@@ -162,7 +162,7 @@ function getPreArriveInfo(answers, eventDateStart) {
     if (!m) continue
     if (m[1] < eventDate) {
       const d = new Date(m[1] + 'T00:00:00')
-      return `${d.getMonth() + 1}月${d.getDate()}日已上山`
+      return `${d.getMonth() + 1}月${d.getDate()}日已出發`
     }
   }
   return null
@@ -583,7 +583,7 @@ export default function CarCheckinPage() {
               <div className="flex gap-1 mb-2 bg-amber-800/40 rounded-lg p-1">
                 {linkedCars.map(c => {
                   const active = c.car_id === car.car_id
-                  const dir = c.direction === 'up' ? '🚌 上山' : '🚍 下山'
+                  const dir = c.direction === 'up' ? '🚌 去程' : '🚍 回程'
                   return (
                     <button
                       key={c.car_id}
@@ -609,7 +609,7 @@ export default function CarCheckinPage() {
                     ? 'bg-blue-100 text-blue-800'
                     : 'bg-amber-50 text-amber-900'
                 }`}>
-                  {car.direction === 'up' ? '🚌 上山' : '🚍 下山'}
+                  {car.direction === 'up' ? '🚌 去程' : '🚍 回程'}
                 </span>
               )}
             </div>
@@ -1108,7 +1108,7 @@ export default function CarCheckinPage() {
                     : 'text-white/80 hover:text-white'
                 }`}
               >
-                🚌 上山{carCountUp > 0 && <span className="text-xs opacity-70 ml-1">（{carCountUp}）</span>}
+                🚌 去程{carCountUp > 0 && <span className="text-xs opacity-70 ml-1">（{carCountUp}）</span>}
               </button>
               <button
                 onClick={() => { setHeadDirection('down'); setExpandedCarId(null) }}
@@ -1118,7 +1118,7 @@ export default function CarCheckinPage() {
                     : 'text-white/80 hover:text-white'
                 }`}
               >
-                🚍 下山{carCountDown > 0 && <span className="text-xs opacity-70 ml-1">（{carCountDown}）</span>}
+                🚍 回程{carCountDown > 0 && <span className="text-xs opacity-70 ml-1">（{carCountDown}）</span>}
               </button>
             </div>
 
@@ -1498,7 +1498,7 @@ export default function CarCheckinPage() {
           )}
           {allCars.length > 0 && carsInDir.length === 0 && otherTotal === 0 && (
             <div className="text-center text-gray-400 py-12 text-sm">
-              {headDirection === 'up' ? '上山' : '下山'}尚無排車資料
+              {headDirection === 'up' ? '去程' : '回程'}尚無排車資料
             </div>
           )}
         </div>

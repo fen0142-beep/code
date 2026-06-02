@@ -57,7 +57,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "transport_up",
-        "field_label": "上山交通方式",
+        "field_label": "去程交通方式",
         "field_type": "radio",
         "options": [
           "搭精舍車（大車）",
@@ -73,7 +73,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "carpool_up",
-        "field_label": "上山共乘者（司機學員姓名）",
+        "field_label": "去程共乘者（司機學員姓名）",
         "field_type": "text",
         "options": [],
         "show_if": {
@@ -86,7 +86,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "plate_up",
-        "field_label": "上山車牌號碼",
+        "field_label": "去程車牌號碼",
         "field_type": "plate",
         "options": [],
         "show_if": {
@@ -112,7 +112,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "transport_down",
-        "field_label": "下山交通方式",
+        "field_label": "回程交通方式",
         "field_type": "radio",
         "options": [
           "搭精舍車（大車）",
@@ -128,7 +128,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "carpool_down",
-        "field_label": "下山共乘者（司機學員姓名）",
+        "field_label": "回程共乘者（司機學員姓名）",
         "field_type": "text",
         "options": [],
         "show_if": {
@@ -141,7 +141,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "plate_down",
-        "field_label": "下山車牌號碼",
+        "field_label": "回程車牌號碼",
         "field_type": "plate",
         "options": [],
         "show_if": {
@@ -267,7 +267,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "transport_up",
-        "field_label": "上山交通方式",
+        "field_label": "去程交通方式",
         "field_type": "radio",
         "options": [
           "搭精舍車（大車）",
@@ -283,7 +283,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "carpool_up",
-        "field_label": "上山共乘者（司機學員姓名）",
+        "field_label": "去程共乘者（司機學員姓名）",
         "field_type": "text",
         "options": [],
         "show_if": {
@@ -296,7 +296,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "plate_up",
-        "field_label": "上山車牌號碼",
+        "field_label": "去程車牌號碼",
         "field_type": "plate",
         "options": [],
         "show_if": {
@@ -322,7 +322,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "transport_down",
-        "field_label": "下山交通方式",
+        "field_label": "回程交通方式",
         "field_type": "radio",
         "options": [
           "搭精舍車（大車）",
@@ -338,7 +338,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "carpool_down",
-        "field_label": "下山共乘者（司機學員姓名）",
+        "field_label": "回程共乘者（司機學員姓名）",
         "field_type": "text",
         "options": [],
         "show_if": {
@@ -351,7 +351,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "plate_down",
-        "field_label": "下山車牌號碼",
+        "field_label": "回程車牌號碼",
         "field_type": "plate",
         "options": [],
         "show_if": {
@@ -491,7 +491,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "transport_up",
-        "field_label": "上山交通方式",
+        "field_label": "去程交通方式",
         "field_type": "radio",
         "options": [
           "搭學員的車",
@@ -506,7 +506,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "carpool_up",
-        "field_label": "上山共乘者（司機學員姓名）",
+        "field_label": "去程共乘者（司機學員姓名）",
         "field_type": "text",
         "options": [],
         "show_if": {
@@ -519,7 +519,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "plate_up",
-        "field_label": "上山車牌號碼",
+        "field_label": "去程車牌號碼",
         "field_type": "plate",
         "options": [],
         "show_if": {
@@ -545,7 +545,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "transport_down",
-        "field_label": "下山交通方式",
+        "field_label": "回程交通方式",
         "field_type": "radio",
         "options": [
           "搭學員的車",
@@ -560,7 +560,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "carpool_down",
-        "field_label": "下山共乘者（司機學員姓名）",
+        "field_label": "回程共乘者（司機學員姓名）",
         "field_type": "text",
         "options": [],
         "show_if": {
@@ -573,7 +573,7 @@ export const DEFAULT_TEMPLATES = [
       },
       {
         "field_key": "plate_down",
-        "field_label": "下山車牌號碼",
+        "field_label": "回程車牌號碼",
         "field_type": "plate",
         "options": [],
         "show_if": {

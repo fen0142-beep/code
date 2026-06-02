@@ -7,7 +7,7 @@ import { findLeaderByStudentId } from '../lib/supabase'
 
 function roleLabel(role) {
   if (role.type === 'car') {
-    const dir = role.direction === 'up' ? '🚌 上山' : '🚍 下山'
+    const dir = role.direction === 'up' ? '🚌 去程' : '🚍 回程'
     return `${dir}・${role.carName} 領隊`
   }
   if (role.type === 'small_car') return '小車領隊'

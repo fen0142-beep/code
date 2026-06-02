@@ -81,7 +81,7 @@ function TemplateEditor({ template, onSaved, onCancelled, isNew }) {
           value={name}
           onChange={e => setName(e.target.value)}
           className="w-full sm:w-80 border-2 border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
-          placeholder="例：回山模板"
+          placeholder="例：外出活動模板"
         />
       </div>
 

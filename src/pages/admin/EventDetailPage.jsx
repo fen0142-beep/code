@@ -223,8 +223,8 @@ export default function EventDetailPage() {
   // 上山／下山相關欄位：依 field_label 字串自動偵測（不依寫死的 field_key）
   // 例：「上山交通方式」「上山共乘者」「上山車牌」「預計到達山上時間」→ 上山群組
   //     「下山交通方式」「下山共乘者」「下山車牌」「預計離開山下時間」→ 下山群組
-  const isUpField   = useCallback(f => /(?:上山|山上)/.test(f?.field_label || ''), [])
-  const isDownField = useCallback(f => /(?:下山|山下)/.test(f?.field_label || ''), [])
+  const isUpField   = useCallback(f => /(?:上山|山上|去程)/.test(f?.field_label || ''), [])
+  const isDownField = useCallback(f => /(?:下山|山下|回程)/.test(f?.field_label || ''), [])
 
   // 固定永遠顯示的欄位 key（不可關閉）：身分別
   // （學員編號、姓名是 hardcoded 欄位，本來就一定顯示，不放在這裡）
@@ -802,7 +802,7 @@ export default function EventDetailPage() {
                 onChange={e => setForm(f => ({ ...f, event_type: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
               >
-                <option value="mountain">回山活動（看板顯示交通資訊）</option>
+                <option value="mountain">外出活動（看板顯示交通資訊）</option>
                 <option value="temple">精舍活動（看板顯示午齋／停車）</option>
               </select>
             </div>
@@ -1776,8 +1776,8 @@ export default function EventDetailPage() {
                 )}
 
                 {/* 交通（上山 / 下山） */}
-                {hasUp   && <TransportRow label="上山" stats={upStats}   />}
-                {hasDown && <TransportRow label="下山" stats={downStats} />}
+                {hasUp   && <TransportRow label="去程" stats={upStats}   />}
+                {hasDown && <TransportRow label="回程" stats={downStats} />}
               </div>
             )
           })()}
@@ -1880,8 +1880,8 @@ export default function EventDetailPage() {
                   return (
                     <>
                       {renderGroup(volunteerFields, '義工相關', 'purple')}
-                      {renderGroup(upFields,       '上山交通', 'blue')}
-                      {renderGroup(downFields,     '下山交通', 'teal')}
+                      {renderGroup(upFields,       '去程交通', 'blue')}
+                      {renderGroup(downFields,     '回程交通', 'teal')}
                       {genericFields.map(f => {
                         const hidden = hiddenFieldKeys.has(f.field_key)
                         return (

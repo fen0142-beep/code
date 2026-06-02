@@ -1678,8 +1678,8 @@ function OverviewScreen({
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <p className="text-xs text-gray-500 mb-2 font-medium">🚐 您的車次</p>
                     <div className="space-y-2">
-                      {renderBadge('上山', car.up)}
-                      {renderBadge('下山', car.down)}
+                      {renderBadge('去程', car.up)}
+                      {renderBadge('回程', car.down)}
                     </div>
                   </div>
                 )

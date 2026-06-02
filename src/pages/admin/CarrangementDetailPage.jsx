@@ -31,8 +31,8 @@ const chNum = n => CHINESE_NUMS[n - 1] ?? String(n)
 const genId = () => `tmp-${Math.random().toString(36).slice(2)}`
 
 const DIRECTIONS = [
-  { key: 'up',   label: '上山（回山）', emoji: '🚌' },
-  { key: 'down', label: '下山（回家）', emoji: '🚍' },
+  { key: 'up',   label: '去程', emoji: '🚌' },
+  { key: 'down', label: '回程', emoji: '🚍' },
 ]
 const dirLabel = d => DIRECTIONS.find(x => x.key === d)?.label ?? d
 
@@ -317,7 +317,7 @@ function autoArrange(largePeople, carCount, seats, relGroups, options = {}) {
   // - 找不到任何被提及的學員，但備註含「同車」字眼 → 警示讓師父人工處理
   // - 完全沒同車意圖的備註（如過敏、不便等）→ 不警示，避免誤報
   {
-    const COTRAVEL_HINTS = ['同車', '一車', '一起坐', '一起上山', '一起下山', '一起搭', '一起回', '坐同']
+    const COTRAVEL_HINTS = ['同車', '一車', '一起坐', '一起去程', '一起回程', '一起上山', '一起下山', '一起搭', '一起回', '坐同']
 
     // Union-Find（簡易版）
     const parent = {}
@@ -1317,7 +1317,7 @@ export default function CarrangementDetailPage() {
 
     setSaving(false)
     if (upRes.success && downRes.success && hlRes.success && sclRes.success) {
-      setMsg('已儲存（上山＋下山）✓')
+      setMsg('已儲存（去程＋回程）✓')
       // 儲存後重新讀取 token（每次儲存 token 會更新，連結需重新複製）
       await load()
     } else {
@@ -1462,7 +1462,7 @@ export default function CarrangementDetailPage() {
       finalRegs.push(...remaining)  // 找不到 host 的訪客
 
       // 組 rows
-      const headers = ['序號', '車次', '姓名', '班級', '組別', '身份別', '電話', '上山', '下山', '備註']
+      const headers = ['序號', '車次', '姓名', '班級', '組別', '身份別', '電話', '去程', '回程', '備註']
       const data = []
       let seq = 1
 
@@ -1516,7 +1516,7 @@ export default function CarrangementDetailPage() {
       const upGM   = guestSmallByDir.up
       const downGM = guestSmallByDir.down
 
-      const headers = ['序號', '車次', '車號', '姓名', '班級', '組別', '身份別', '電話', '上山', '下山', '備註']
+      const headers = ['序號', '車次', '車號', '姓名', '班級', '組別', '身份別', '電話', '去程', '回程', '備註']
       const data = []
       let seq = 1
       let carIdx = 1
@@ -1609,7 +1609,7 @@ export default function CarrangementDetailPage() {
       if (otherRegs.length === 0) return null
 
       const sortedRegs = [...otherRegs].sort(sortByClassGroup)
-      const headers = ['序號', '姓名', '班級', '組別', '身份別', '電話', '上山方式', '下山方式', '備註']
+      const headers = ['序號', '姓名', '班級', '組別', '身份別', '電話', '去程方式', '回程方式', '備註']
       const data = []
       let seq = 1
       for (const r of sortedRegs) {
@@ -1700,7 +1700,7 @@ export default function CarrangementDetailPage() {
               disabled={saving}
               className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium"
             >
-              {saving ? '儲存中…' : '儲存（上山＋下山）'}
+              {saving ? '儲存中…' : '儲存（去程＋回程）'}
             </button>
           </div>
         </div>
@@ -1823,7 +1823,7 @@ export default function CarrangementDetailPage() {
                   className="px-3 py-2 text-sm border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 self-end font-medium"
                   title={`複製目前的排法到「${dirLabel(direction === 'up' ? 'down' : 'up')}」（會依報名資料自動篩選大車人員）`}
                 >
-                  📋 複製到{direction === 'up' ? '下山' : '上山'}
+                  📋 複製到{direction === 'up' ? '回程' : '去程'}
                 </button>
                 <button
                   onClick={() => { if (window.confirm(`確定清除「${dirLabel(direction)}」所有排車結果？`)) setCars([]) }}
@@ -2378,7 +2378,7 @@ export default function CarrangementDetailPage() {
             <h2 className="text-base font-bold text-gray-700 mb-3 flex items-center gap-2">
               🚶 其他交通
               <span className="text-xs font-normal text-gray-400">
-                （{direction === 'up' ? '上山' : '下山'}方向不搭精舍車、自行開車、搭學員的人，{otherTransportRegs.length} 人）
+                （{direction === 'up' ? '去程' : '回程'}方向不搭精舍車、自行開車、搭學員的人，{otherTransportRegs.length} 人）
               </span>
             </h2>
             <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
@@ -2424,7 +2424,7 @@ export default function CarrangementDetailPage() {
         <section>
           <h2 className="text-base font-bold text-gray-700 mb-3">
             🚗 小車領隊
-            <span className="text-xs font-normal text-gray-400 ml-2">（上下山共用、可多人）</span>
+            <span className="text-xs font-normal text-gray-400 ml-2">（去回程共用、可多人）</span>
           </h2>
           {/* 已選清單 */}
           {smallCarLeaders.length > 0 && (
@@ -2482,7 +2482,7 @@ export default function CarrangementDetailPage() {
             />
           </div>
           <p className="text-xs text-gray-400 mt-2">
-            小車領隊可查看並操作所有小車成員的報到狀況（含上山與下山）。可設定多位領隊分擔任務，每位都有獨立的連結。<br />
+            小車領隊可查看並操作所有小車成員的報到狀況（含去程與回程）。可設定多位領隊分擔任務，每位都有獨立的連結。<br />
             ⚠️ 每次儲存後連結會更新，請重新複製。
           </p>
         </section>
@@ -2491,7 +2491,7 @@ export default function CarrangementDetailPage() {
         <section>
           <h2 className="text-base font-bold text-gray-700 mb-3">
             👑 總領隊
-            <span className="text-xs font-normal text-gray-400 ml-2">（上下山共用）</span>
+            <span className="text-xs font-normal text-gray-400 ml-2">（去回程共用）</span>
           </h2>
           <div className="flex items-center gap-3 flex-wrap">
             <SearchableSelect
@@ -2521,7 +2521,7 @@ export default function CarrangementDetailPage() {
             )}
           </div>
           <p className="text-xs text-gray-400 mt-2">
-            總領隊看板可即時查看所有大車＋小車的報到進度（含上山與下山）。<br />
+            總領隊看板可即時查看所有大車＋小車的報到進度（含去程與回程）。<br />
             ⚠️ 每次儲存排車後 token 會更新，請重新複製連結再傳給領隊。
           </p>
         </section>
