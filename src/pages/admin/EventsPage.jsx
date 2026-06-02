@@ -18,7 +18,7 @@ export default function EventsPage() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', date_start: '', date_end: '', location: '', status: 'draft', event_type: 'mountain', is_dharma: false, multi_session: false, show_on_activities: true })
+  const [form, setForm] = useState({ name: '', date_start: '', date_end: '', location: '', status: 'active', event_type: 'mountain', is_dharma: false, multi_session: false, show_on_activities: true })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   // V7 export
@@ -35,8 +35,9 @@ export default function EventsPage() {
   const [showBuiltinModal, setShowBuiltinModal] = useState(false)
   const [builtinSelected, setBuiltinSelected] = useState([]) // indices of selected templates
   const [importingBuiltin, setImportingBuiltin] = useState(false)
-  // 篩選 tab
-  const [activeTab, setActiveTab] = useState('active')
+  // 篩選 tab（主頁籤：地點；子頁籤：時間）
+  const [activeTab, setActiveTab] = useState('zhongtai')
+  const [activeTimeTab, setActiveTimeTab] = useState('ongoing')
   // 定期活動批次刪除
   const [selectedRecurring, setSelectedRecurring] = useState(new Set())
   const [deletingRecurring, setDeletingRecurring] = useState(false)
@@ -433,23 +434,24 @@ export default function EventsPage() {
         </div>
       )}
 
-      {/* 狀態篩選 Tab */}
-      {!loading && (
-        <div className="flex gap-1 mb-4 border-b border-gray-200">
-          {[
-            { key: 'active',    label: '進行中', color: 'text-green-700' },
-            { key: 'draft',     label: '草稿',   color: 'text-gray-600' },
-            { key: 'closed',    label: '已關閉', color: 'text-red-500' },
-            { key: 'all',       label: '全部',   color: 'text-gray-500' },
-            { key: 'recurring', label: '定期活動', color: 'text-teal-700' },
-          ].map(tab => {
-            const nonRecurring = events.filter(e => !e.is_recurring)
-            const count = tab.key === 'recurring'
-              ? events.filter(e => e.is_recurring).length
-              : tab.key === 'all'
-              ? nonRecurring.length
-              : nonRecurring.filter(e => e.status === tab.key).length
-            return (
+      {/* 主頁籤：地點分類 */}
+      {!loading && (() => {
+        const today = new Date().toISOString().slice(0, 10)
+        const nonRecurring = events.filter(e => !e.is_recurring)
+        const byTab = {
+          zhongtai: nonRecurring.filter(e => e.location_tag === 'zhongtai'),
+          puyi:     nonRecurring.filter(e => e.location_tag === 'puyi'),
+          recurring: events.filter(e => e.is_recurring),
+          other:    nonRecurring.filter(e => !e.location_tag || (e.location_tag !== 'zhongtai' && e.location_tag !== 'puyi')),
+        }
+        return (
+          <div className="flex gap-1 mb-0 border-b border-gray-200">
+            {[
+              { key: 'zhongtai', label: '中台', color: 'text-blue-700' },
+              { key: 'puyi',     label: '精舍', color: 'text-amber-700' },
+              { key: 'recurring',label: '定期', color: 'text-teal-700' },
+              { key: 'other',    label: '其他', color: 'text-gray-600' },
+            ].map(tab => (
               <button
                 key={tab.key}
                 onClick={() => { setActiveTab(tab.key); setSelectedRecurring(new Set()) }}
@@ -460,10 +462,34 @@ export default function EventsPage() {
                 }`}
               >
                 {tab.label}
-                <span className="ml-1.5 text-xs bg-gray-100 text-gray-500 rounded-full px-1.5 py-0.5">{count}</span>
+                <span className="ml-1.5 text-xs bg-gray-100 text-gray-500 rounded-full px-1.5 py-0.5">
+                  {byTab[tab.key].length}
+                </span>
               </button>
-            )
-          })}
+            ))}
+          </div>
+        )
+      })()}
+
+      {/* 子頁籤：時間分類（定期除外） */}
+      {!loading && activeTab !== 'recurring' && (
+        <div className="flex gap-1 mb-4 bg-gray-50 px-3 pt-2 pb-0 border-b border-gray-200">
+          {[
+            { key: 'ongoing', label: '進行中' },
+            { key: 'ended',   label: '已結束' },
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTimeTab(t.key)}
+              className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-colors ${
+                activeTimeTab === t.key
+                  ? 'border-amber-500 text-amber-700'
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       )}
 
@@ -548,11 +574,20 @@ export default function EventsPage() {
           )
         }
 
-        // 一般 tab：排除 is_recurring
+        // 一般 tab：依地點 + 時間過濾
+        const today = new Date().toISOString().slice(0, 10)
         const nonRecurring = events.filter(e => !e.is_recurring)
-        const filtered = (activeTab === 'all' ? nonRecurring : nonRecurring.filter(e => e.status === activeTab))
+        const byLocation = activeTab === 'zhongtai' ? nonRecurring.filter(e => e.location_tag === 'zhongtai')
+          : activeTab === 'puyi' ? nonRecurring.filter(e => e.location_tag === 'puyi')
+          : nonRecurring.filter(e => !e.location_tag || (e.location_tag !== 'zhongtai' && e.location_tag !== 'puyi'))
+        const filtered = byLocation
+          .filter(e => activeTimeTab === 'ongoing'
+            ? (!e.date_end || e.date_end >= today)
+            : (e.date_end && e.date_end < today)
+          )
           .slice()
           .sort((a, b) => {
+            if (activeTimeTab === 'ended') return (b.date_start || '').localeCompare(a.date_start || '') // 已結束：新的在上
             if (!a.date_start && !b.date_start) return 0
             if (!a.date_start) return 1
             if (!b.date_start) return -1
@@ -566,7 +601,7 @@ export default function EventsPage() {
               <Link
                 key={ev.event_id}
                 to={`/admin/events/${ev.event_id}`}
-                className="block bg-white rounded-xl border border-gray-200 px-5 py-4 hover:border-amber-300 hover:shadow-sm transition-all"
+                className={`block rounded-xl border px-5 py-4 hover:shadow-sm transition-all ${activeTimeTab === 'ended' ? 'bg-gray-50 border-gray-100 hover:border-gray-300 opacity-75' : 'bg-white border-gray-200 hover:border-amber-300'}`}
               >
                 <div className="flex items-center justify-between">
                   <div>
