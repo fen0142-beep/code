@@ -305,10 +305,11 @@ export default function CheckinPage() {
         return
       }
       // 一般活動：再試當訪客報名 ID 查
+      // 注意：學員編號不是合法 UUID，訪客查詢可能回 400；這種情況視同「未報名」
       const guestResult = await getGuestRegistrationForCheckin(id, scanned)
       registration = guestResult.registration
-      error = guestResult.error
-      isGuest = true
+      error = guestResult.error || 'NOT_REGISTERED'  // 查詢失敗也當未報名
+      isGuest = !!guestResult.registration
     }
 
     if (error === 'NOT_REGISTERED') {
