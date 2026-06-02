@@ -898,4 +898,114 @@ export default function EventsPage() {
                 </div>
               </div>
             </div>
-          </
+          </div>
+        </div>
+      )}
+
+      {/* 定期範本 新增/編輯 Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <h3 className="text-base font-semibold text-gray-800">{editingTemplate ? '✏️ 編輯定期範本' : '➕ 新增定期範本'}</h3>
+            </div>
+            <form onSubmit={handleSaveTemplate} className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">活動名稱 <span className="text-red-500">*</span></label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer mb-1">
+                  <input type="checkbox" checked={templateForm.prepend_date}
+                    onChange={e => setTemplateForm(f => ({ ...f, prepend_date: e.target.checked }))}
+                    className="accent-teal-600" />
+                  自動加日期前綴
+                </label>
+                <input type="text" required value={templateForm.name}
+                  onChange={e => setTemplateForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="例：周六晚間共修"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                {templateForm.prepend_date && templateForm.name && (
+                  <p className="text-xs text-gray-400 mt-1">預覽：YYYY/MM/DD {templateForm.name}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">週期</label>
+                <select value={templateForm.frequency}
+                  onChange={e => setTemplateForm(f => ({ ...f, frequency: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+                  <option value="weekly">每週</option>
+                  <option value="monthly">每月</option>
+                </select>
+              </div>
+              {templateForm.frequency === 'weekly' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">星期幾</label>
+                  <select value={templateForm.day_of_week}
+                    onChange={e => setTemplateForm(f => ({ ...f, day_of_week: Number(e.target.value) }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+                    {['日','一','二','三','四','五','六'].map((d, i) => (
+                      <option key={i} value={i}>星期{d}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">每月幾號</label>
+                  <input type="number" min="1" max="31" value={templateForm.day_of_month}
+                    onChange={e => setTemplateForm(f => ({ ...f, day_of_month: Number(e.target.value) }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">地點</label>
+                <input type="text" value={templateForm.location}
+                  onChange={e => setTemplateForm(f => ({ ...f, location: e.target.value }))}
+                  placeholder="例：普宜精舍"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">活動類型</label>
+                <select value={templateForm.event_type}
+                  onChange={e => setTemplateForm(f => ({ ...f, event_type: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+                  <option value="temple">精舍活動</option>
+                  <option value="mountain">外出活動</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">報名設定</label>
+                {[
+                  { key: 'walkin_mode', label: '自由刷卡模式' },
+                  { key: 'kiosk_open', label: '開放刷卡報名' },
+                  { key: 'show_on_activities', label: '顯示在活動介紹頁' },
+                ].map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                    <input type="checkbox" checked={templateForm[key]}
+                      onChange={e => setTemplateForm(f => ({ ...f, [key]: e.target.checked }))}
+                      className="w-4 h-4 accent-teal-600" />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                <label className="flex items-center gap-2 text-sm text-amber-800 cursor-pointer font-medium">
+                  <input type="checkbox" checked={templateForm.auto_create}
+                    onChange={e => setTemplateForm(f => ({ ...f, auto_create: e.target.checked }))}
+                    className="w-4 h-4 accent-amber-600" />
+                  🤖 自動建立（時間到自動產生活動）
+                </label>
+                <p className="text-xs text-amber-600 mt-1">⚠️ 自動建立功能將於 Batch 2 完成後正式啟用</p>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowTemplateModal(false)}
+                  className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">取消</button>
+                <button type="submit" disabled={savingTemplate}
+                  className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors disabled:opacity-50">
+                  {savingTemplate ? '儲存中…' : editingTemplate ? '儲存變更' : '新增範本'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </AdminLayout>
+  )
+}
