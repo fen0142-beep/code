@@ -67,7 +67,7 @@ function RegistrationButton({ event, large }) {
   if (event.walkin_mode) {
     return <span style={{ ...style, backgroundColor: '#0F3D2E', color: '#6ecfaa' }}>現場刷卡即可參加，無需事先報名</span>
   }
-  if (!event.kiosk_open) {
+  if (event.kiosk_open === false) {
     return <span style={{ ...style, backgroundColor: '#2E0E1F', color: '#6a7a8a' }}>敬請期待</span>
   }
   if (event.status === 'active') {
