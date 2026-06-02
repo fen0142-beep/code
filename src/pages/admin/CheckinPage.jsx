@@ -285,16 +285,9 @@ export default function CheckinPage() {
     let { registration, error } = await getRegistrationForCheckin(id, scanned)
     let isGuest = false
 
-    // 找不到學員報名 → 再試當訪客報名 ID 查
+    // 找不到學員報名 → 自由刷卡模式直接記錄，否則再試訪客報名 ID
     if (error === 'NOT_REGISTERED') {
-      const guestResult = await getGuestRegistrationForCheckin(id, scanned)
-      registration = guestResult.registration
-      error = guestResult.error
-      isGuest = true
-    }
-
-    if (error === 'NOT_REGISTERED') {
-      // 自由刷卡模式：直接自動記錄，不顯示紅卡
+      // 自由刷卡模式：直接自動記錄，不需要查訪客報名
       if (event?.walkin_mode) {
         const stu = await getStudentById(scanned).catch(() => null)
         const name = stu?.student?.name || scanned
@@ -311,6 +304,14 @@ export default function CheckinPage() {
         startCountdown()
         return
       }
+      // 一般活動：再試當訪客報名 ID 查
+      const guestResult = await getGuestRegistrationForCheckin(id, scanned)
+      registration = guestResult.registration
+      error = guestResult.error
+      isGuest = true
+    }
+
+    if (error === 'NOT_REGISTERED') {
       // 單場活動沒報過 → 補學員資料給「現場報名」按鈕用
       setStatus('not_found')
       const stu = await getStudentById(scanned).catch(() => null)
