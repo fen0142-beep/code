@@ -932,22 +932,24 @@ export default function EventDetailPage() {
                     </div>
 
                     {/* 預覽面板 */}
-                    <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm space-y-1.5">
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">介紹頁按鈕</span>
-                        <span className="font-medium text-gray-800">{preview.btn}</span>
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm">
+                      <div className="grid grid-cols-3 gap-x-3 gap-y-2">
+                        <div>
+                          <p className="text-xs text-gray-400 mb-0.5">介紹頁按鈕</p>
+                          <p className="font-medium text-gray-800 text-xs">{preview.btn}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 mb-0.5">刷卡報到頁</p>
+                          <p className={`font-medium text-xs ${preview.kioskColor}`}>{preview.kiosk}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 mb-0.5">需填報名資料</p>
+                          <p className={`font-medium text-xs ${preview.formColor}`}>{preview.form}</p>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">刷卡報到頁</span>
-                        <span className={`font-medium ${preview.kioskColor}`}>{preview.kiosk}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">需填報名資料</span>
-                        <span className={`font-medium ${preview.formColor}`}>{preview.form}</span>
-                      </div>
-                      <div className="flex justify-between border-t border-gray-200 pt-1.5 mt-1">
-                        <span className="text-gray-400">適用場景</span>
-                        <span className="text-gray-500 text-right max-w-[60%]">{preview.scene}</span>
+                      <div className="border-t border-gray-200 mt-2 pt-2">
+                        <p className="text-xs text-gray-400 mb-0.5">適用場景</p>
+                        <p className="text-xs text-gray-500">{preview.scene}</p>
                       </div>
                     </div>
                   </div>
