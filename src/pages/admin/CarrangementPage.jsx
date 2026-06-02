@@ -23,7 +23,7 @@ export default function CarrangementPage() {
 
   useEffect(() => {
     getAllEvents().then(({ events }) => {
-      setEvents((events || []).filter(ev => ev.event_type === 'zhongtai' && ev.status === 'active'))
+      setEvents((events || []).filter(ev => ev.event_type === 'mountain' && ev.status === 'active'))
       setLoading(false)
     })
   }, [])
