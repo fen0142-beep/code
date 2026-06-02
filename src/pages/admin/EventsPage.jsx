@@ -582,8 +582,8 @@ export default function EventsPage() {
           : nonRecurring.filter(e => !e.location_tag || (e.location_tag !== 'zhongtai' && e.location_tag !== 'puyi'))
         const filtered = byLocation
           .filter(e => activeTimeTab === 'ongoing'
-            ? (!e.date_end || e.date_end >= today)
-            : (e.date_end && e.date_end < today)
+            ? (e.status !== 'closed' && (!e.date_end || e.date_end >= today))
+            : (e.status === 'closed' || (e.date_end && e.date_end < today))
           )
           .slice()
           .sort((a, b) => {
