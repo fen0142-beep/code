@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AdminLayout from '../../components/AdminLayout'
-import { supabase, getAllEvents, createEvent, getMyEvents, saveEventFields, saveEventSessionFields } from '../../lib/supabase'
+import { supabase, getAllEvents, createEvent, getMyEvents, saveEventFields, saveEventSessionFields, getRecurringTemplates, createRecurringTemplate, updateRecurringTemplate, deleteRecurringTemplate } from '../../lib/supabase'
 import { DEFAULT_TEMPLATES } from '../../lib/defaultEventTemplates'
 import { useAuth } from '../../lib/auth'
 
@@ -41,14 +41,23 @@ export default function EventsPage() {
   // 定期活動批次刪除
   const [selectedRecurring, setSelectedRecurring] = useState(new Set())
   const [deletingRecurring, setDeletingRecurring] = useState(false)
+  // 定期範本管理
+  const [recurringTemplates, setRecurringTemplates] = useState([])
+  const [showTemplateModal, setShowTemplateModal] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState(null)
+  const TMPL_DEFAULT = { name: '', prepend_date: true, frequency: 'weekly', day_of_week: 6, day_of_month: 1, location: '', location_tag: 'puyi', event_type: 'temple', walkin_mode: false, kiosk_open: true, offline_registration: false, show_on_activities: false, auto_create: false }
+  const [templateForm, setTemplateForm] = useState(TMPL_DEFAULT)
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [deletingTemplate, setDeletingTemplate] = useState(null)
 
   useEffect(() => { load() }, [])
 
   async function load() {
     setLoading(true)
     if (isAdmin) {
-      const { events } = await getAllEvents()
+      const [{ events }, { templates }] = await Promise.all([getAllEvents(), getRecurringTemplates()])
       setEvents(events)
+      setRecurringTemplates(templates || [])
     } else {
       // 義工只能看到師父指定的活動
       const { events } = await getMyEvents(user?.id)
@@ -67,6 +76,55 @@ export default function EventsPage() {
     if (error) { alert('刪除失敗：' + error.message); return }
     setSelectedRecurring(new Set())
     load()
+  }
+
+  function openNewTemplate() {
+    setEditingTemplate(null)
+    setTemplateForm(TMPL_DEFAULT)
+    setShowTemplateModal(true)
+  }
+  function openEditTemplate(tmpl) {
+    setEditingTemplate(tmpl)
+    setTemplateForm({ ...TMPL_DEFAULT, ...tmpl })
+    setShowTemplateModal(true)
+  }
+  async function handleSaveTemplate(e) {
+    e.preventDefault()
+    setSavingTemplate(true)
+    const payload = {
+      name: templateForm.name.trim(),
+      prepend_date: templateForm.prepend_date,
+      frequency: templateForm.frequency,
+      day_of_week: templateForm.frequency === 'weekly' ? Number(templateForm.day_of_week) : null,
+      day_of_month: templateForm.frequency === 'monthly' ? Number(templateForm.day_of_month) : null,
+      location: templateForm.location,
+      location_tag: templateForm.location_tag,
+      event_type: templateForm.event_type,
+      walkin_mode: templateForm.walkin_mode,
+      kiosk_open: templateForm.kiosk_open,
+      offline_registration: templateForm.offline_registration,
+      show_on_activities: templateForm.show_on_activities,
+      auto_create: templateForm.auto_create,
+    }
+    if (editingTemplate) {
+      const { error } = await updateRecurringTemplate(editingTemplate.template_id, payload)
+      if (error) { alert('儲存失敗：' + error); setSavingTemplate(false); return }
+    } else {
+      const { error } = await createRecurringTemplate(payload)
+      if (error) { alert('新增失敗：' + error); setSavingTemplate(false); return }
+    }
+    setSavingTemplate(false)
+    setShowTemplateModal(false)
+    const { templates } = await getRecurringTemplates()
+    setRecurringTemplates(templates || [])
+  }
+  async function handleDeleteTemplate(tmpl) {
+    if (!window.confirm('確定刪除範本「' + tmpl.name + '」？')) return
+    setDeletingTemplate(tmpl.template_id)
+    await deleteRecurringTemplate(tmpl.template_id)
+    setDeletingTemplate(null)
+    const { templates } = await getRecurringTemplates()
+    setRecurringTemplates(templates || [])
   }
 
   async function handleCreate(e) {
@@ -505,70 +563,114 @@ export default function EventsPage() {
           }
         </div>
       ) : (() => {
-        // 定期活動 tab：獨立 UI，支援批次刪除
+        // 定期活動 tab：範本管理 + 已建立活動
         if (activeTab === 'recurring') {
           const recurringEvents = events
             .filter(e => e.is_recurring)
             .slice()
-            .sort((a, b) => (b.date_start || '').localeCompare(a.date_start || '')) // 新的在上
-          if (recurringEvents.length === 0) return (
-            <p className="text-center text-sm text-gray-400 py-12">尚無定期活動（系統每周五中午自動建立）</p>
-          )
-          const allSelected = recurringEvents.every(e => selectedRecurring.has(e.event_id))
+            .sort((a, b) => (b.date_start || '').localeCompare(a.date_start || ''))
+          const allSelected = recurringEvents.length > 0 && recurringEvents.every(e => selectedRecurring.has(e.event_id))
+          const DOW = ['日','一','二','三','四','五','六']
           return (
-            <div>
-              {/* 批次操作列 */}
-              <div className="flex items-center justify-between mb-3">
-                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={e => {
-                      if (e.target.checked) setSelectedRecurring(new Set(recurringEvents.map(e => e.event_id)))
-                      else setSelectedRecurring(new Set())
-                    }}
-                    className="w-4 h-4 accent-teal-600"
-                  />
-                  全選（{recurringEvents.length} 筆）
-                </label>
-                {selectedRecurring.size > 0 && (
-                  <button
-                    onClick={handleDeleteRecurring}
-                    disabled={deletingRecurring}
-                    className="px-4 py-1.5 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {deletingRecurring ? '刪除中…' : `刪除選取（${selectedRecurring.size}）`}
-                  </button>
+            <div className="space-y-6">
+              {/* ── 範本管理 ── */}
+              <div className="bg-teal-50 border border-teal-200 rounded-xl px-5 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-teal-800">🔁 定期範本</h3>
+                  {isAdmin && (
+                    <button onClick={openNewTemplate}
+                      className="text-xs px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors">
+                      ＋ 新增範本
+                    </button>
+                  )}
+                </div>
+                {recurringTemplates.length === 0 ? (
+                  <p className="text-xs text-teal-600 text-center py-3">尚未設定任何定期範本</p>
+                ) : (
+                  <div className="space-y-2">
+                    {recurringTemplates.map(tmpl => (
+                      <div key={tmpl.template_id} className="flex items-center justify-between bg-white rounded-lg border border-teal-100 px-4 py-2.5">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">
+                            {tmpl.prepend_date && <span className="text-xs text-gray-400 mr-1">日期＋</span>}
+                            {tmpl.name}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {tmpl.frequency === 'weekly' ? `每週${DOW[tmpl.day_of_week]}` : `每月${tmpl.day_of_month}日`}
+                            {tmpl.auto_create
+                              ? <span className="ml-2 text-teal-600">● 自動建立</span>
+                              : <span className="ml-2 text-gray-400">手動建立</span>}
+                          </p>
+                        </div>
+                        {isAdmin && (
+                          <div className="flex gap-2 shrink-0 ml-3">
+                            <button onClick={() => openEditTemplate(tmpl)}
+                              className="text-xs px-2.5 py-1 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors">
+                              編輯
+                            </button>
+                            <button onClick={() => handleDeleteTemplate(tmpl)}
+                              disabled={deletingTemplate === tmpl.template_id}
+                              className="text-xs px-2.5 py-1 text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors disabled:opacity-50">
+                              {deletingTemplate === tmpl.template_id ? '…' : '刪除'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-              <div className="space-y-2">
-                {recurringEvents.map(ev => (
-                  <div key={ev.event_id} className="flex items-center gap-3 bg-white rounded-xl border border-gray-200 px-4 py-3 hover:border-teal-300 transition-all">
-                    <input
-                      type="checkbox"
-                      checked={selectedRecurring.has(ev.event_id)}
-                      onChange={e => {
-                        const s = new Set(selectedRecurring)
-                        e.target.checked ? s.add(ev.event_id) : s.delete(ev.event_id)
-                        setSelectedRecurring(s)
-                      }}
-                      className="w-4 h-4 accent-teal-600 shrink-0"
-                    />
-                    <Link
-                      to={`/admin/events/${ev.event_id}`}
-                      className="flex-1 flex items-center justify-between min-w-0"
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium text-gray-800 truncate">{ev.name}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">{ev.date_start || '日期未設定'}</p>
-                      </div>
-                      <span className={`text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ml-3 ${STATUS_COLOR[ev.status]}`}>
-                        {STATUS_LABEL[ev.status]}
-                      </span>
-                    </Link>
+
+              {/* ── 已建立的定期活動 ── */}
+              <div>
+                <p className="text-sm font-semibold text-gray-600 mb-2">🗓 已建立的定期活動（{recurringEvents.length} 筆）</p>
+                {recurringEvents.length === 0 ? (
+                  <p className="text-center text-sm text-gray-400 py-6">尚無定期活動</p>
+                ) : (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+                        <input type="checkbox" checked={allSelected}
+                          onChange={e => {
+                            if (e.target.checked) setSelectedRecurring(new Set(recurringEvents.map(e => e.event_id)))
+                            else setSelectedRecurring(new Set())
+                          }}
+                          className="w-4 h-4 accent-teal-600" />
+                        全選（{recurringEvents.length} 筆）
+                      </label>
+                      {selectedRecurring.size > 0 && (
+                        <button onClick={handleDeleteRecurring} disabled={deletingRecurring}
+                          className="px-4 py-1.5 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50">
+                          {deletingRecurring ? '刪除中…' : `刪除選取（${selectedRecurring.size}）`}
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      {recurringEvents.map(ev => (
+                        <div key={ev.event_id} className="flex items-center gap-3 bg-white rounded-xl border border-gray-200 px-4 py-3 hover:border-teal-300 transition-all">
+                          <input type="checkbox" checked={selectedRecurring.has(ev.event_id)}
+                            onChange={e => {
+                              const s = new Set(selectedRecurring)
+                              e.target.checked ? s.add(ev.event_id) : s.delete(ev.event_id)
+                              setSelectedRecurring(s)
+                            }}
+                            className="w-4 h-4 accent-teal-600 shrink-0" />
+                          <Link to={`/admin/events/${ev.event_id}`}
+                            className="flex-1 flex items-center justify-between min-w-0"
+                            onClick={e => e.stopPropagation()}>
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-800 truncate">{ev.name}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">{ev.date_start || '日期未設定'}</p>
+                            </div>
+                            <span className={`text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ml-3 ${STATUS_COLOR[ev.status]}`}>
+                              {STATUS_LABEL[ev.status]}
+                            </span>
+                          </Link>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )
@@ -796,9 +898,4 @@ export default function EventsPage() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-    </AdminLayout>
-  )
-}
+          </

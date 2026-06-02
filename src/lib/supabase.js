@@ -2247,3 +2247,44 @@ export async function uploadEventCoverImage(eventId, file) {
   const url = `${data.publicUrl}?t=${Date.now()}`
   return { url, error: null }
 }
+
+// ── 定期活動範本 CRUD ─────────────────────────────────────────────────────
+
+export async function getRecurringTemplates() {
+  const { data, error } = await supabase
+    .from('recurring_templates')
+    .select('*')
+    .order('created_at', { ascending: true })
+  if (error) return { templates: [], error: error.message }
+  return { templates: data || [], error: null }
+}
+
+export async function createRecurringTemplate(payload) {
+  const { data, error } = await supabase
+    .from('recurring_templates')
+    .insert(payload)
+    .select()
+    .single()
+  if (error) return { template: null, error: error.message }
+  return { template: data, error: null }
+}
+
+export async function updateRecurringTemplate(templateId, payload) {
+  const { data, error } = await supabase
+    .from('recurring_templates')
+    .update(payload)
+    .eq('template_id', templateId)
+    .select()
+    .single()
+  if (error) return { template: null, error: error.message }
+  return { template: data, error: null }
+}
+
+export async function deleteRecurringTemplate(templateId) {
+  const { error } = await supabase
+    .from('recurring_templates')
+    .delete()
+    .eq('template_id', templateId)
+  if (error) return { error: error.message }
+  return { error: null }
+}
