@@ -119,7 +119,7 @@ export default function FieldRow({
         <span className="text-xs text-gray-400">拖曳調整順序</span>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3 items-end">
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">顯示名稱</label>
           <input
