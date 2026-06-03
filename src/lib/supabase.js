@@ -2342,4 +2342,9 @@ export async function createEventFromTemplate(tmpl, date) {
 export async function getExistingTemplateDates(templateId, dates) {
   if (!dates.length) return new Set()
   const { data } = await supabase
-    .from(
+    .from('events')
+    .select('date_start')
+    .eq('template_id', templateId)
+    .in('date_start', dates)
+  return new Set((data || []).map(r => r.date_start))
+}
