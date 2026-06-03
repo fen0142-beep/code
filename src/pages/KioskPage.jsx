@@ -587,7 +587,7 @@ export default function KioskPage() {
       })
     const sessionsAnswer = { sessions }
 
-    let success, error
+    let success, error, newRegId
     if (isUpdate && currentReg) {
       const oldAnswers = { ...currentReg.answers }
       ;({ success, error } = await updateRegistration(currentReg.registration_id, sessionsAnswer, false))
@@ -600,7 +600,6 @@ export default function KioskPage() {
         })
       }
     } else {
-      let newRegId
       ;({ success, error, registrationId: newRegId } = await submitRegistration(event.event_id, student.student_id, sessionsAnswer, 'tablet-01', false))
       if (success) {
         logRegistrationChange({
@@ -918,7 +917,7 @@ export default function KioskPage() {
     clearTimeout(idleTimerRef.current)
     setPhase('submitting')
 
-    let success, error
+    let success, error, newRegId
     const isDriver = isDriverFromAnswers({ answers }, fields)
     if (isUpdate && currentReg) {
       const oldAnswers = { ...currentReg.answers }
@@ -935,7 +934,6 @@ export default function KioskPage() {
         })
       }
     } else {
-      let newRegId
       ;({ success, error, registrationId: newRegId } = await submitRegistration(event.event_id, student.student_id, answers, 'tablet-01', isDriver))
       if (success) {
         logRegistrationChange({
