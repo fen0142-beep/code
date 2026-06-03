@@ -264,10 +264,7 @@ export async function submitRegistration(eventId, studentId, answers, terminal =
     }, { onConflict: 'event_id,student_id' })
 
   if (error) return { success: false, error: error.message }
-
-  // 另外查 registration_id（避免 RLS 擋住 upsert+select）
-  const reg = await getRegistration(eventId, studentId)
-  return { success: true, error: null, registrationId: reg?.registration_id || null }
+  return { success: true, error: null, registrationId: null }
 }
 
 export async function getRegistration(eventId, studentId) {
