@@ -629,6 +629,13 @@ export default function KioskPage() {
     setTimeout(() => setShowSuccess(false), SUCCESS_SECONDS * 1000)
     setPhase('overview')
     startIdleTimer()
+
+    // 背景重查取得真正的 registration_id（新報名後 newRegId 為 null）
+    if (!currentReg) {
+      getStudentEventStatuses(student.student_id, [event.event_id]).then(({ map }) => {
+        if (map[event.event_id]) setStatuses(prev => ({ ...prev, [event.event_id]: map[event.event_id] }))
+      })
+    }
   }
 
   // ── 親友代報：進入「選活動」階段 ────────────────────────────
@@ -960,6 +967,13 @@ export default function KioskPage() {
     // 回到總覽（不再有「本人+親友」的自動接續邏輯）
     setPhase('overview')
     startIdleTimer()
+
+    // 背景重查取得真正的 registration_id（新報名後 newRegId 為 null）
+    if (!currentReg) {
+      getStudentEventStatuses(student.student_id, [event.event_id]).then(({ map }) => {
+        if (map[event.event_id]) setStatuses(prev => ({ ...prev, [event.event_id]: map[event.event_id] }))
+      })
+    }
   }
 
   // ── 計時 ──────────────────────────────────────────────────
