@@ -253,7 +253,7 @@ export async function checkDuplicate(eventId, studentId) {
 }
 
 export async function submitRegistration(eventId, studentId, answers, terminal = 'tablet-01', isDriver = false) {
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('registrations')
     .upsert({
       event_id: eventId,
@@ -262,11 +262,12 @@ export async function submitRegistration(eventId, studentId, answers, terminal =
       terminal,
       is_driver: !!isDriver,
     }, { onConflict: 'event_id,student_id' })
-    .select('registration_id')
-    .single()
 
   if (error) return { success: false, error: error.message }
-  return { success: true, error: null, registrationId: data?.registration_id || null }
+
+  // 另外查 registration_id（避免 RLS 擋住 upsert+select）
+  const reg = await getRegistration(eventId, studentId)
+  return { success: true, error: null, registrationId: reg?.registration_id || null }
 }
 
 export async function getRegistration(eventId, studentId) {
@@ -2347,6 +2348,10 @@ export async function getExistingTemplateDates(templateId, dates) {
     .from('events')
     .select('date_start')
     .eq('template_id', templateId)
+    .in('date_start', dates)
+  return new Set((data || []).map(r => r.date_start))
+}
+templateId)
     .in('date_start', dates)
   return new Set((data || []).map(r => r.date_start))
 }
