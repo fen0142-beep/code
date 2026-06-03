@@ -592,7 +592,7 @@ export default function KioskPage() {
       const oldAnswers = { ...currentReg.answers }
       ;({ success, error } = await updateRegistration(currentReg.registration_id, sessionsAnswer, false))
       if (success) {
-        await logRegistrationChange({
+        logRegistrationChange({
           registrationId: currentReg.registration_id,
           eventId: event.event_id, eventName: event.name,
           studentName: student.name,
@@ -603,7 +603,7 @@ export default function KioskPage() {
       let newRegId
       ;({ success, error, registrationId: newRegId } = await submitRegistration(event.event_id, student.student_id, sessionsAnswer, 'tablet-01', false))
       if (success) {
-        await logRegistrationChange({
+        logRegistrationChange({
           registrationId: newRegId,
           eventId: event.event_id, eventName: event.name,
           studentName: student.name,
@@ -754,7 +754,7 @@ export default function KioskPage() {
       ...(phone ? { guest_phone: phone } : {}),
       ...sessionsAnswer,
     }
-    await logRegistrationChange({
+    logRegistrationChange({
       registrationId, eventId: event.event_id, eventName: event.name,
       studentName: `${name}(${student.name} 親友)`,
       changeType: 'created', oldAnswers: null,
@@ -821,7 +821,7 @@ export default function KioskPage() {
       ...(phone ? { guest_phone: phone } : {}),
       ...friendAnswers,
     }
-    await logRegistrationChange({
+    logRegistrationChange({
       registrationId, eventId: event.event_id, eventName: event.name,
       studentName: `${name}（${student.name} 親友）`,
       changeType: 'created', oldAnswers: null,
@@ -881,7 +881,7 @@ export default function KioskPage() {
     if (!reg) return
     const eventItem = eventItems.find(i => i.event.event_id === eventId)
     // 記錄取消（刪除前先備份）
-    await logRegistrationChange({
+    logRegistrationChange({
       registrationId: reg.registration_id,
       eventId,
       eventName: eventItem?.event.name ?? '',
@@ -924,7 +924,7 @@ export default function KioskPage() {
       const oldAnswers = { ...currentReg.answers }
       ;({ success, error } = await updateRegistration(currentReg.registration_id, answers, isDriver))
       if (success) {
-        await logRegistrationChange({
+        logRegistrationChange({
           registrationId: currentReg.registration_id,
           eventId: event.event_id,
           eventName: event.name,
@@ -938,7 +938,7 @@ export default function KioskPage() {
       let newRegId
       ;({ success, error, registrationId: newRegId } = await submitRegistration(event.event_id, student.student_id, answers, 'tablet-01', isDriver))
       if (success) {
-        await logRegistrationChange({
+        logRegistrationChange({
           registrationId: newRegId,
           eventId: event.event_id,
           eventName: event.name,
