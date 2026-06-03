@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import AdminLayout from '../../components/AdminLayout'
 import { supabase, getAllEvents, createEvent, getMyEvents, saveEventFields, saveEventSessionFields, getRecurringTemplates, createRecurringTemplate, updateRecurringTemplate, deleteRecurringTemplate, createEventFromTemplate, getExistingTemplateDates } from '../../lib/supabase'
 import { DEFAULT_TEMPLATES } from '../../lib/defaultEventTemplates'
+import FieldRow from '../../components/FieldRow'
 import { useAuth } from '../../lib/auth'
 
 const STATUS_LABEL = { draft: '草稿', active: '進行中', closed: '已關閉' }
@@ -45,7 +46,7 @@ export default function EventsPage() {
   const [recurringTemplates, setRecurringTemplates] = useState([])
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState(null)
-  const TMPL_DEFAULT = { name: '', prepend_date: true, frequency: 'weekly', day_of_week: 6, day_of_month: 1, location: '', location_tag: 'puyi', event_type: 'temple', walkin_mode: false, kiosk_open: true, offline_registration: false, show_on_activities: false, auto_create: false }
+  const TMPL_DEFAULT = { name: '', prepend_date: true, frequency: 'weekly', day_of_week: 6, day_of_month: 1, location: '', location_tag: 'puyi', event_type: 'temple', walkin_mode: false, kiosk_open: true, offline_registration: false, show_on_activities: false, auto_create: false, fields: [] }
   const [templateForm, setTemplateForm] = useState(TMPL_DEFAULT)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [deletingTemplate, setDeletingTemplate] = useState(null)
@@ -110,6 +111,7 @@ export default function EventsPage() {
       offline_registration: templateForm.offline_registration,
       show_on_activities: templateForm.show_on_activities,
       auto_create: templateForm.auto_create,
+      fields: templateForm.fields || [],
     }
     if (editingTemplate) {
       const { error } = await updateRecurringTemplate(editingTemplate.template_id, payload)
@@ -1138,8 +1140,47 @@ export default function EventsPage() {
                     className="w-4 h-4 accent-amber-600" />
                   🤖 自動建立（時間到自動產生活動）
                 </label>
-                <p className="text-xs text-amber-600 mt-1">⚠️ 自動建立功能將於 Batch 2 完成後正式啟用</p>
+                <p className="text-xs text-amber-600 mt-1">啟用後每天 07:00 自動建立未來 14 天的活動</p>
               </div>
+              {/* 預設動態欄位 */}
+              <details className="border border-gray-200 rounded-lg overflow-hidden">
+                <summary className="flex items-center justify-between px-3 py-2.5 bg-gray-50 cursor-pointer text-sm font-medium text-gray-700 select-none">
+                  <span>📋 預設動態欄位（{(templateForm.fields || []).length} 個）</span>
+                  <span className="text-gray-400 text-xs">點開設定</span>
+                </summary>
+                <div className="px-3 py-3 space-y-2">
+                  <p className="text-xs text-gray-400">每次自動或手動建立活動時，這些欄位會自動帶入。</p>
+                  {(templateForm.fields || []).map((field, i) => (
+                    <FieldRow
+                      key={i}
+                      field={field}
+                      allFields={templateForm.fields}
+                      onChange={updated => setTemplateForm(f => ({
+                        ...f,
+                        fields: f.fields.map((x, j) => j === i ? updated : x)
+                      }))}
+                      onRemove={() => setTemplateForm(f => ({
+                        ...f,
+                        fields: f.fields.filter((_, j) => j !== i)
+                      }))}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setTemplateForm(f => ({
+                      ...f,
+                      fields: [...(f.fields || []), {
+                        field_key: '', field_label: '', field_type: 'radio',
+                        options: [], show_if: null, required: true,
+                        dashboard_role: null, option_meta: null,
+                      }]
+                    }))}
+                    className="text-sm text-teal-600 hover:text-teal-800 font-medium px-2 py-1 border border-dashed border-teal-300 rounded-lg w-full transition-colors">
+                    ＋ 新增欄位
+                  </button>
+                </div>
+              </details>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setShowTemplateModal(false)}
                   className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">取消</button>

@@ -2319,6 +2319,12 @@ export async function createEventFromTemplate(tmpl, date) {
     .select('event_id')
     .single()
   if (error) return { event_id: null, error: error.message }
+
+  // 若範本有預設動態欄位，自動複製到新活動
+  if (tmpl.fields?.length > 0) {
+    await saveEventFields(data.event_id, tmpl.fields)
+  }
+
   return { event_id: data.event_id, error: null }
 }
 
