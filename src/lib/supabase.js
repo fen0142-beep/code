@@ -2351,7 +2351,3 @@ export async function getExistingTemplateDates(templateId, dates) {
     .in('date_start', dates)
   return new Set((data || []).map(r => r.date_start))
 }
-templateId)
-    .in('date_start', dates)
-  return new Set((data || []).map(r => r.date_start))
-}
