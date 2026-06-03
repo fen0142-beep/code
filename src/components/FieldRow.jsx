@@ -162,7 +162,7 @@ export default function FieldRow({
             />
             必填
           </label>
-          <button
+          <button type="button"
             onClick={onRemove}
             className="ml-auto text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded transition-colors"
           >
@@ -203,7 +203,7 @@ export default function FieldRow({
                     ))}
                   </select>
                 )}
-                <button
+                <button type="button"
                   onClick={() => removeOption(i)}
                   className="text-gray-300 hover:text-red-400 text-lg leading-none px-1 transition-colors"
                   title="刪除此選項"
@@ -212,7 +212,7 @@ export default function FieldRow({
                 </button>
               </div>
             ))}
-            <button
+            <button type="button"
               onClick={addOption}
               className="text-sm text-amber-700 hover:text-amber-900 border border-dashed border-amber-300 hover:border-amber-500 px-3 py-1 rounded transition-colors"
             >
