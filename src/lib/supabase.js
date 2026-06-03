@@ -253,7 +253,7 @@ export async function checkDuplicate(eventId, studentId) {
 }
 
 export async function submitRegistration(eventId, studentId, answers, terminal = 'tablet-01', isDriver = false) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('registrations')
     .upsert({
       event_id: eventId,
@@ -262,9 +262,11 @@ export async function submitRegistration(eventId, studentId, answers, terminal =
       terminal,
       is_driver: !!isDriver,
     }, { onConflict: 'event_id,student_id' })
+    .select('registration_id')
+    .single()
 
   if (error) return { success: false, error: error.message }
-  return { success: true, error: null }
+  return { success: true, error: null, registrationId: data?.registration_id || null }
 }
 
 export async function getRegistration(eventId, studentId) {

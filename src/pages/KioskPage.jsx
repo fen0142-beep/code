@@ -600,10 +600,11 @@ export default function KioskPage() {
         })
       }
     } else {
-      ;({ success, error } = await submitRegistration(event.event_id, student.student_id, sessionsAnswer, 'tablet-01', false))
+      let newRegId
+      ;({ success, error, registrationId: newRegId } = await submitRegistration(event.event_id, student.student_id, sessionsAnswer, 'tablet-01', false))
       if (success) {
         await logRegistrationChange({
-          registrationId: null,
+          registrationId: newRegId,
           eventId: event.event_id, eventName: event.name,
           studentName: student.name,
           changeType: 'created', oldAnswers: null, newAnswers: sessionsAnswer,
@@ -619,7 +620,7 @@ export default function KioskPage() {
     }
 
     const newReg = {
-      registration_id: currentReg?.registration_id || 'new',
+      registration_id: currentReg?.registration_id || newRegId || null,
       event_id: event.event_id,
       answers: sessionsAnswer,
     }
@@ -934,10 +935,11 @@ export default function KioskPage() {
         })
       }
     } else {
-      ;({ success, error } = await submitRegistration(event.event_id, student.student_id, answers, 'tablet-01', isDriver))
+      let newRegId
+      ;({ success, error, registrationId: newRegId } = await submitRegistration(event.event_id, student.student_id, answers, 'tablet-01', isDriver))
       if (success) {
         await logRegistrationChange({
-          registrationId: null,
+          registrationId: newRegId,
           eventId: event.event_id,
           eventName: event.name,
           studentName: student.name,
@@ -951,7 +953,7 @@ export default function KioskPage() {
     if (!success) { setPhase('form'); setErrorMsg(error); startFormTimer(); return }
 
     // 更新本地狀態
-    const newReg = { registration_id: currentReg?.registration_id || 'new', event_id: event.event_id, answers }
+    const newReg = { registration_id: currentReg?.registration_id || newRegId || null, event_id: event.event_id, answers }
     setStatuses(prev => ({ ...prev, [event.event_id]: newReg }))
     setSuccessEventName(event.name)
     setShowSuccess(true)
