@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AdminLayout from '../../components/AdminLayout'
-import { supabase, getAllEvents, createEvent, getMyEvents, saveEventFields, saveEventSessionFields, getRecurringTemplates, createRecurringTemplate, updateRecurringTemplate, deleteRecurringTemplate, createEventFromTemplate, getExistingTemplateDates } from '../../lib/supabase'
+import { supabase, getAllEvents, createEvent, getMyEvents, saveEventFields, saveEventSessionFields, getRecurringTemplates, createRecurringTemplate, updateRecurringTemplate, deleteRecurringTemplate, createEventFromTemplate, getExistingTemplateDates, getVolunteers } from '../../lib/supabase'
 import { DEFAULT_TEMPLATES } from '../../lib/defaultEventTemplates'
 import FieldRow from '../../components/FieldRow'
 import { useAuth } from '../../lib/auth'
@@ -44,9 +44,10 @@ export default function EventsPage() {
   const [deletingRecurring, setDeletingRecurring] = useState(false)
   // 定期範本管理
   const [recurringTemplates, setRecurringTemplates] = useState([])
+  const [volunteers, setVolunteers] = useState([])
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState(null)
-  const TMPL_DEFAULT = { name: '', prepend_date: true, frequency: 'weekly', day_of_week: 6, day_of_month: 1, location: '', location_tag: 'puyi', event_type: 'temple', walkin_mode: false, kiosk_open: true, offline_registration: false, show_on_activities: false, auto_create: false, fields: [] }
+  const TMPL_DEFAULT = { name: '', prepend_date: true, frequency: 'weekly', day_of_week: 6, day_of_month: 1, location: '', location_tag: 'puyi', event_type: 'temple', walkin_mode: false, kiosk_open: true, offline_registration: false, show_on_activities: false, auto_create: false, fields: [], volunteer_ids: [] }
   const [templateForm, setTemplateForm] = useState(TMPL_DEFAULT)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [deletingTemplate, setDeletingTemplate] = useState(null)
@@ -61,9 +62,10 @@ export default function EventsPage() {
   async function load() {
     setLoading(true)
     if (isAdmin) {
-      const [{ events }, { templates }] = await Promise.all([getAllEvents(), getRecurringTemplates()])
+      const [{ events }, { templates }, { volunteers: vols }] = await Promise.all([getAllEvents(), getRecurringTemplates(), getVolunteers()])
       setEvents(events)
       setRecurringTemplates(templates || [])
+      setVolunteers(vols || [])
     } else {
       // 義工只能看到師父指定的活動
       const { events } = await getMyEvents(user?.id)
@@ -112,6 +114,7 @@ export default function EventsPage() {
       show_on_activities: templateForm.show_on_activities,
       auto_create: templateForm.auto_create,
       fields: templateForm.fields || [],
+      volunteer_ids: templateForm.volunteer_ids || [],
     }
     if (editingTemplate) {
       const { error } = await updateRecurringTemplate(editingTemplate.template_id, payload)
@@ -1155,6 +1158,35 @@ export default function EventsPage() {
                 </label>
                 <p className="text-xs text-amber-600 mt-1">啟用後每天 07:00 自動建立未來 14 天的活動</p>
               </div>
+              {/* 義工存取設定 */}
+              {volunteers.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">👤 義工存取設定</label>
+                  <p className="text-xs text-gray-400 mb-2">勾選的義工，每次自動建立活動後即可直接登入後台協助刷卡。</p>
+                  <div className="space-y-1 border border-gray-200 rounded-lg px-3 py-2 max-h-32 overflow-y-auto">
+                    {volunteers.map(v => (
+                      <label key={v.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 py-0.5">
+                        <input
+                          type="checkbox"
+                          checked={(templateForm.volunteer_ids || []).includes(v.id)}
+                          onChange={e => setTemplateForm(f => ({
+                            ...f,
+                            volunteer_ids: e.target.checked
+                              ? [...(f.volunteer_ids || []), v.id]
+                              : (f.volunteer_ids || []).filter(id => id !== v.id)
+                          }))}
+                          className="w-4 h-4 accent-amber-600"
+                        />
+                        <span>{v.display_name && v.display_name !== v.email ? v.display_name : v.email}</span>
+                        {v.display_name && v.display_name !== v.email && (
+                          <span className="text-xs text-gray-400">{v.email}</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* 預設動態欄位 */}
               <details className="border border-gray-200 rounded-lg overflow-hidden">
                 <summary className="flex items-center justify-between px-3 py-2.5 bg-gray-50 cursor-pointer text-sm font-medium text-gray-700 select-none">

@@ -2325,6 +2325,11 @@ export async function createEventFromTemplate(tmpl, date) {
     await saveEventFields(data.event_id, tmpl.fields)
   }
 
+  // 若範本有義工存取設定，自動套用
+  if (tmpl.volunteer_ids?.length > 0) {
+    await setEventVolunteers(data.event_id, tmpl.volunteer_ids)
+  }
+
   return { event_id: data.event_id, error: null }
 }
 
@@ -2337,9 +2342,4 @@ export async function createEventFromTemplate(tmpl, date) {
 export async function getExistingTemplateDates(templateId, dates) {
   if (!dates.length) return new Set()
   const { data } = await supabase
-    .from('events')
-    .select('date_start')
-    .eq('template_id', templateId)
-    .in('date_start', dates)
-  return new Set((data || []).map(r => r.date_start))
-}
+    .from(
