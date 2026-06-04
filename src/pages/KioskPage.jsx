@@ -1861,16 +1861,16 @@ function OverviewScreen({
                                 <p className="text-kiosk-sm font-bold text-purple-800 mb-1">{guestName}</p>
                                 <div className="flex gap-1 flex-wrap mb-1">
                                     <button
-                                      onClick={() => onEditFriend?.(fr)}
-                                      className="inline-flex items-center gap-1 text-kiosk-sm bg-amber-500 text-white px-2.5 py-1 rounded-lg font-bold active:scale-95 transition-transform"
-                                    >
-                                      ✏️ 修改
-                                    </button>
-                                    <button
                                       onClick={() => openFriendQR(fr)}
                                       className="inline-flex items-center gap-1 text-kiosk-sm bg-purple-600 text-white px-2.5 py-1 rounded-lg font-bold active:scale-95 transition-transform"
                                     >
                                       🎫 報到 QR
+                                    </button>
+                                    <button
+                                      onClick={() => onEditFriend?.(fr)}
+                                      className="inline-flex items-center gap-1 text-kiosk-sm bg-amber-500 text-white px-2.5 py-1 rounded-lg font-bold active:scale-95 transition-transform"
+                                    >
+                                      ✏️ 修改
                                     </button>
                                     <button
                                       onClick={() => onRequestCancelFriend?.(fr.registration_id)}
