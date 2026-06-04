@@ -293,6 +293,7 @@ export default function KioskPage() {
   // 上次代報成功的 registration_id 與活動 metadata（給 success 畫面產 QR 小卡用）
   const [lastFriendRegId, setLastFriendRegId] = useState('')
   const [editingFriendRegId, setEditingFriendRegId] = useState(null)
+  const [cancellingFriendRegId, setCancellingFriendRegId] = useState(null)
   const [lastFriendEventName, setLastFriendEventName] = useState('')
   const [lastFriendEventDate, setLastFriendEventDate] = useState('')
   const [lastFriendEventLocation, setLastFriendEventLocation] = useState('')
@@ -639,6 +640,26 @@ export default function KioskPage() {
     }
   }
 
+
+
+  // ── 取消代報親友 ───────────────────────────────────────────
+  async function handleCancelFriend(fr) {
+    const eventItem = eventItems.find(i => i.event.event_id === fr.event_id)
+    logRegistrationChange({
+      registrationId: fr.registration_id,
+      eventId: fr.event_id,
+      eventName: eventItem?.event.name ?? '',
+      studentName: `${fr.answers?.guest_name || '訪客'}（${student?.name ?? ''} 親友）`,
+      changeType: 'cancelled',
+      oldAnswers: fr.answers ?? null,
+      newAnswers: null,
+    })
+    const { success } = await deleteRegistration(fr.registration_id)
+    if (!success) return
+    setFriendRegistrations(prev => prev.filter(r => r.registration_id !== fr.registration_id))
+    setCancellingFriendRegId(null)
+    startIdleTimer()
+  }
 
   // ── 親友代報：從總覽進入編輯 ──────────────────────────────────
   function handleEditFriend(fr) {
@@ -1125,6 +1146,9 @@ export default function KioskPage() {
             onSelectEvent={handleSelectEvent}
             onRequestCancel={setCancellingEventId}
             onConfirmCancel={handleCancelRegistration}
+            cancellingFriendRegId={cancellingFriendRegId}
+            onRequestCancelFriend={setCancellingFriendRegId}
+            onCancelFriend={handleCancelFriend}
             onEditFriend={handleEditFriend}
             onStartFriendFlow={handleStartFriendFlow}
             onDone={reset}
@@ -1454,6 +1478,7 @@ function OverviewScreen({
   student, classes, eventItems, statuses, carAssignments = {}, friendRegistrations = [],
   showSuccess, successEventName,
   cancellingEventId, errorMsg, onSelectEvent, onRequestCancel, onConfirmCancel,
+  cancellingFriendRegId, onRequestCancelFriend, onCancelFriend,
   onEditFriend, onStartFriendFlow, onDone,
 }) {
   // 把代報親友依活動分組（同一場活動的親友列在一起）
@@ -1848,8 +1873,29 @@ function OverviewScreen({
                                     >
                                       🎫 報到 QR
                                     </button>
+                                    <button
+                                      onClick={() => onRequestCancelFriend?.(fr.registration_id)}
+                                      className="inline-flex items-center gap-1 text-kiosk-sm bg-red-500 text-white px-2.5 py-1 rounded-lg font-bold active:scale-95 transition-transform"
+                                    >
+                                      ✕ 取消
+                                    </button>
                                   </div>
                                 </div>
+                                {cancellingFriendRegId === fr.registration_id && (
+                                  <div className="mt-2 bg-red-50 rounded-lg px-3 py-2">
+                                    <p className="text-kiosk-sm text-red-600 font-medium mb-2">確定要取消 {guestName} 的報名嗎？</p>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => onCancelFriend?.(fr)}
+                                        className="flex-1 py-2 bg-red-500 text-white rounded-lg text-kiosk-sm font-bold active:scale-95"
+                                      >確認取消</button>
+                                      <button
+                                        onClick={() => onRequestCancelFriend?.(null)}
+                                        className="flex-1 py-2 border border-gray-300 rounded-lg text-kiosk-sm text-gray-600 active:scale-95"
+                                      >保留</button>
+                                    </div>
+                                  </div>
+                                )}
                                 {items.length > 0 && (
                                   <details className="mt-1 group/inner">
                                     <summary className="cursor-pointer text-kiosk-sm text-purple-600 select-none list-none flex items-center gap-1">
