@@ -292,6 +292,7 @@ export default function KioskPage() {
   const [friendAnswers, setFriendAnswers] = useState({})
   // 上次代報成功的 registration_id 與活動 metadata（給 success 畫面產 QR 小卡用）
   const [lastFriendRegId, setLastFriendRegId] = useState('')
+  const [editingFriendRegId, setEditingFriendRegId] = useState(null)
   const [lastFriendEventName, setLastFriendEventName] = useState('')
   const [lastFriendEventDate, setLastFriendEventDate] = useState('')
   const [lastFriendEventLocation, setLastFriendEventLocation] = useState('')
@@ -638,6 +639,28 @@ export default function KioskPage() {
     }
   }
 
+
+  // ── 親友代報：從總覽進入編輯 ──────────────────────────────────
+  function handleEditFriend(fr) {
+    const item = eventItems.find(i => i.event.event_id === fr.event_id)
+    if (!item) return
+    const ans = { ...fr.answers }
+    const guestPhone = ans.guest_phone || ''
+    delete ans.guest_name
+    delete ans.guest_phone
+    delete ans.host_name
+    delete ans.host_student_id
+    setSelectedItem(item)
+    setFriendName(fr.answers?.guest_name || '')
+    setFriendPhone(guestPhone)
+    setFriendAnswers(ans)
+    setEditingFriendRegId(fr.registration_id)
+    setErrorMsg('')
+    clearTimeout(idleTimerRef.current)
+    setPhase('friend_form')
+    startFormTimer()
+  }
+
   // ── 親友代報：進入「選活動」階段 ────────────────────────────
   function handleStartFriendFlow() {
     clearTimeout(idleTimerRef.current)
@@ -814,10 +837,39 @@ export default function KioskPage() {
 
     const friendIsDriver = isDriverFromAnswers({ answers: friendAnswers }, fields)
     const phone = friendPhone.trim()
-    const { registrationId, error } = await submitFriendRegistration(
+    let registrationId = editingFriendRegId
+    if (editingFriendRegId) {
+      // 編輯既有親友報名
+      const newAnswers = {
+        guest_name: name,
+        host_name: student.name,
+        host_student_id: student.student_id,
+        ...(phone ? { guest_phone: phone } : {}),
+        ...friendAnswers,
+      }
+      const { success, error } = await updateRegistration(editingFriendRegId, newAnswers, friendIsDriver)
+      if (!success) {
+        setPhase('friend_form'); setErrorMsg(error || '送出失敗'); startFormTimer(); return
+      }
+      // 更新本地 friendRegistrations
+      setFriendRegistrations(prev => prev.map(fr =>
+        fr.registration_id === editingFriendRegId ? { ...fr, answers: newAnswers } : fr
+      ))
+      setEditingFriendRegId(null)
+      setFriendAnswers({})
+      setFriendName('')
+      setFriendPhone('')
+      setSelectedItem(null)
+      setPhase('overview')
+      startIdleTimer()
+      return
+    }
+    // 新增親友報名
+    const { registrationId: newRegId, error } = await submitFriendRegistration(
       event.event_id, student.student_id, student.name, name, friendAnswers,
       'tablet-01', friendIsDriver, phone,
     )
+    registrationId = newRegId
     if (!registrationId) {
       setPhase('friend_form'); setErrorMsg(error || '送出失敗'); startFormTimer(); return
     }
@@ -1073,6 +1125,7 @@ export default function KioskPage() {
             onSelectEvent={handleSelectEvent}
             onRequestCancel={setCancellingEventId}
             onConfirmCancel={handleCancelRegistration}
+            onEditFriend={handleEditFriend}
             onStartFriendFlow={handleStartFriendFlow}
             onDone={reset}
           />
@@ -1401,7 +1454,7 @@ function OverviewScreen({
   student, classes, eventItems, statuses, carAssignments = {}, friendRegistrations = [],
   showSuccess, successEventName,
   cancellingEventId, errorMsg, onSelectEvent, onRequestCancel, onConfirmCancel,
-  onStartFriendFlow, onDone,
+  onEditFriend, onStartFriendFlow, onDone,
 }) {
   // 把代報親友依活動分組（同一場活動的親友列在一起）
   const friendsByEvent = friendRegistrations.reduce((acc, fr) => {
@@ -1782,12 +1835,20 @@ function OverviewScreen({
                               <div key={fr.registration_id} className="bg-purple-50 rounded-lg px-3 py-2">
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="text-kiosk-sm font-bold text-purple-800 truncate">{guestName}</p>
-                                  <button
-                                    onClick={() => openFriendQR(fr)}
-                                    className="shrink-0 inline-flex items-center gap-1 text-kiosk-sm bg-purple-600 text-white px-2.5 py-1 rounded-lg font-bold active:scale-95 transition-transform"
-                                  >
-                                    🎫 報到 QR
-                                  </button>
+                                  <div className="flex gap-1 shrink-0">
+                                    <button
+                                      onClick={() => onEditFriend?.(fr)}
+                                      className="inline-flex items-center gap-1 text-kiosk-sm bg-amber-500 text-white px-2.5 py-1 rounded-lg font-bold active:scale-95 transition-transform"
+                                    >
+                                      ✏️ 修改
+                                    </button>
+                                    <button
+                                      onClick={() => openFriendQR(fr)}
+                                      className="inline-flex items-center gap-1 text-kiosk-sm bg-purple-600 text-white px-2.5 py-1 rounded-lg font-bold active:scale-95 transition-transform"
+                                    >
+                                      🎫 報到 QR
+                                    </button>
+                                  </div>
                                 </div>
                                 {items.length > 0 && (
                                   <details className="mt-1 group/inner">
@@ -2331,8 +2392,8 @@ function FriendSuccessScreen({
           ＋ 再代報一位
         </button>
         <button
-      
-          className="w-full py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium"
+          onClick={onDone}
+          className="w-full py-4 border-2 border-gray-300 rounded-2xl text-kiosk-base text-gray-600 font-medium active:scale-95 transition-transform"
         >
           完成，返回總覽
         </button>
@@ -2415,9 +2476,4 @@ function FriendQRModal({ friend, onClose }) {
             className="py-3 px-3 bg-purple-600 text-white rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
           >
             📤 分享給親友
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+        
