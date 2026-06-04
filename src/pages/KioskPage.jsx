@@ -2476,4 +2476,9 @@ function FriendQRModal({ friend, onClose }) {
             className="py-3 px-3 bg-purple-600 text-white rounded-xl text-kiosk-sm font-bold active:scale-95 transition-transform"
           >
             📤 分享給親友
-        
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
