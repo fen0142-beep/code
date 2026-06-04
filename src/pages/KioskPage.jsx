@@ -1859,8 +1859,7 @@ function OverviewScreen({
                             return (
                               <div key={fr.registration_id} className="bg-purple-50 rounded-lg px-3 py-2">
                                 <p className="text-kiosk-sm font-bold text-purple-800 mb-1">{guestName}</p>
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex gap-1 shrink-0">
+                                <div className="flex gap-1 flex-wrap mb-1">
                                     <button
                                       onClick={() => onEditFriend?.(fr)}
                                       className="inline-flex items-center gap-1 text-kiosk-sm bg-amber-500 text-white px-2.5 py-1 rounded-lg font-bold active:scale-95 transition-transform"
@@ -1879,7 +1878,7 @@ function OverviewScreen({
                                     >
                                       ✕ 取消
                                     </button>
-                                  </div>
+                                </div>
                                 {cancellingFriendRegId === fr.registration_id && (
                                   <div className="mt-2 bg-red-50 rounded-lg px-3 py-2">
                                     <p className="text-kiosk-sm text-red-600 font-medium mb-2">確定要取消 {guestName} 的報名嗎？</p>
