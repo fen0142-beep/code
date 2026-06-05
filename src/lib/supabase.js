@@ -219,21 +219,19 @@ export async function getStudentCarAssignments(eventIds, registrationIds) {
  */
 export async function getStudentById(studentId) {
   const { data, error } = await supabase
-    .from('students')
-    .select('*, student_classes(class_name, group_name)')
-    .eq('student_id', studentId)
-    .eq('active', true)
-    .single()
+    .rpc('get_student_by_qr', { code: studentId })
 
   if (error) {
-    if (error.code === 'PGRST116') {
-      return { student: null, classes: [], error: 'NOT_FOUND' }
-    }
     return { student: null, classes: [], error: error.message }
   }
 
-  const classes = data.student_classes || []
-  const { student_classes: _, ...student } = data
+  if (!data || data.length === 0) {
+    return { student: null, classes: [], error: 'NOT_FOUND' }
+  }
+
+  const row = data[0]
+  const classes = row.student_classes || []
+  const { student_classes: _, ...student } = row
 
   return { student, classes, error: null }
 }
