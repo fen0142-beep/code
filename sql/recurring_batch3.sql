@@ -17,3 +17,7 @@ SELECT cron.schedule(
     AND status = 'active';
   $job$
 );
+
+-- ── Step 3：recurring_templates 加 volunteer_ids ────────────────────
+ALTER TABLE recurring_templates
+  ADD COLUMN IF NOT EXISTS volunteer_ids jsonb DEFAULT '[]';

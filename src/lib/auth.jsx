@@ -18,7 +18,7 @@ export function AuthProvider({ children }) {
       // 義工登入時自動同步 profile（讓師父在後台看到義工清單）
       if (newSession?.user) {
         const u = newSession.user
-        const r = u.user_metadata?.role ?? 'volunteer'
+        const r = u.app_metadata?.role ?? 'volunteer'
         if (r === 'volunteer') {
           const displayName = u.user_metadata?.display_name || u.email || ''
           upsertVolunteerProfile(u.id, u.email || '', displayName)
@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   const user = session?.user ?? null
-  const role = user?.user_metadata?.role ?? 'volunteer'
+  const role = user?.app_metadata?.role ?? 'volunteer'
   const isAdmin = role === 'admin'
 
   return (
