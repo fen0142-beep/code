@@ -9,7 +9,7 @@ echo errorlevel after git add: %errorlevel%
 echo.
 
 echo [2] git commit
-git commit -F "..\COMMIT_MSG_fix_rls_registrations.txt"
+git commit -F "..\COMMIT_MSG_fix_important.txt"
 echo errorlevel after git commit: %errorlevel%
 echo.
 

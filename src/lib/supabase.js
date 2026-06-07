@@ -1979,6 +1979,9 @@ export async function bulkUpsertEventDonors(eventId, rows) {
   const errors = []
   let inserted = 0, updated = 0
 
+  const toInsert = []
+  const toUpdate = [] // [{ donor_id, patch, raw }]
+
   for (const raw of rows) {
     const studentId = raw.student_id ? String(raw.student_id).trim() : null
     const name      = (raw.name || '').trim()
@@ -2002,9 +2005,9 @@ export async function bulkUpsertEventDonors(eventId, rows) {
     const found = studentId ? byStudent.get(studentId) : byName.get(name)
 
     if (found) {
-      const { error } = await supabase
-        .from('event_donors')
-        .update({
+      toUpdate.push({
+        donor_id: found.donor_id,
+        patch: {
           name:       payload.name,
           student_id: payload.student_id,
           donor_item: payload.donor_item,
@@ -2012,15 +2015,37 @@ export async function bulkUpsertEventDonors(eventId, rows) {
           corsage:    payload.corsage,
           offering:   payload.offering,
           donor_note: payload.donor_note,
-        })
-        .eq('donor_id', found.donor_id)
-      if (error) errors.push({ row: raw, message: error.message })
-      else updated++
+        },
+        raw,
+      })
     } else {
-      const { error } = await supabase.from('event_donors').insert(payload)
-      if (error) errors.push({ row: raw, message: error.message })
-      else inserted++
+      toInsert.push({ payload, raw })
     }
+  }
+
+  // 批次 INSERT（一次 round-trip）
+  if (toInsert.length > 0) {
+    const { error } = await supabase
+      .from('event_donors')
+      .insert(toInsert.map(r => r.payload))
+    if (error) {
+      toInsert.forEach(r => errors.push({ row: r.raw, message: error.message }))
+    } else {
+      inserted = toInsert.length
+    }
+  }
+
+  // 並發 UPDATE（Promise.all，避免串行等待）
+  if (toUpdate.length > 0) {
+    const results = await Promise.all(
+      toUpdate.map(({ donor_id, patch }) =>
+        supabase.from('event_donors').update(patch).eq('donor_id', donor_id)
+      )
+    )
+    results.forEach((res, i) => {
+      if (res.error) errors.push({ row: toUpdate[i].raw, message: res.error.message })
+      else updated++
+    })
   }
 
   return { success: errors.length === 0, inserted, updated, errors }
