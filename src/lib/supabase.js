@@ -104,15 +104,22 @@ export async function getActiveEvents() {
  */
 export async function getFriendRegistrationsByHost(studentId, eventIds) {
   if (!studentId) return { registrations: [], error: null }
-  let q = supabase
-    .from('registrations')
-    .select('registration_id, event_id, answers, registered_at, updated_at')
-    .eq('host_student_id', studentId)
-    .order('updated_at', { ascending: false })
-  if (eventIds && eventIds.length > 0) q = q.in('event_id', eventIds)
-  const { data, error } = await q
+  const ids = (eventIds && eventIds.length > 0) ? eventIds : []
+  if (ids.length === 0) return { registrations: [], error: null }
+
+  const { data, error } = await supabase
+    .rpc('kiosk_get_registrations_for_student', {
+      p_student_id: studentId,
+      p_event_ids:  ids,
+    })
+
   if (error) return { registrations: [], error: error.message }
-  return { registrations: data || [], error: null }
+
+  // 只回傳「代報者」是此學員的記錄（host_student_id = studentId）
+  const regs = (data || [])
+    .filter(r => r.host_student_id === studentId)
+    .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+  return { registrations: regs, error: null }
 }
 
 /**
@@ -123,19 +130,22 @@ export async function getStudentEventStatuses(studentId, eventIds) {
   if (!eventIds.length) return { map: {}, error: null }
 
   const { data, error } = await supabase
-    .from('registrations')
-    .select('registration_id, event_id, answers')
-    .eq('student_id', studentId)
-    .in('event_id', eventIds)
+    .rpc('kiosk_get_registrations_for_student', {
+      p_student_id: studentId,
+      p_event_ids:  eventIds,
+    })
 
   if (error) {
     console.error('[getStudentEventStatuses] error:', error)
     return { map: {}, error: error.message }
   }
 
+  // 只取「學員本人」的報名（student_id = studentId），不含代報親友記錄
   const map = {}
   for (const id of eventIds) map[id] = null
-  for (const r of (data || [])) map[r.event_id] = r
+  for (const r of (data || [])) {
+    if (r.student_id === studentId) map[r.event_id] = r
+  }
   return { map, error: null }
 }
 
@@ -240,14 +250,14 @@ export async function getStudentById(studentId) {
 
 export async function checkDuplicate(eventId, studentId) {
   const { data, error } = await supabase
-    .from('registrations')
-    .select('registration_id')
-    .eq('event_id', eventId)
-    .eq('student_id', studentId)
-    .limit(1)
+    .rpc('kiosk_get_registrations_for_student', {
+      p_student_id: studentId,
+      p_event_ids:  [eventId],
+    })
 
   if (error) return false
-  return data && data.length > 0
+  // 只看學員本人的報名（不含代報親友）
+  return (data || []).some(r => r.student_id === studentId)
 }
 
 export async function submitRegistration(eventId, studentId, answers, terminal = 'tablet-01', isDriver = false) {

@@ -7,8 +7,8 @@
 -- （請確認 puyi23282@gmail.com 已可正常登入後台）
 
 UPDATE auth.users
-SET raw_user_meta_data = jsonb_set(
-  COALESCE(raw_user_meta_data, '{}'::jsonb),
+SET raw_app_meta_data = jsonb_set(
+  COALESCE(raw_app_meta_data, '{}'::jsonb),
   '{role}',
   '"admin"'
 )
@@ -27,8 +27,8 @@ WHERE email = 'puyi23282@gmail.com';
 -- 建立完成後，執行下方 SQL 設定義工角色：
 
 UPDATE auth.users
-SET raw_user_meta_data = jsonb_set(
-  COALESCE(raw_user_meta_data, '{}'::jsonb),
+SET raw_app_meta_data = jsonb_set(
+  COALESCE(raw_app_meta_data, '{}'::jsonb),
   '{role}',
   '"volunteer"'
 )
@@ -38,7 +38,7 @@ WHERE email = 'volunteer@puyi.reg';
 
 -- ── 驗證：確認兩個帳號角色都設定正確 ──────────────────────────
 SELECT email,
-       raw_user_meta_data->>'role' AS role
+       raw_app_meta_data->>'role' AS role
 FROM auth.users
 WHERE email IN ('puyi23282@gmail.com', 'volunteer@puyi.reg')
 ORDER BY email;

@@ -84,7 +84,7 @@ BEGIN
         IF tmpl.volunteer_ids IS NOT NULL AND jsonb_array_length(tmpl.volunteer_ids) > 0 THEN
           FOR vol_id IN SELECT jsonb_array_elements_text(tmpl.volunteer_ids) LOOP
             INSERT INTO volunteer_event_access (volunteer_id, event_id)
-            VALUES (vol_id, new_event_id)
+            VALUES (vol_id::uuid, new_event_id)
             ON CONFLICT DO NOTHING;
           END LOOP;
         END IF;
