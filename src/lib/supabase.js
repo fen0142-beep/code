@@ -954,7 +954,7 @@ export async function submitFriendRegistration(
 // ─── 學員管理（後台）────────────────────────────────────────
 
 /**
- * 取得所有學員（含班別），支援姓名搜尋
+ * 刪除報名紀錄（後台管理用）
  */
 export async function deleteRegistration(registrationId) {
   const { error } = await supabase
