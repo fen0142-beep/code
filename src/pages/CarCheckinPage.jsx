@@ -536,9 +536,11 @@ export default function CarCheckinPage() {
     const eventDate  = formatDate(dateStart)
     // 排除延後/提前者（與大車模式 isExcludedFromExpected 邏輯一致）
     const isExcludedHere = (m, c) => isMemberExcludedFromExpected(m, c, dateStart, dateEnd)
+    // 先依方向過濾（tab 控制）
+    const directionCars = allCars.filter(c => (c.direction ?? 'down') === headDirection)
     // 整車提前/延後/義工車直接整車排除
-    const activeCars = allCars.filter(c => {
-      if ((c.direction ?? 'down') === 'down') {
+    const activeCars = directionCars.filter(c => {
+      if (headDirection === 'down') {
         if (c.late_return) return false
         if (isVolunteerSelfReturn(c, dateEnd)) return false
         return true
@@ -569,6 +571,31 @@ export default function CarCheckinPage() {
           <div className="max-w-lg mx-auto">
             <div className="text-xs opacity-75 mb-0.5">{eventName}　{eventDate}</div>
             <div className="text-xl font-bold">🚗 小車領隊看板</div>
+
+            {/* 去程/回程 Tab */}
+            <div className="flex gap-1 mt-3 bg-green-800/40 rounded-lg p-1">
+              <button
+                onClick={() => setHeadDirection('up')}
+                className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  headDirection === 'up'
+                    ? 'bg-white text-green-800 shadow-sm'
+                    : 'text-white/80 hover:text-white'
+                }`}
+              >
+                🚌 去程
+              </button>
+              <button
+                onClick={() => setHeadDirection('down')}
+                className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  headDirection === 'down'
+                    ? 'bg-white text-green-800 shadow-sm'
+                    : 'text-white/80 hover:text-white'
+                }`}
+              >
+                🚍 回程
+              </button>
+            </div>
+
             <div className="flex gap-5 mt-3 text-sm">
               <span>應到 <strong className="text-xl">{totalAll}</strong></span>
               <span>已到 <strong className="text-xl">{checkedAll}</strong></span>
@@ -583,7 +610,7 @@ export default function CarCheckinPage() {
 
         {/* 各小車卡片 */}
         <div className="px-4 pt-3 max-w-lg mx-auto space-y-3">
-          {allCars.map(c => {
+          {directionCars.map(c => {
             const members  = c.car_members ?? []
             // 排除延後/提前者
             const todayMembers = members.filter(m => !isExcludedHere(m, c))
@@ -720,6 +747,11 @@ export default function CarCheckinPage() {
 
           {allCars.length === 0 && (
             <div className="text-center text-gray-400 py-12 text-sm">尚無小車排班資料，請師父先完成排車並儲存</div>
+          )}
+          {allCars.length > 0 && directionCars.length === 0 && (
+            <div className="text-center text-gray-400 py-12 text-sm">
+              {headDirection === 'up' ? '去程' : '回程'}尚無小車資料
+            </div>
           )}
         </div>
 
