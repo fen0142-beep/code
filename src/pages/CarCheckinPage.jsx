@@ -92,15 +92,17 @@ export default function CarCheckinPage() {
       // 提前上山自動勾：只對「上山」方向適用（下山不該被自動勾，延後者另計）
       const toAutoCheck = carInfo.linkedCars.flatMap(c => {
         if ((c.direction ?? 'down') !== 'up') return []
-        return (c.car_members ?? []).filter(m =>
-          !m.registrations?.checked_in_at &&
-          getEffectivePreArrive(m, c, dateStart) &&
-          !autoChecked.has(m.registration_id)
-        )
+        return (c.car_members ?? [])
+          .filter(m =>
+            !m.registrations?.checked_in_at &&
+            getEffectivePreArrive(m, c, dateStart) &&
+            !autoChecked.has(m.registration_id)
+          )
+          .map(m => ({ member: m, carId: c.car_id }))
       })
       if (toAutoCheck.length > 0) {
-        await Promise.all(toAutoCheck.map(m => checkInCarMember(c.car_id, m.registration_id)))
-        markAutoChecked(token, toAutoCheck.map(m => m.registration_id))
+        await Promise.all(toAutoCheck.map(({ member, carId }) => checkInCarMember(carId, member.registration_id)))
+        markAutoChecked(token, toAutoCheck.map(({ member }) => member.registration_id))
         const fresh = await loadCarWithLinked(token)
         setLinkedCars(fresh.linkedCars)
         setCar(fresh.linkedCars.find(c => c.car_id === carInfo.car.car_id) ?? fresh.car)
@@ -128,15 +130,17 @@ export default function CarCheckinPage() {
       // 提前上山自動勾：只對「上山」方向適用
       const toAutoCheck = (cars ?? []).flatMap(c => {
         if ((c.direction ?? 'down') !== 'up') return []
-        return (c.car_members ?? []).filter(m =>
-          !m.registrations?.checked_in_at &&
-          getEffectivePreArrive(m, c, dateStart) &&
-          !autoChecked.has(m.registration_id)
-        )
+        return (c.car_members ?? [])
+          .filter(m =>
+            !m.registrations?.checked_in_at &&
+            getEffectivePreArrive(m, c, dateStart) &&
+            !autoChecked.has(m.registration_id)
+          )
+          .map(m => ({ member: m, carId: c.car_id }))
       })
       if (toAutoCheck.length > 0) {
-        await Promise.all(toAutoCheck.map(m => checkInCarMember(c.car_id, m.registration_id)))
-        markAutoChecked(token, toAutoCheck.map(m => m.registration_id))
+        await Promise.all(toAutoCheck.map(({ member, carId }) => checkInCarMember(carId, member.registration_id)))
+        markAutoChecked(token, toAutoCheck.map(({ member }) => member.registration_id))
         const { cars: fresh } = leaderType === 'small_car'
           ? await getAllSmallCarsProgress(eventId)
           : await getAllCarsProgress(eventId)
