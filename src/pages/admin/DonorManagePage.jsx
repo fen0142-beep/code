@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import * as XLSX from 'xlsx'
+import * as XLSX from '@e965/xlsx'
 import AdminLayout from '../../components/AdminLayout'
 import SearchableSelect from '../../components/SearchableSelect'
 import {

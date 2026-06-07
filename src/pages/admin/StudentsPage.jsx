@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import * as XLSX from 'xlsx'
+import * as XLSX from '@e965/xlsx'
 import AdminLayout from '../../components/AdminLayout'
 import { getAllStudents, importStudents } from '../../lib/supabase'
 
