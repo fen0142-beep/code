@@ -546,13 +546,11 @@ export async function checkIn(registrationId) {
 /**
  * 全車到齊：把某台車所有成員一次標記為已報到
  */
-export async function checkInAllCar(carId) {
-  const { error } = await supabase
-    .from('car_members')
-    .update({ checked_in_at: new Date().toISOString() })
-    .eq('car_id', carId)
-    .is('checked_in_at', null)   // 只更新尚未報到的
-
+export async function checkInAllCar(token, carId) {
+  const { error } = await supabase.rpc('checkin_all_car', {
+    p_token: token,
+    p_car_id: carId,
+  })
   if (error) return { success: false, error: error.message }
   return { success: true, error: null }
 }
@@ -573,13 +571,13 @@ export async function uncheckIn(registrationId) {
 /**
  * 車輛成員報到（方向級別，寫入 car_members.checked_in_at）
  */
-export async function checkInCarMember(carId, registrationId) {
-  const { error } = await supabase
-    .from('car_members')
-    .update({ checked_in_at: new Date().toISOString() })
-    .eq('car_id', carId)
-    .eq('registration_id', registrationId)
-
+export async function checkInCarMember(token, carId, registrationId) {
+  const { error } = await supabase.rpc('checkin_car_member', {
+    p_token: token,
+    p_car_id: carId,
+    p_registration_id: registrationId,
+    p_check_in: true,
+  })
   if (error) return { success: false, error: error.message }
   return { success: true, error: null }
 }
@@ -587,13 +585,13 @@ export async function checkInCarMember(carId, registrationId) {
 /**
  * 取消車輛成員報到（方向級別）
  */
-export async function uncheckInCarMember(carId, registrationId) {
-  const { error } = await supabase
-    .from('car_members')
-    .update({ checked_in_at: null })
-    .eq('car_id', carId)
-    .eq('registration_id', registrationId)
-
+export async function uncheckInCarMember(token, carId, registrationId) {
+  const { error } = await supabase.rpc('checkin_car_member', {
+    p_token: token,
+    p_car_id: carId,
+    p_registration_id: registrationId,
+    p_check_in: false,
+  })
   if (error) return { success: false, error: error.message }
   return { success: true, error: null }
 }
@@ -1540,29 +1538,10 @@ export async function deleteRelationshipGroup(groupId) {
  * 公開頁面使用，不需登入
  */
 export async function getCarByToken(token) {
-  const { data, error } = await supabase
-    .from('car_assignments')
-    .select(`
-      car_id, car_name, seats, event_id, sort_order, direction,
-      events ( name, date_start ),
-      car_members (
-        registration_id,
-        checked_in_at,
-        registrations (
-          registration_id, answers, checked_in_at, student_id,
-          students!student_id ( name, student_classes ( class_name, group_name ) )
-        )
-      ),
-      car_leaders ( registration_id ),
-      car_monks ( id, monk_id, checked_in_at, temple_monks ( name ) )
-    `)
-    .eq('access_token', token)
-    .single()
+  const { data, error } = await supabase.rpc('get_car_by_token', { p_token: token })
 
-  if (error) {
-    if (error.code === 'PGRST116') return { car: null, error: 'NOT_FOUND' }
-    return { car: null, error: error.message }
-  }
+  if (error) return { car: null, error: error.message }
+  if (!data) return { car: null, error: 'NOT_FOUND' }
   return { car: data, error: null }
 }
 
@@ -1574,10 +1553,10 @@ export async function getCarByToken(token) {
  * 兩步驟做：先用 leaderRegIds 找 car_id，再用 car_id 撈完整車輛資料
  * （避免用 PostgREST nested filter 在 anon RLS 下踩坑）
  */
-export async function getLinkedCarsForLeader(eventId, leaderRegIds) {
+export async function getLinkedCarsForLeader(token, leaderRegIds) {
   if (!leaderRegIds || leaderRegIds.length === 0) return { cars: [], error: null }
 
-  // Step 1: 找出這些領隊作為 car_leader 的所有 car_id
+  // Step 1: find car_ids where these registrations are leaders (car_leaders has no sensitive data)
   const { data: leaderRows, error: lErr } = await supabase
     .from('car_leaders')
     .select('car_id')
@@ -1587,25 +1566,11 @@ export async function getLinkedCarsForLeader(eventId, leaderRegIds) {
   const carIds = [...new Set((leaderRows ?? []).map(r => r.car_id).filter(Boolean))]
   if (carIds.length === 0) return { cars: [], error: null }
 
-  // Step 2: 取出這些車的完整資料（限定 event_id，避免跨活動誤抓）
-  const { data, error } = await supabase
-    .from('car_assignments')
-    .select(`
-      car_id, car_name, seats, event_id, sort_order, direction, access_token,
-      events ( name, date_start ),
-      car_members (
-        registration_id,
-        checked_in_at,
-        registrations (
-          registration_id, answers, checked_in_at, student_id,
-          students!student_id ( name, student_classes ( class_name, group_name ) )
-        )
-      ),
-      car_leaders ( registration_id ),
-      car_monks ( id, monk_id, checked_in_at, temple_monks ( name ) )
-    `)
-    .in('car_id', carIds)
-    .eq('event_id', eventId)
+  // Step 2: RPC verifies token server-side before returning data
+  const { data, error } = await supabase.rpc('get_leader_cars', {
+    p_token: token,
+    p_car_ids: carIds,
+  })
 
   if (error) return { cars: [], error: error.message }
   return { cars: data ?? [], error: null }
@@ -1851,11 +1816,12 @@ export async function deleteMonk(id) {
 /**
  * 法師報到（更新 car_monks.checked_in_at）
  */
-export async function checkInMonk(carMonkId) {
-  const { error } = await supabase
-    .from('car_monks')
-    .update({ checked_in_at: new Date().toISOString() })
-    .eq('id', carMonkId)
+export async function checkInMonk(token, carMonkId) {
+  const { error } = await supabase.rpc('checkin_car_monk', {
+    p_token: token,
+    p_car_monk_id: carMonkId,
+    p_check_in: true,
+  })
   if (error) return { success: false, error: error.message }
   return { success: true, error: null }
 }
@@ -1863,11 +1829,12 @@ export async function checkInMonk(carMonkId) {
 /**
  * 取消法師報到
  */
-export async function uncheckInMonk(carMonkId) {
-  const { error } = await supabase
-    .from('car_monks')
-    .update({ checked_in_at: null })
-    .eq('id', carMonkId)
+export async function uncheckInMonk(token, carMonkId) {
+  const { error } = await supabase.rpc('checkin_car_monk', {
+    p_token: token,
+    p_car_monk_id: carMonkId,
+    p_check_in: false,
+  })
   if (error) return { success: false, error: error.message }
   return { success: true, error: null }
 }

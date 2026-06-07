@@ -65,7 +65,7 @@ export default function CarCheckinPage() {
     const leaderIds = (car.car_leaders ?? []).map(l => l.registration_id)
     if (leaderIds.length === 0) return { car, linkedCars: [car] }
 
-    const { cars: linked } = await getLinkedCarsForLeader(car.event_id, leaderIds)
+    const { cars: linked } = await getLinkedCarsForLeader(t, leaderIds)
     const seen = new Set([car.car_id])
     const all  = [car]
     for (const c of (linked ?? [])) {
@@ -101,7 +101,7 @@ export default function CarCheckinPage() {
           .map(m => ({ member: m, carId: c.car_id }))
       })
       if (toAutoCheck.length > 0) {
-        await Promise.all(toAutoCheck.map(({ member, carId }) => checkInCarMember(carId, member.registration_id)))
+        await Promise.all(toAutoCheck.map(({ member, carId }) => checkInCarMember(token, carId, member.registration_id)))
         markAutoChecked(token, toAutoCheck.map(({ member }) => member.registration_id))
         const fresh = await loadCarWithLinked(token)
         setLinkedCars(fresh.linkedCars)
@@ -139,7 +139,7 @@ export default function CarCheckinPage() {
           .map(m => ({ member: m, carId: c.car_id }))
       })
       if (toAutoCheck.length > 0) {
-        await Promise.all(toAutoCheck.map(({ member, carId }) => checkInCarMember(carId, member.registration_id)))
+        await Promise.all(toAutoCheck.map(({ member, carId }) => checkInCarMember(token, carId, member.registration_id)))
         markAutoChecked(token, toAutoCheck.map(({ member }) => member.registration_id))
         const { cars: fresh } = leaderType === 'small_car'
           ? await getAllSmallCarsProgress(eventId)
@@ -249,7 +249,7 @@ export default function CarCheckinPage() {
     }
 
     const name = getMemberName(found)
-    await checkInCarMember(foundCar.car_id, found.registration_id)
+    await checkInCarMember(token, foundCar.car_id, found.registration_id)
     showMsg(`✓ ${name} 報到完成`)
     await refresh()
   }
@@ -265,10 +265,10 @@ export default function CarCheckinPage() {
   async function handleToggleCheckin(carId, registrationId, checkedAt) {
     if (carId) {
       if (checkedAt) {
-        await uncheckInCarMember(carId, registrationId)
+        await uncheckInCarMember(token, carId, registrationId)
         markAutoChecked(token, [registrationId])
       } else {
-        await checkInCarMember(carId, registrationId)
+        await checkInCarMember(token, carId, registrationId)
       }
     } else {
       // 其他交通：方向分離（headDirection closure）
@@ -285,9 +285,9 @@ export default function CarCheckinPage() {
   // ── 法師手動點選報到（無 QR code） ──
   async function handleToggleMonkCheckin(carMonkId, checkedAt) {
     if (checkedAt) {
-      await uncheckInMonk(carMonkId)
+      await uncheckInMonk(token, carMonkId)
     } else {
-      await checkInMonk(carMonkId)
+      await checkInMonk(token, carMonkId)
     }
     await refresh()
   }
@@ -562,7 +562,7 @@ export default function CarCheckinPage() {
     const uncheckedAll = totalAll - checkedAll
 
     async function handleCheckInAllCar(carId) {
-      await checkInAllCar(carId)
+      await checkInAllCar(token, carId)
       await refresh()
     }
 

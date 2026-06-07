@@ -89,6 +89,12 @@
 | `weekly_gonxiu_cron.sql` | 每週功修自動建立 |
 | `clean_guest_phone_cron.sql` | 定期清理訪客電話 |
 
+## 安全修復
+
+| 順序 | 檔案 | 說明 |
+|------|------|------|
+| 最新 | `fix_car_token_security.sql` | 車次 Token 安全修復（RLS + RPC） |
+
 ## ⚠️ 注意事項
 
 - 2026-06-05 安全修正：`registrations` 移除 anon UPDATE/DELETE，`event_donors` 完全封鎖 anon，`students` 改用 RPC 函數。這些修正已直接套用於 Supabase，**不在以上 SQL 檔案中**，換環境時需另外執行 `fix_rls_clean.sql`（位於上層 `puyi-signup/` 目錄）。
