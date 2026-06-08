@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: '普宜精舍報名系統',
+        name: (process.env.VITE_TEMPLE_NAME || '精舍') + '報名系統',
         short_name: '精舍報名',
-        description: '普宜精舍活動刷卡報名',
+        description: (process.env.VITE_TEMPLE_NAME || '精舍') + '活動刷卡報名',
         theme_color: '#1e40af',
         background_color: '#f8fafc',
         display: 'fullscreen',
