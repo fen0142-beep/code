@@ -261,18 +261,16 @@ export async function checkDuplicate(eventId, studentId) {
 }
 
 export async function submitRegistration(eventId, studentId, answers, terminal = 'tablet-01', isDriver = false) {
-  const { error } = await supabase
-    .from('registrations')
-    .upsert({
-      event_id: eventId,
-      student_id: studentId,
-      answers,
-      terminal,
-      is_driver: !!isDriver,
-    }, { onConflict: 'event_id,student_id' })
-
+  const { data, error } = await supabase.rpc('kiosk_submit_registration', {
+    p_event_id:  eventId,
+    p_student_id: studentId,
+    p_answers:   answers,
+    p_terminal:  terminal,
+    p_is_driver: !!isDriver,
+  })
   if (error) return { success: false, error: error.message }
-  return { success: true, error: null, registrationId: null }
+  if (data?.success === false) return { success: false, error: data.error }
+  return { success: true, error: null, registrationId: data?.registration_id ?? null }
 }
 
 export async function getRegistration(eventId, studentId) {
