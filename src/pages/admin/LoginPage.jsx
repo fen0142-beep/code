@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../../lib/supabase' // 改回引用專案通用的 supabase client
+import { supabase } from '../../lib/supabase' 
+
+// 📌 在這裡加上你自己的最高權限主帳號（可以加多個，用逗號隔開）
+// 這樣這幾個 Email 登入時會直接放行，完全不怕被資料庫規則誤擋！
+const SUPER_ADMINS = ['fen0142@gmail.com']; 
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -19,9 +23,11 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
+    const currentEmail = email.trim();
+
     // 1. 呼叫 Supabase 驗證帳號密碼
     const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+      email: currentEmail,
       password: password,
     })
 
@@ -31,26 +37,41 @@ export default function LoginPage() {
       return
     }
 
-    // 2. 登入成功後，檢查該 Email 是否存在於我們的後台權限名單中
+    // 2. 白名單檢查：如果是最高管理員，直接放行跳轉！
+    if (SUPER_ADMINS.includes(currentEmail.toLowerCase())) {
+      // 順便幫最高管理員在 admin_roles 補登記，確保「帳號權限」頁面看得到
+      await supabase.from('admin_roles').upsert({
+        email: currentEmail,
+        role: 'admin',
+        display_name: '最高管理員',
+        last_sign_in_at: new Date()
+      }, { onConflict: 'email' });
+
+      setLoading(false)
+      navigate('/admin/events')
+      return
+    }
+
+    // 3. 一般義工或新帳號：檢查是否存在於 admin_roles 權限名單中
     const { data: roleData, error: roleError } = await supabase
       .from('admin_roles')
       .select('role')
-      .eq('email', email.trim())
-      .single()
+      .eq('email', currentEmail)
+      .maybeSingle()
 
     if (roleError || !roleData) {
-      // 在權限表找不到此人，拒絕登入後台
+      // 在權限表找不到此人，安全登出
       await supabase.auth.signOut()
       setError('此帳號未經授權進入管理後台。')
       setLoading(false)
       return
     }
 
-    // 3. 驗證成功，更新最後登入時間
+    // 4. 驗證成功，更新最後登入時間
     await supabase
       .from('admin_roles')
       .update({ last_sign_in_at: new Date() })
-      .eq('email', email.trim())
+      .eq('email', currentEmail)
 
     setLoading(false)
     navigate('/admin/events')
@@ -87,7 +108,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* ── 義工登入（開放輸入專屬的 Email 與密碼）── */}
+        {/* ── 義工登入 ── */}
         {mode === 'volunteer' && (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
@@ -139,7 +160,7 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* ── 師父登入（帳號 + 密碼）── */}
+        {/* ── 師父登入 ── */}
         {mode === 'admin' && (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
