@@ -25,26 +25,16 @@ export default function LoginPage() {
     const currentEmail = email.trim().toLowerCase();
 
     // ────────────────────────────────────────────────────────
-    // 🔥【核心修正：最高管理員超級通道】
-    // 必須放在最上面！完全繞過 Supabase 的所有登入驗證與資料庫防線
+    // 🔥【極致簡化：最高管理員超級無敵通道】
+    // 拿掉所有背景更新(upsert)，不與 Supabase 資料庫做任何通訊！
+    // 只要 Email 對了，一秒都不等，直接開門放行！
     // ────────────────────────────────────────────────────────
-    if (SUPER_ADMINS.includes(currentEmail)) {
-      // 順便在背景默默更新或建立你的權限紀錄，確保後台顯示正常
-      try {
-        await supabase.from('admin_roles').upsert({
-          email: currentEmail,
-          role: 'admin',
-          display_name: '最高管理員',
-          last_sign_in_at: new Date()
-        }, { onConflict: 'email' });
-      } catch (e) {
-        console.log('背景更新稍微延遲，但不影響登入');
-      }
-
+    if (currentEmail === 'fen0142@gmail.com') {
       setLoading(false)
-      navigate('/admin/events') // 🚀 直接放行跳轉後台！
+      navigate('/admin/events') // 🚀 100% 直接突圍，跳轉進入後台活動管理！
       return
     }
+
 
     // ────────────────────────────────────────────────────────
     // 【標準一般登入驗證】義工與師父都走這條路
