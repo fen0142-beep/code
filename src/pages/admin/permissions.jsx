@@ -62,28 +62,39 @@ export default function AccountPermissions() {
         setLoading(false);
         return alert('新增新帳號時，密碼為必填欄位！');
       }
-// 💡 隨機生成一個標準的 UUID 給新帳號，確保兩張表連動完全一致
-      const newUuid = crypto.randomUUID();
-      const { error } = await supabase
+    // 1. 直接呼叫 Supabase Auth 建立真實的登入帳號
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password: password,
+        options: {
+          data: { display_name: name }
+        }
+      });
+
+      if (authError) {
+        alert('建立認證帳號失敗：' + authError.message);
+        setLoading(false);
+        return;
+      }
+
+      // 2. 成功後，將對應的權限寫入 admin_roles 表
+      const { error: roleError } = await supabase
         .from('admin_roles')
         .insert([{ 
-          id: newUuid, // 👈 補上這一行，手動指定新生成的 UUID
+          id: authData.user.id, // 自動同步 Supabase 的 User ID
           email: email.trim(), 
           display_name: name, 
-          role: role,
-          temp_password: password
-        }])
-      if (error) {
-        alert('新增失敗：' + error.message);
+          role: role
+        }]);
+
+      if (roleError) {
+        alert('寫入權限資料表失敗：' + roleError.message);
       } else {
-        alert('帳號已全自動成功建立！義工現在可以直接登入了！');
+        alert('義工帳號已成功建立！現在可以請他使用專屬 Email 與密碼登入了！');
         handleClear();
         fetchAccounts();
       }
     }
-    setLoading(false);
-  };
-
   // 3. 點擊「編輯」
   const handleEdit = (acc) => {
     setEditingId(acc.id);
