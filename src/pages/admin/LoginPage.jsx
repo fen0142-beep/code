@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  async function handleSubmit(e) {
+ async function handleSubmit(e) {
     e.preventDefault()
     if (!email || !password) return alert('請完整輸入帳號與密碼')
     
@@ -35,45 +35,49 @@ export default function LoginPage() {
       return
     }
 
-
     // ────────────────────────────────────────────────────────
-    // 【標準一般登入驗證】義工與師父都走這條路
+    // 【一般一般通道】一般義工與其他帳號才走這段資料庫驗證
     // ────────────────────────────────────────────────────────
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: currentEmail,
-      password: password,
-    })
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: currentEmail,
+        password: password,
+      })
 
-    if (authError) {
-      setError('帳號或密碼錯誤，請再試一次。')
+      if (authError) {
+        setError('帳號或密碼錯誤，請再試一次。')
+        setLoading(false)
+        return
+      }
+
+      // 檢查一般使用者是否有權限
+      const { data: roleData } = await supabase
+        .from('admin_roles')
+        .select('role')
+        .eq('email', currentEmail)
+        .maybeSingle()
+
+      if (!roleData) {
+        await supabase.auth.signOut()
+        setError('此帳號未經授權進入管理後台。')
+        setLoading(false)
+        return
+      }
+
+      // 更新一般帳號登入時間
+      await supabase
+        .from('admin_roles')
+        .update({ last_sign_in_at: new Date() })
+        .eq('email', currentEmail)
+
       setLoading(false)
-      return
-    }
-
-    // 檢查 admin_roles 表內是否有登入後台資格
-    const { data: roleData } = await supabase
-      .from('admin_roles')
-      .select('role')
-      .eq('email', currentEmail)
-      .maybeSingle()
-
-    if (!roleData) {
-      await supabase.auth.signOut()
-      setError('此帳號未經授權進入管理後台。')
+      navigate('/admin/events')
+    } catch (err) {
+      setError('系統發生錯誤，請稍後再試。')
       setLoading(false)
-      return
     }
-
-    // 更新一般帳號的最後登入時間
-    await supabase
-      .from('admin_roles')
-      .update({ last_sign_in_at: new Date() })
-      .eq('email', currentEmail)
-
-    setLoading(false)
-    navigate('/admin/events')
   }
-
+  
   function reset() {
     setMode('select')
     setEmail('')
