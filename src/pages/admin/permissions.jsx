@@ -62,17 +62,17 @@ export default function AccountPermissions() {
         setLoading(false);
         return alert('新增新帳號時，密碼為必填欄位！');
       }
-
-      // 將 email, name, role 以及密碼一起送過去觸發自動註冊
+// 💡 隨機生成一個標準的 UUID 給新帳號，確保兩張表連動完全一致
+      const newUuid = crypto.randomUUID();
       const { error } = await supabase
         .from('admin_roles')
         .insert([{ 
-          email: email, 
+          id: newUuid, // 👈 補上這一行，手動指定新生成的 UUID
+          email: email.trim(), 
           display_name: name, 
           role: role,
           temp_password: password
-        }]);
-
+        }])
       if (error) {
         alert('新增失敗：' + error.message);
       } else {
