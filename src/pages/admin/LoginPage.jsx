@@ -1,9 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { signIn } from '../../lib/supabase'
-
-// 義工共用帳號的 email（隱藏在程式碼裡，義工只需輸入密碼）
-const VOLUNTEER_EMAIL = 'volunteer@puyi.reg'
+import { supabase } from '../../lib/supabase' // 改回引用專案通用的 supabase client
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -17,18 +14,45 @@ export default function LoginPage() {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (!email || !password) return alert('請完整輸入帳號與密碼')
+    
     setError('')
     setLoading(true)
 
-    const loginEmail = mode === 'volunteer' ? VOLUNTEER_EMAIL : email
-    const { success } = await signIn(loginEmail, password)
-    setLoading(false)
+    // 1. 呼叫 Supabase 驗證帳號密碼
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password: password,
+    })
 
-    if (!success) {
-      setError(mode === 'volunteer' ? '密碼錯誤，請再試一次。' : '帳號或密碼錯誤，請再試一次。')
+    if (authError) {
+      setError('帳號或密碼錯誤，請再試一次。')
+      setLoading(false)
       return
     }
 
+    // 2. 登入成功後，檢查該 Email 是否存在於我們的後台權限名單中
+    const { data: roleData, error: roleError } = await supabase
+      .from('admin_roles')
+      .select('role')
+      .eq('email', email.trim())
+      .single()
+
+    if (roleError || !roleData) {
+      // 在權限表找不到此人，拒絕登入後台
+      await supabase.auth.signOut()
+      setError('此帳號未經授權進入管理後台。')
+      setLoading(false)
+      return
+    }
+
+    // 3. 驗證成功，更新最後登入時間
+    await supabase
+      .from('admin_roles')
+      .update({ last_sign_in_at: new Date() })
+      .eq('email', email.trim())
+
+    setLoading(false)
     navigate('/admin/events')
   }
 
@@ -63,18 +87,30 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* ── 義工登入（只輸入密碼）── */}
+        {/* ── 義工登入（開放輸入專屬的 Email 與密碼）── */}
         {mode === 'volunteer' && (
           <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">義工帳號 Email</label>
+              <input
+                type="email"
+                required
+                autoFocus
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
+                placeholder="volunteer@example.com"
+              />
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">義工密碼</label>
               <input
                 type="password"
                 required
-                autoFocus
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
                 placeholder="輸入密碼"
               />
             </div>
@@ -114,7 +150,7 @@ export default function LoginPage() {
                 autoFocus
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
                 placeholder="admin@example.com"
               />
             </div>
@@ -126,7 +162,7 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
                 placeholder="••••••••"
               />
             </div>
