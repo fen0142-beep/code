@@ -31,7 +31,7 @@ export default function AccountPermissions() {
     fetchAccounts();
   }, []);
 
-  // 2. 建立或更新帳號權限
+ // 2. 建立或更新帳號權限
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email) return alert('請輸入 Email');
@@ -39,7 +39,7 @@ export default function AccountPermissions() {
     setLoading(true);
 
     if (editingId) {
-      // 【更新既有帳號】
+      // 【更新既有帳號】（不動密碼，只改名稱與角色）
       const { error } = await supabase
         .from('admin_roles')
         .update({
@@ -58,25 +58,31 @@ export default function AccountPermissions() {
       }
     } else {
       // 【新增新帳號】
+      if (!password) {
+        setLoading(false);
+        return alert('新增新帳號時，密碼為必填欄位！');
+      }
+
+      // 📌 同時把 email, name, role 以及 temp_password 送過去
       const { error } = await supabase
         .from('admin_roles')
         .insert([{ 
           email: email, 
           display_name: name, 
-          role: role 
+          role: role,
+          temp_password: password // 👈 將密碼傳給資料庫進行自動註冊
         }]);
 
       if (error) {
         alert('新增失敗：' + error.message);
       } else {
-        alert('成功加入後台權限名單！');
+        alert('帳號已全自動成功建立！義工現在可以直接登入了！');
         handleClear();
         fetchAccounts();
       }
     }
     setLoading(false);
   };
-
   // 3. 點擊「編輯」
   const handleEdit = (acc) => {
     setEditingId(acc.id);
