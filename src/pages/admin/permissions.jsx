@@ -31,7 +31,7 @@ export default function AccountPermissions() {
     fetchAccounts();
   }, []);
 
- // 2. 建立或更新帳號權限
+  // 2. 建立或更新帳號權限
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email) return alert('請輸入 Email');
@@ -39,7 +39,7 @@ export default function AccountPermissions() {
     setLoading(true);
 
     if (editingId) {
-      // 【更新既有帳號】（不動密碼，只改名稱與角色）
+      // 【更新既有帳號】
       const { error } = await supabase
         .from('admin_roles')
         .update({
@@ -63,14 +63,14 @@ export default function AccountPermissions() {
         return alert('新增新帳號時，密碼為必填欄位！');
       }
 
-      // 📌 同時把 email, name, role 以及 temp_password 送過去
+      // 將 email, name, role 以及密碼一起送過去觸發自動註冊
       const { error } = await supabase
         .from('admin_roles')
         .insert([{ 
           email: email, 
           display_name: name, 
           role: role,
-          temp_password: password // 👈 將密碼傳給資料庫進行自動註冊
+          temp_password: password
         }]);
 
       if (error) {
@@ -83,6 +83,7 @@ export default function AccountPermissions() {
     }
     setLoading(false);
   };
+
   // 3. 點擊「編輯」
   const handleEdit = (acc) => {
     setEditingId(acc.id);
@@ -92,7 +93,7 @@ export default function AccountPermissions() {
     setPassword('');
   };
 
-  // 4. 清空表單
+  // 4. 清空表單（重置）
   const handleClear = () => {
     setEditingId(null);
     setEmail('');
@@ -111,18 +112,22 @@ export default function AccountPermissions() {
       {/* 表單區塊 */}
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 max-w-5xl mb-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          
+          {/* 📌 Email 輸入框 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">帳號 Email</label>
             <input 
               type="email" 
               value={email} 
-              disabled={editingId !== null}
+              disabled={editingId !== null} // 只有在編輯既有帳號時才會鎖定不讓改 Email
               onChange={e => setEmail(e.target.value)} 
               placeholder="例如 volunteer@puyi.reg" 
-              className="w-full border p-2 rounded disabled:bg-gray-100" 
+              className="w-full border p-2 rounded disabled:bg-gray-100 text-gray-800 bg-white" 
               required 
             />
           </div>
+
+          {/* 顯示名稱 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">顯示名稱</label>
             <input 
@@ -130,26 +135,30 @@ export default function AccountPermissions() {
               value={name} 
               onChange={e => setName(e.target.value)} 
               placeholder="例如 知客組義工、某某師父" 
-              className="w-full border p-2 rounded" 
+              className="w-full border p-2 rounded text-gray-800 bg-white" 
             />
           </div>
+
+          {/* 密碼 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
             <input 
               type="password" 
               value={password} 
               onChange={e => setPassword(e.target.value)} 
-              placeholder={editingId ? "既有帳號留空則不改密碼" : "新增帳號必填"} 
-              className="w-full border p-2 rounded" 
+              placeholder={editingId ? "既有帳號不可在此修改密碼" : "新增帳號必填"} 
+              className="w-full border p-2 rounded text-gray-800 bg-white" 
               disabled={editingId !== null}
             />
           </div>
+
+          {/* 角色權限 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">角色權限</label>
             <select 
               value={role} 
               onChange={e => setRole(e.target.value)} 
-              className="w-full border p-2 rounded bg-white"
+              className="w-full border p-2 rounded bg-white text-gray-800"
             >
               <option value="admin">師父 / 管理者</option>
               <option value="volunteer">義工</option>
@@ -170,7 +179,7 @@ export default function AccountPermissions() {
         </div>
 
         <div className="flex justify-end gap-3">
-          <button type="button" onClick={handleClear} className="px-4 py-2 border rounded hover:bg-gray-100 text-gray-700">清空新增</button>
+          <button type="button" onClick={handleClear} className="px-4 py-2 border rounded hover:bg-gray-100 text-gray-700">清空 / 新增模式</button>
           <button type="submit" disabled={loading} className="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded font-medium disabled:bg-amber-400">
             {editingId ? '儲存修改' : '建立 / 儲存帳號'}
           </button>
