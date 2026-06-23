@@ -18,6 +18,7 @@ import CarCheckinPage from './pages/CarCheckinPage'
 import LeaderScanPage from './pages/LeaderScanPage'
 import ActivitiesPage from './pages/ActivitiesPage'
 import ActivityDetailPage from './pages/ActivityDetailPage'
+import AccountPermissions from './pages/admin/permissions'
 
 export default function App() {
   return (
@@ -62,7 +63,11 @@ export default function App() {
           <Route path="/admin/carrangement/:eventId" element={
             <ProtectedRoute adminOnly><CarrangementDetailPage /></ProtectedRoute>
           } />
-
+          {/* 📌 新增這一行：註冊帳號權限頁面，並設定只有 adminOnly 能進 */}
+          <Route path="/admin/permissions" element={
+            <ProtectedRoute adminOnly><AccountPermissions /></ProtectedRoute>
+          } />   
+          
           {/* 公開：領隊掃卡入口（刷學員證自動跳轉） */}
           <Route path="/leader" element={<LeaderScanPage />} />
 
