@@ -9,6 +9,7 @@ const ALL_NAV_ITEMS = [
   { to: '/admin/carrangement',  label: '排車系統', adminOnly: true  },
   { to: '/admin/relationships', label: '關係連結', adminOnly: true  },
   { to: '/admin/monks',         label: '法師管理', adminOnly: true  },
+  { to: '/admin/permissions',   label: '帳號權限', adminOnly: true  },
 ]
 
 export default function AdminLayout({ children }) {
