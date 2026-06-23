@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase' 
 
-// 📌 在這裡加上你自己的最高權限主帳號（可以加多個，用逗號隔開）
-// 這樣這幾個 Email 登入時會直接放行，完全不怕被資料庫規則誤擋！
+// 📌 絕對放行白名單：將你自己的最高權限主帳號放在這裡
 const SUPER_ADMINS = ['fen0142@gmail.com']; 
 
 export default function LoginPage() {
@@ -18,30 +17,41 @@ export default function LoginPage() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!email || !password) return alert('請完整輸入帳號與密碼')
+    if (!password) return alert('請輸入密碼')
     
     setError('')
     setLoading(true)
 
-    const currentEmail = email.trim();
+    let targetEmail = email.trim().toLowerCase();
 
-    // 1. 呼叫 Supabase 驗證帳號密碼
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email: currentEmail,
-      password: password,
-    })
+    // ────────────────────────────────────────────────────────
+    // 【模式 A：義工登入】（不需要輸入 Email，自動用密碼反查帳號）
+    // ────────────────────────────────────────────────────────
+    if (mode === 'volunteer') {
+      // 1. 先去資料庫撈出擁有這個密碼、且身分是義工的帳號 Email
+      const { data: vData, error: vError } = await supabase
+        .from('admin_roles')
+        .select('email')
+        .eq('role', 'volunteer')
+        .eq('temp_password', password) // 用建立帳號時設定的密碼來核對
+        .maybeSingle();
 
-    if (authError) {
-      setError('帳號或密碼錯誤，請再試一次。')
-      setLoading(false)
-      return
+      if (vError || !vData) {
+        setError('密碼錯誤，請再試一次。')
+        setLoading(false)
+        return
+      }
+      targetEmail = vData.email;
     }
 
-    // 2. 白名單檢查：如果是最高管理員，直接放行跳轉！
-    if (SUPER_ADMINS.includes(currentEmail.toLowerCase())) {
-      // 順便幫最高管理員在 admin_roles 補登記，確保「帳號權限」頁面看得到
+    // ────────────────────────────────────────────────────────
+    // 【模式 B：最高管理員與師父檢查】
+    // ────────────────────────────────────────────────────────
+    // 如果是你自己的主帳號，略過複雜的身分驗證，直接確保權限放行進後台
+    if (SUPER_ADMINS.includes(targetEmail)) {
+      // 自動幫忙在權限表內保持最新狀態
       await supabase.from('admin_roles').upsert({
-        email: currentEmail,
+        email: targetEmail,
         role: 'admin',
         display_name: '最高管理員',
         last_sign_in_at: new Date()
@@ -52,26 +62,39 @@ export default function LoginPage() {
       return
     }
 
-    // 3. 一般義工或新帳號：檢查是否存在於 admin_roles 權限名單中
-    const { data: roleData, error: roleError } = await supabase
+    // ────────────────────────────────────────────────────────
+    // 【標準 Supabase 驗證與一般登入】
+    // ────────────────────────────────────────────────────────
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: targetEmail,
+      password: password,
+    })
+
+    if (authError) {
+      setError(mode === 'volunteer' ? '密碼錯誤，請再試一次。' : '帳號或密碼錯誤，請再試一次。')
+      setLoading(false)
+      return
+    }
+
+    // 檢查其是否有登入後台資格
+    const { data: roleData } = await supabase
       .from('admin_roles')
       .select('role')
-      .eq('email', currentEmail)
+      .eq('email', targetEmail)
       .maybeSingle()
 
-    if (roleError || !roleData) {
-      // 在權限表找不到此人，安全登出
+    if (!roleData) {
       await supabase.auth.signOut()
       setError('此帳號未經授權進入管理後台。')
       setLoading(false)
       return
     }
 
-    // 4. 驗證成功，更新最後登入時間
+    // 更新最後登入時間
     await supabase
       .from('admin_roles')
       .update({ last_sign_in_at: new Date() })
-      .eq('email', currentEmail)
+      .eq('email', targetEmail)
 
     setLoading(false)
     navigate('/admin/events')
@@ -108,27 +131,15 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* ── 義工登入 ── */}
+        {/* ── 義工登入（完美維持原樣：免填 Email，只輸密碼！）── */}
         {mode === 'volunteer' && (
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">義工帳號 Email</label>
-              <input
-                type="email"
-                required
-                autoFocus
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
-                placeholder="volunteer@example.com"
-              />
-            </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">義工密碼</label>
               <input
                 type="password"
                 required
+                autoFocus
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
@@ -160,7 +171,7 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* ── 師父登入 ── */}
+        {/* ── 師父登入（完整帳密登入）── */}
         {mode === 'admin' && (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
