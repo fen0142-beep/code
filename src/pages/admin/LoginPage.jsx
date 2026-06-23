@@ -25,11 +25,24 @@ export default function LoginPage() {
     const currentEmail = email.trim().toLowerCase();
 
     // ────────────────────────────────────────────────────────
-    // 【最高管理員特殊通道】如果是你自己的主帳號，直接放行進後台，不囉嗦
+    // 🔥【核心修正：最高管理員超級通道】
+    // 必須放在最上面！完全繞過 Supabase 的所有登入驗證與資料庫防線
     // ────────────────────────────────────────────────────────
     if (SUPER_ADMINS.includes(currentEmail)) {
+      // 順便在背景默默更新或建立你的權限紀錄，確保後台顯示正常
+      try {
+        await supabase.from('admin_roles').upsert({
+          email: currentEmail,
+          role: 'admin',
+          display_name: '最高管理員',
+          last_sign_in_at: new Date()
+        }, { onConflict: 'email' });
+      } catch (e) {
+        console.log('背景更新稍微延遲，但不影響登入');
+      }
+
       setLoading(false)
-      navigate('/admin/events')
+      navigate('/admin/events') // 🚀 直接放行跳轉後台！
       return
     }
 
@@ -61,7 +74,7 @@ export default function LoginPage() {
       return
     }
 
-    // 更新最後登入時間
+    // 更新一般帳號的最後登入時間
     await supabase
       .from('admin_roles')
       .update({ last_sign_in_at: new Date() })
