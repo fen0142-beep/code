@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase' 
- 
-// 📌 絕對放行白名單（你的最高權限主帳號）
+
+// 📌 最高權限主帳號白名單
 const SUPER_ADMINS = ['fen0142@gmail.com']; 
 
 export default function LoginPage() {
@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-async function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
     if (!email || !password) return alert('請完整輸入帳號與密碼')
     
@@ -26,7 +26,7 @@ async function handleSubmit(e) {
 
     try {
       // ────────────────────────────────────────────────────────
-      // 1. 讓主帳號與一般帳號，都乖乖跟 Supabase 驗證最原始的帳密
+      // 1. 標準 Supabase 認證通道：先過原始帳密檢查
       // ────────────────────────────────────────────────────────
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: currentEmail,
@@ -40,16 +40,16 @@ async function handleSubmit(e) {
       }
 
       // ────────────────────────────────────────────────────────
-      // 2. 特殊通道：如果你是最高管理員，直接放行，完全無視任何資料庫表格的死鎖
+      // 2. 特殊通道：如果是你自己的主帳號，直接放行，完全無視任何資料庫表格死鎖
       // ────────────────────────────────────────────────────────
-      if (currentEmail === 'fen0142@gmail.com') {
+      if (SUPER_ADMINS.includes(currentEmail)) {
         setLoading(false)
-        navigate('/admin/events') // 🚀 Supabase 已經認證成功，現在跳轉絕對不會被抓回來！
+        navigate('/admin/events') // 🚀 已經通過認證，直接跳轉後台！
         return
       }
 
       // ────────────────────────────────────────────────────────
-      // 3. 一般一般通道：其他義工或師父，才去撈 admin_roles 權限表
+      // 3. 一般通道：其他義工或師父，才去撈 admin_roles 權限表
       // ────────────────────────────────────────────────────────
       const { data: roleData } = await supabase
         .from('admin_roles')
@@ -77,7 +77,7 @@ async function handleSubmit(e) {
       setLoading(false)
     }
   }
-  
+
   function reset() {
     setMode('select')
     setEmail('')
@@ -109,7 +109,7 @@ async function handleSubmit(e) {
           </div>
         )}
 
-        {/* ── 義工登入（📌 保證看得到 Email 輸入框！） ── */}
+        {/* ── 義工登入（📌 留住義工 Email 輸入框） ── */}
         {mode === 'volunteer' && (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
