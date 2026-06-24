@@ -25,9 +25,7 @@ export default function LoginPage() {
     const currentEmail = email.trim().toLowerCase();
 
     try {
-      // ────────────────────────────────────────────────────────
       // 1. 標準 Supabase 認證通道：先過原始帳密檢查
-      // ────────────────────────────────────────────────────────
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: currentEmail,
         password: password,
@@ -39,18 +37,14 @@ export default function LoginPage() {
         return
       }
 
-      // ────────────────────────────────────────────────────────
-      // 2. 特殊通道：如果是你自己的主帳號，直接放行，完全無視任何資料庫表格死鎖
-      // ────────────────────────────────────────────────────────
+      // 2. 特殊通道：如果你是最高管理員，直接放行，完全無視任何資料庫表格死鎖
       if (SUPER_ADMINS.includes(currentEmail)) {
         setLoading(false)
         navigate('/admin/events') // 🚀 已經通過認證，直接跳轉後台！
         return
       }
 
-      // ────────────────────────────────────────────────────────
       // 3. 一般通道：其他義工或師父，才去撈 admin_roles 權限表
-      // ────────────────────────────────────────────────────────
       const { data: roleData } = await supabase
         .from('admin_roles')
         .select('role')
