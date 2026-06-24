@@ -28,7 +28,7 @@ export default function PermissionsPage() {
     setLoading(true)
 
     if (editingId) {
-      // 編輯模式
+      // 📝 編輯模式
       const { error } = await supabase
         .from('admin_roles')
         .update({
@@ -46,16 +46,16 @@ export default function PermissionsPage() {
         fetchAccounts()
       }
     } else {
-      // 新增模式
+      // ➕ 新增模式
       if (!password) {
         setLoading(false)
         return alert('新增帳號時密碼為必填')
       }
 
+      // 標準 Supabase 註冊：只傳最基本、最安全的 Email 和密碼，絕對不傳多餘欄位
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password: password,
-        options: { data: { display_name: name.trim() } }
       })
 
       if (authError) {
@@ -64,19 +64,26 @@ export default function PermissionsPage() {
         return
       }
 
+      if (!authData?.user) {
+        alert('建立帳號失敗，請檢查是否觸發頻率限制。')
+        setLoading(false)
+        return
+      }
+
+      // 註冊成功後，將自訂的「顯示名稱」與「權限」寫到我們專門的寫入表裡
       const { error: roleError } = await supabase
         .from('admin_roles')
         .insert([{
           id: authData.user.id,
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           display_name: name.trim(),
           role: role
         }])
 
       if (roleError) {
-        alert('權限寫入失敗：' + roleError.message)
+        alert('權限紀錄寫入失敗，但認證已建立：' + roleError.message)
       } else {
-        alert('帳號建立成功！')
+        alert('新管理帳號建立成功！')
         handleClear()
         fetchAccounts()
       }
