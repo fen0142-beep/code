@@ -1,93 +1,210 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase' 
+
+// 📌 最高權權限主帳號白名單
+const SUPER_ADMINS = ['fen0142@gmail.com']; 
 
 export default function LoginPage() {
+  const navigate = useNavigate()
+
+  const [mode, setMode] = useState('select')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const navigate = useNavigate()
+  const [error, setError] = useState('')
 
-  async function handleCustomLogin(targetRole) {
-    if (!email || !password) return alert('請輸入電子信箱與密碼')
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!email || !password) return alert('請完整輸入帳號與密碼')
+    
+    setError('')
     setLoading(true)
 
-    // 從我們建立的 custom_admins 表中進行帳密驗證
-    const { data, error } = await supabase
-      .from('custom_admins')
-      .select('*')
-      .eq('email', email.trim().toLowerCase())
-      .eq('password', password)
-      .single()
+    const currentEmail = email.trim().toLowerCase();
 
-    if (error || !data) {
-      alert('登入失敗：帳號或密碼錯誤')
+    try {
+      // 1. 標準 Supabase 認證通道
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: currentEmail,
+        password: password,
+      })
+
+      if (authError) {
+        setError('帳號或密碼錯誤，請再試一次。')
+        setLoading(false)
+        return
+      }
+
+      // 2. 特殊通道：最高管理員直接放行
+      if (SUPER_ADMINS.includes(currentEmail)) {
+        setLoading(false)
+        navigate('/admin/events')
+        return
+      }
+
+      // 3. 一般通道：檢查 admin_roles 權限表
+      const { data: roleData } = await supabase
+        .from('admin_roles')
+        .select('role')
+        .eq('email', currentEmail)
+        .maybeSingle()
+
+      if (!roleData) {
+        await supabase.auth.signOut()
+        setError('此帳號未經授權進入管理後台。')
+        setLoading(false)
+        return
+      }
+
+      // 更新一般帳號登入時間
+      await supabase
+        .from('admin_roles')
+        .update({ last_sign_in_at: new Date() })
+        .eq('email', currentEmail)
+
       setLoading(false)
-      return
-    }
-
-    if (data.role !== targetRole) {
-      alert(`登入失敗：您的權限為【${data.role === 'admin' ? '師父/管理員' : '一般義工'}】，無法登入此入口。`)
+      navigate('/admin/events')
+    } catch (err) {
+      setError('系統發生錯誤，請稍後再試。')
       setLoading(false)
-      return
     }
+  }
 
-    // 驗證成功，模擬寫入 Session
-    localStorage.setItem('sb-custom-auth', JSON.stringify(data))
-    alert('登入成功！')
-    
-    // 成功後直接跳轉到後台首頁
-    navigate('/admin/events')
-    setLoading(false)
+  function reset() {
+    setMode('select')
+    setEmail('')
+    setPassword('')
+    setError('')
   }
 
   return (
-    <div className="min-h-screen bg-amber-50/40 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto w-full max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-xl sm:px-10 border border-gray-100">
-          <h2 className="mb-6 text-center text-xl font-bold text-gray-700">後台管理系統</h2>
-          
-          <div className="space-y-4">
+    <div className="min-h-screen bg-amber-50 flex items-center justify-center px-4">
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg p-8">
+        <h1 className="text-2xl font-bold text-amber-800 mb-1 text-center">{import.meta.env.VITE_TEMPLE_NAME}</h1>
+        <p className="text-sm text-gray-500 text-center mb-8">後台管理系統</p>
+
+        {/* ── 選擇身分 ── */}
+        {mode === 'select' && (
+          <div className="space-y-3">
+            <button
+              onClick={() => setMode('volunteer')}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3 rounded-xl transition-colors text-base"
+            >
+              🙏 義工登入
+            </button>
+            <button
+              onClick={() => setMode('admin')}
+              className="w-full bg-white hover:bg-gray-50 text-gray-600 font-medium py-3 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors text-sm"
+            >
+              師父登入
+            </button>
+          </div>
+        )}
+
+        {/* ── 義工登入 ── */}
+        {mode === 'volunteer' && (
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-600">電子信箱</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">義工帳號 Email</label>
               <input
                 type="email"
+                required
+                autoFocus
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
+                placeholder="volunteer@example.com"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-600">密碼</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">義工密碼</label>
               <input
                 type="password"
+                required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
+                placeholder="輸入密碼"
               />
             </div>
 
-            <div className="pt-4 grid grid-cols-1 gap-3">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => handleCustomLogin('volunteer')}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-amber-700 hover:bg-amber-800 transition-colors"
-              >
-                🙏 義工登入
-              </button>
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => handleCustomLogin('admin')}
-                className="w-full flex justify-center py-2.5 px-4 border border-gray-200 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors"
-              >
-                師父登入
-              </button>
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {loading ? '登入中…' : '登入'}
+            </button>
+
+            <button
+              type="button"
+              onClick={reset}
+              className="w-full text-sm text-gray-400 hover:text-gray-600 py-1"
+            >
+              ← 返回
+            </button>
+          </form>
+        )}
+
+        {/* ── 師父登入 ── */}
+        {mode === 'admin' && (
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">電子信箱</label>
+              <input
+                type="email"
+                required
+                autoFocus
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
+                placeholder="admin@example.com"
+              />
             </div>
-          </div>
-        </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-800 bg-white"
+                placeholder="••••••••"
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-amber-700 hover:bg-amber-800 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {loading ? '登入中…' : '登入'}
+            </button>
+
+            <button
+              type="button"
+              onClick={reset}
+              className="w-full text-sm text-gray-400 hover:text-gray-600 py-1"
+            >
+              ← 返回
+            </button>
+          </form>
+        )}
       </div>
     </div>
   )
