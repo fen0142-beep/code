@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase' 
-
+ 
 // 📌 絕對放行白名單（你的最高權限主帳號）
 const SUPER_ADMINS = ['fen0142@gmail.com']; 
 
