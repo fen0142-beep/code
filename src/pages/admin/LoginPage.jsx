@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
- async function handleSubmit(e) {
+async function handleSubmit(e) {
     e.preventDefault()
     if (!email || !password) return alert('請完整輸入帳號與密碼')
     
@@ -24,21 +24,10 @@ export default function LoginPage() {
 
     const currentEmail = email.trim().toLowerCase();
 
-    // ────────────────────────────────────────────────────────
-    // 🔥【極致簡化：最高管理員超級無敵通道】
-    // 拿掉所有背景更新(upsert)，不與 Supabase 資料庫做任何通訊！
-    // 只要 Email 對了，一秒都不等，直接開門放行！
-    // ────────────────────────────────────────────────────────
-    if (currentEmail === 'fen0142@gmail.com') {
-      setLoading(false)
-      navigate('/admin/events') // 🚀 100% 直接突圍，跳轉進入後台活動管理！
-      return
-    }
-
-    // ────────────────────────────────────────────────────────
-    // 【一般一般通道】一般義工與其他帳號才走這段資料庫驗證
-    // ────────────────────────────────────────────────────────
     try {
+      // ────────────────────────────────────────────────────────
+      // 1. 讓主帳號與一般帳號，都乖乖跟 Supabase 驗證最原始的帳密
+      // ────────────────────────────────────────────────────────
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: currentEmail,
         password: password,
@@ -50,7 +39,18 @@ export default function LoginPage() {
         return
       }
 
-      // 檢查一般使用者是否有權限
+      // ────────────────────────────────────────────────────────
+      // 2. 特殊通道：如果你是最高管理員，直接放行，完全無視任何資料庫表格的死鎖
+      // ────────────────────────────────────────────────────────
+      if (currentEmail === 'fen0142@gmail.com') {
+        setLoading(false)
+        navigate('/admin/events') // 🚀 Supabase 已經認證成功，現在跳轉絕對不會被抓回來！
+        return
+      }
+
+      // ────────────────────────────────────────────────────────
+      // 3. 一般一般通道：其他義工或師父，才去撈 admin_roles 權限表
+      // ────────────────────────────────────────────────────────
       const { data: roleData } = await supabase
         .from('admin_roles')
         .select('role')
