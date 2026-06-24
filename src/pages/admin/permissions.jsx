@@ -1,245 +1,219 @@
-import React, { useState, useEffect } from 'react';
-// 正確引用 lib 底下的 supabase.js
-import { supabase } from '../../lib/supabase'; 
+import { useState, useEffect } from 'react'
+import { supabase } from '../../lib/supabase'
 
-export default function AccountPermissions() {
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState('admin'); // admin = 師父/管理者, volunteer = 義工
-  const [accounts, setAccounts] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+export default function PermissionsPage() {
+  const [accounts, setAccounts] = useState([])
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [role, setRole] = useState('volunteer')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [editingId, setEditingId] = useState(null)
 
-  // 1. 讀取 Supabase 帳號列表
-  const fetchAccounts = async () => {
-    setLoading(true);
+  useEffect(() => {
+    fetchAccounts()
+  }, [])
+
+  async function fetchAccounts() {
     const { data, error } = await supabase
       .from('admin_roles')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+    if (!error && data) setAccounts(data)
+  }
 
-    if (error) {
-      alert('讀取帳號失敗：' + error.message);
-    } else {
-      setAccounts(data || []);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchAccounts();
-  }, []);
-
-  // 2. 建立或更新帳號權限
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!email) return alert('請輸入 Email');
-
-    setLoading(true);
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!email || !name) return alert('請填寫完整欄位')
+    setLoading(true)
 
     if (editingId) {
-      // 【更新既有帳號】
+      // 編輯模式
       const { error } = await supabase
         .from('admin_roles')
         .update({
-          display_name: name,
-          role: role,
-          updated_at: new Date()
+          email: email.trim(),
+          display_name: name.trim(),
+          role: role
         })
-        .eq('id', editingId);
+        .eq('id', editingId)
 
       if (error) {
-        alert('更新失敗：' + error.message);
+        alert('更新失敗：' + error.message)
       } else {
-        alert('帳號權限更新成功！');
-        handleClear();
-        fetchAccounts();
+        alert('更新成功')
+        handleClear()
+        fetchAccounts()
       }
     } else {
-      // 【新增新帳號】
+      // 新增模式
       if (!password) {
-        setLoading(false);
-        return alert('新增新帳號時，密碼為必填欄位！');
+        setLoading(false)
+        return alert('新增帳號時密碼為必填')
       }
-    // 1. 直接呼叫 Supabase Auth 建立真實的登入帳號
+
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
         password: password,
-        options: {
-          data: { display_name: name }
-        }
-      });
+        options: { data: { display_name: name.trim() } }
+      })
 
       if (authError) {
-        alert('建立認證帳號失敗：' + authError.message);
-        setLoading(false);
-        return;
+        alert('認證帳號建立失敗：' + authError.message)
+        setLoading(false)
+        return
       }
 
-      // 2. 成功後，將對應的權限寫入 admin_roles 表
       const { error: roleError } = await supabase
         .from('admin_roles')
-        .insert([{ 
-          id: authData.user.id, // 自動同步 Supabase 的 User ID
-          email: email.trim(), 
-          display_name: name, 
+        .insert([{
+          id: authData.user.id,
+          email: email.trim(),
+          display_name: name.trim(),
           role: role
-        }]);
+        }])
 
       if (roleError) {
-        alert('寫入權限資料表失敗：' + roleError.message);
+        alert('權限寫入失敗：' + roleError.message)
       } else {
-        alert('義工帳號已成功建立！現在可以請他使用專屬 Email 與密碼登入了！');
-        handleClear();
-        fetchAccounts();
+        alert('帳號建立成功！')
+        handleClear()
+        fetchAccounts()
       }
     }
-  // 3. 點擊「編輯」
-  const handleEdit = (acc) => {
-    setEditingId(acc.id);
-    setEmail(acc.email);
-    setName(acc.display_name || '');
-    setRole(acc.role);
-    setPassword('');
-  };
+    setLoading(false)
+  }
 
-  // 4. 清空表單（重置）
-  const handleClear = () => {
-    setEditingId(null);
-    setEmail('');
-    setName('');
-    setPassword('');
-    setRole('admin');
-  };
+  function handleEdit(acc) {
+    setEditingId(acc.id)
+    setEmail(acc.email)
+    setName(acc.display_name || '')
+    setRole(acc.role)
+    setPassword('')
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('確定要刪除此管理帳號嗎？')) return
+    const { error } = await supabase.from('admin_roles').delete().eq('id', id)
+    if (!error) {
+      alert('刪除成功')
+      fetchAccounts()
+    }
+  }
+
+  function handleClear() {
+    setEditingId(null)
+    setEmail('')
+    setName('')
+    setRole('volunteer')
+    setPassword('')
+  }
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold mb-2 text-gray-800">帳號權限設定</h1>
-      <p className="text-gray-500 mb-6 text-sm">
-        僅管理者可使用。可直接新增後台帳號、設定密碼，並指定師父／管理者或義工權限。
-      </p>
-
-      {/* 表單區塊 */}
-      <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 max-w-5xl mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          
-          {/* 📌 Email 輸入框 */}
+    <div className="max-w-4xl mx-auto p-6">
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">帳號權限管理</h1>
+      
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-gray-100">
+        <h2 className="text-lg font-semibold text-gray-700 mb-4">
+          {editingId ? '📝 修改帳號權限' : '➕ 新增管理帳號'}
+        </h2>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">帳號 Email</label>
-            <input 
-              type="email" 
-              value={email} 
-              disabled={editingId !== null} // 只有在編輯既有帳號時才會鎖定不讓改 Email
-              onChange={e => setEmail(e.target.value)} 
-              placeholder="例如 volunteer@puyi.reg" 
-              className="w-full border p-2 rounded disabled:bg-gray-100 text-gray-800 bg-white" 
-              required 
+            <label className="block text-sm font-medium text-gray-600 mb-1">電子信箱 (Email)</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white"
+              placeholder="example@email.com"
             />
           </div>
-
-          {/* 顯示名稱 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">顯示名稱</label>
-            <input 
-              type="text" 
-              value={name} 
-              onChange={e => setName(e.target.value)} 
-              placeholder="例如 知客組義工、某某師父" 
-              className="w-full border p-2 rounded text-gray-800 bg-white" 
+            <label className="block text-sm font-medium text-gray-600 mb-1">顯示名稱 / 姓名</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white"
+              placeholder="請輸入姓名"
             />
           </div>
-
-          {/* 密碼 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
-            <input 
-              type="password" 
-              value={password} 
-              onChange={e => setPassword(e.target.value)} 
-              placeholder={editingId ? "既有帳號不可在此修改密碼" : "新增帳號必填"} 
-              className="w-full border p-2 rounded text-gray-800 bg-white" 
-              disabled={editingId !== null}
-            />
-          </div>
-
-          {/* 角色權限 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">角色權限</label>
-            <select 
-              value={role} 
-              onChange={e => setRole(e.target.value)} 
-              className="w-full border p-2 rounded bg-white text-gray-800"
+            <label className="block text-sm font-medium text-gray-600 mb-1">後台身分權限</label>
+            <select
+              value={role}
+              onChange={e => setRole(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white"
             >
-              <option value="admin">師父 / 管理者</option>
-              <option value="volunteer">義工</option>
+              <option value="volunteer">🙏 一般義工</option>
+              <option value="admin">☸️ 師父 / 管理員</option>
             </select>
           </div>
-        </div>
-
-        {/* 權限字卡說明 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div className={`p-4 rounded border transition-colors ${role === 'admin' ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
-            <h4 className="font-bold">師父 / 管理者</h4>
-            <p className="text-sm mt-1">可進入所有後台管理功能。</p>
+          {!editingId && (
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">登入密碼</label>
+              <input
+                type="password"
+                required={!editingId}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white"
+                placeholder="請設定 6 位數以上密碼"
+              />
+            </div>
+          )}
+          <div className="md:col-span-2 flex gap-2 justify-end pt-2">
+            {editingId && (
+              <button
+                type="button"
+                onClick={handleClear}
+                className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700"
+              >
+                取消修改
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-6 py-2 rounded-lg text-sm transition-colors"
+            >
+              {loading ? '處理中…' : editingId ? '儲存修改' : '確認建立'}
+            </button>
           </div>
-          <div className={`p-4 rounded border transition-colors ${role === 'volunteer' ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
-            <h4 className="font-bold">義工</h4>
-            <p className="text-sm mt-1">只能進入活動管理中被授權的活動報名名單。</p>
-          </div>
-        </div>
+        </form>
+      </div>
 
-        <div className="flex justify-end gap-3">
-          <button type="button" onClick={handleClear} className="px-4 py-2 border rounded hover:bg-gray-100 text-gray-700">清空 / 新增模式</button>
-          <button type="submit" disabled={loading} className="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded font-medium disabled:bg-amber-400">
-            {editingId ? '儲存修改' : '建立 / 儲存帳號'}
-          </button>
-        </div>
-      </form>
-
-      {/* 帳號列表 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-w-5xl">
-        <div className="p-4 border-b flex justify-between items-center">
-          <h3 className="font-bold text-gray-700">目前後台帳號</h3>
-          <button onClick={fetchAccounts} className="text-sm text-amber-700 hover:text-amber-800 font-medium">重新整理</button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-50 text-gray-600 text-sm border-b">
-                <th className="p-3 font-semibold">Email</th>
-                <th className="p-3 font-semibold">顯示名稱</th>
-                <th className="p-3 font-semibold">權限</th>
-                <th className="p-3 font-semibold">最後登入</th>
-                <th className="p-3 font-semibold">操作</th>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-100 text-sm font-medium text-gray-500">
+              <th className="p-4">姓名</th>
+              <th className="p-4">Email</th>
+              <th className="p-4">身分</th>
+              <th className="p-4 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50 text-sm text-gray-700">
+            {accounts.map(acc => (
+              <tr key={acc.id} className="hover:bg-gray-50/50">
+                <td className="p-4 font-medium text-gray-900">{acc.display_name || '未填'}</td>
+                <td className="p-4 text-gray-500">{acc.email}</td>
+                <td className="p-4">
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${acc.role === 'admin' ? 'bg-purple-50 text-purple-600' : 'bg-amber-50 text-amber-600'}`}>
+                    {acc.role === 'admin' ? '師父/管理員' : '一般義工'}
+                  </span>
+                </td>
+                <td className="p-4 text-right space-x-2">
+                  <button onClick={() => handleEdit(acc)} className="text-amber-600 hover:text-amber-700 font-medium">編輯</button>
+                  <button onClick={() => handleDelete(acc.id)} className="text-red-500 hover:text-red-600 font-medium">刪除</button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {loading && accounts.length === 0 ? (
-                <tr><td colSpan="5" className="p-4 text-center text-gray-400">載入中...</td></tr>
-              ) : accounts.length === 0 ? (
-                <tr><td colSpan="5" className="p-4 text-center text-gray-400">目前暫無帳號資料</td></tr>
-              ) : accounts.map((acc) => (
-                <tr key={acc.id || acc.email} className="border-b text-sm hover:bg-gray-50 text-gray-700">
-                  <td className="p-3">{acc.email}</td>
-                  <td className="p-3">{acc.display_name || '—'}</td>
-                  <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${acc.role === 'admin' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                      {acc.role === 'admin' ? '管理者' : '義工'}
-                    </span>
-                  </td>
-                  <td className="p-3 text-gray-500">
-                    {acc.last_sign_in_at ? new Date(acc.last_sign_in_at).toLocaleString() : '—'}
-                  </td>
-                  <td className="p-3">
-                    <button onClick={() => handleEdit(acc)} className="text-amber-700 hover:text-amber-900 font-medium">編輯</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
-  );
+  )
 }
