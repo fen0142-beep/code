@@ -6,7 +6,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const navigate = navigate = useNavigate()
+  const navigate = useNavigate()
 
   async function handleCustomLogin(targetRole) {
     if (!email || !password) return alert('請輸入電子信箱與密碼')
@@ -35,6 +35,8 @@ export default function LoginPage() {
     // 驗證成功，模擬寫入 Session
     localStorage.setItem('sb-custom-auth', JSON.stringify(data))
     alert('登入成功！')
+    
+    // 成功後直接跳轉到後台首頁
     navigate('/admin/events')
     setLoading(false)
   }
