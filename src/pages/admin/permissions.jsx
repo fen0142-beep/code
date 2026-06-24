@@ -16,7 +16,7 @@ export default function PermissionsPage() {
 
   async function fetchAccounts() {
     const { data, error } = await supabase
-      .from('admin_roles')
+      .from('custom_admins')
       .select('*')
       .order('created_at', { ascending: false })
     if (!error && data) setAccounts(data)
@@ -30,9 +30,9 @@ export default function PermissionsPage() {
     if (editingId) {
       // 📝 編輯模式
       const { error } = await supabase
-        .from('admin_roles')
+        .from('custom_admins')
         .update({
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           display_name: name.trim(),
           role: role
         })
@@ -52,36 +52,18 @@ export default function PermissionsPage() {
         return alert('新增帳號時密碼為必填')
       }
 
-      // 標準 Supabase 註冊：只傳最基本、最安全的 Email 和密碼，絕對不傳多餘欄位
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
-        password: password,
-      })
-
-      if (authError) {
-        alert('認證帳號建立失敗：' + authError.message)
-        setLoading(false)
-        return
-      }
-
-      if (!authData?.user) {
-        alert('建立帳號失敗，請檢查是否觸發頻率限制。')
-        setLoading(false)
-        return
-      }
-
-      // 註冊成功後，將自訂的「顯示名稱」與「權限」寫到我們專門的寫入表裡
-      const { error: roleError } = await supabase
-        .from('admin_roles')
+      // 直接寫入我們自訂的 custom_admins 表，100% 繞過 Supabase 的內建 bug！
+      const { error } = await supabase
+        .from('custom_admins')
         .insert([{
-          id: authData.user.id,
           email: email.trim().toLowerCase(),
+          password: password,
           display_name: name.trim(),
           role: role
         }])
 
-      if (roleError) {
-        alert('權限紀錄寫入失敗，但認證已建立：' + roleError.message)
+      if (error) {
+        alert('帳號建立失敗：' + error.message)
       } else {
         alert('新管理帳號建立成功！')
         handleClear()
@@ -101,7 +83,7 @@ export default function PermissionsPage() {
 
   async function handleDelete(id) {
     if (!confirm('確定要刪除此管理帳號嗎？')) return
-    const { error } = await supabase.from('admin_roles').delete().eq('id', id)
+    const { error } = await supabase.from('custom_admins').delete().eq('id', id)
     if (!error) {
       alert('刪除成功')
       fetchAccounts()
@@ -167,25 +149,15 @@ export default function PermissionsPage() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white"
-                placeholder="請設定 6 位數以上密碼"
+                placeholder="請設定密碼"
               />
             </div>
           )}
           <div className="md:col-span-2 flex gap-2 justify-end pt-2">
             {editingId && (
-              <button
-                type="button"
-                onClick={handleClear}
-                className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700"
-              >
-                取消修改
-              </button>
+              <button type="button" onClick={handleClear} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">取消修改</button>
             )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-6 py-2 rounded-lg text-sm transition-colors"
-            >
+            <button type="submit" disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-6 py-2 rounded-lg text-sm transition-colors">
               {loading ? '處理中…' : editingId ? '儲存修改' : '確認建立'}
             </button>
           </div>
@@ -205,7 +177,7 @@ export default function PermissionsPage() {
           <tbody className="divide-y divide-gray-50 text-sm text-gray-700">
             {accounts.map(acc => (
               <tr key={acc.id} className="hover:bg-gray-50/50">
-                <td className="p-4 font-medium text-gray-900">{acc.display_name || '未填'}</td>
+                <td className="p-4 font-medium text-gray-900">{acc.display_name}</td>
                 <td className="p-4 text-gray-500">{acc.email}</td>
                 <td className="p-4">
                   <span className={`px-2 py-1 rounded text-xs font-medium ${acc.role === 'admin' ? 'bg-purple-50 text-purple-600' : 'bg-amber-50 text-amber-600'}`}>
