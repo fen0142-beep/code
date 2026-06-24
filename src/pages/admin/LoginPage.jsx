@@ -8,7 +8,6 @@ const SUPER_ADMINS = ['fen0142@gmail.com'];
 export default function LoginPage() {
   const navigate = useNavigate()
 
-  // 'select' = 選擇身分  'admin' = 師父登入  'volunteer' = 義工登入
   const [mode, setMode] = useState('select')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -25,7 +24,7 @@ export default function LoginPage() {
     const currentEmail = email.trim().toLowerCase();
 
     try {
-      // 1. 標準 Supabase 認證通道：先過原始帳密檢查
+      // 1. 標準 Supabase 認證通道
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: currentEmail,
         password: password,
@@ -37,14 +36,14 @@ export default function LoginPage() {
         return
       }
 
-      // 2. 特殊通道：如果你是最高管理員，直接放行，完全無視任何資料庫表格死鎖
+      // 2. 特殊通道：最高管理員直接放行
       if (SUPER_ADMINS.includes(currentEmail)) {
         setLoading(false)
-        navigate('/admin/events') // 🚀 已經通過認證，直接跳轉後台！
+        navigate('/admin/events')
         return
       }
 
-      // 3. 一般通道：其他義工或師父，才去撈 admin_roles 權限表
+      // 3. 一般通道：檢查 admin_roles 權限表
       const { data: roleData } = await supabase
         .from('admin_roles')
         .select('role')
@@ -103,7 +102,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* ── 義工登入（📌 留住義工 Email 輸入框） ── */}
+        {/* ── 義工登入 ── */}
         {mode === 'volunteer' && (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
