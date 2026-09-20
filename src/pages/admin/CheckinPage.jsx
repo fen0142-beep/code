@@ -691,12 +691,14 @@ export default function CheckinPage() {
             <DonorCard donor={donor} donorFields={donorFields} showDetail={showDonorDetail} />
             <p className="text-sm text-gray-400 mt-4">{countdown} 秒後自動重置</p>
             <div className="flex items-center justify-center gap-4 mt-2">
-              <button
-                onClick={() => printDonorTicket({ name: result.name, donor, donorFields, eventName: event?.name, copies: printCopies })}
-                className="text-xs text-gray-400 hover:text-gray-600 underline"
-              >
-                🖨 重新列印
-              </button>
+              {donor && (
+                <button
+                  onClick={() => printDonorTicket({ name: result.name, donor, donorFields, eventName: event?.name, copies: printCopies })}
+                  className="text-xs text-gray-400 hover:text-gray-600 underline"
+                >
+                  🖨 重新列印
+                </button>
+              )}
               <button
                 onClick={resetToIdle}
                 className="text-xs text-gray-400 hover:text-gray-600 underline"
@@ -714,12 +716,14 @@ export default function CheckinPage() {
             <p className="text-xl text-amber-600">已於 {new Date(result.checkedInAt).toLocaleTimeString('zh-TW', { hour12: false })} 報到過</p>
             <DonorCard donor={donor} donorFields={donorFields} showDetail={showDonorDetail} />
             <div className="flex gap-3 justify-center mt-5">
-              <button
-                onClick={() => printDonorTicket({ name: result.name, donor, donorFields, eventName: event?.name, copies: printCopies })}
-                className="text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-4 py-2 rounded-lg transition-colors"
-              >
-                🖨 重新列印
-              </button>
+              {donor && (
+                <button
+                  onClick={() => printDonorTicket({ name: result.name, donor, donorFields, eventName: event?.name, copies: printCopies })}
+                  className="text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-4 py-2 rounded-lg transition-colors"
+                >
+                  🖨 重新列印
+                </button>
+              )}
               <button
                 onClick={handleUncheck}
                 className="text-sm text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 px-4 py-2 rounded-lg transition-colors"

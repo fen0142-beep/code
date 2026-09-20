@@ -8,6 +8,9 @@ const TIMEOUT_MS = 4000
 // donorFields: 該活動的功德主動態欄位設定（有序，[{field_key, field_label}]）
 // eventName: 活動全名（例如「普宜精舍金剛經共修法會暨護法會頒證大典」），印在小單副標
 export async function printDonorTicket({ name, donor, donorFields, eventName, copies = 1 } = {}) {
+  // 只有功德主才需要出單；不是功德主（donor 為 null）直接跳過，
+  // 避免代理程式對每一個報到的人都送出只有姓名的空白小單
+  if (!donor) return { success: false, skipped: true }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
