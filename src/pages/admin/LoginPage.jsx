@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { signIn } from '../../lib/supabase'
 
 // 義工共用帳號的 email（隱藏在程式碼裡，義工只需輸入密碼）
-const VOLUNTEER_EMAIL = 'volunteer@puyi.reg'
+const VOLUNTEER_EMAIL = 'puchin20152015@gmail.com'
 
 export default function LoginPage() {
   const navigate = useNavigate()
